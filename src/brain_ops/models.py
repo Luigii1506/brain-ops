@@ -139,3 +139,25 @@ class LinkSuggestionResult(BaseModel):
     suggestions: list[LinkSuggestion] = Field(default_factory=list)
     operation: OperationRecord
     reason: str
+
+
+class ApplyLinksResult(BaseModel):
+    target: Path
+    applied_links: list[str] = Field(default_factory=list)
+    operation: OperationRecord
+    reason: str
+
+
+class PromoteNoteResult(BaseModel):
+    source_path: Path
+    promoted_path: Path
+    promoted_type: str
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class EnrichNoteResult(BaseModel):
+    path: Path
+    operations: list[OperationRecord] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    reason: str

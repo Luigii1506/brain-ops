@@ -1,80 +1,138 @@
 # brain-ops
 
-`brain-ops` is the operational backend for a personal "second brain" system built around an Obsidian vault.
+`brain-ops` is the local-first operations layer for a personal Jarvis-style system.
 
-The vault is the human-facing layer for thinking, studying, documenting, and navigating knowledge.  
-This project is the machine-facing layer for automation, classification, documentation generation, linking, review workflows, and agent orchestration.
+It sits between:
+- an Obsidian vault used as the long-term knowledge and documentation layer,
+- local AI orchestration through OpenClaw and Ollama,
+- and structured local data stored in SQLite for life tracking domains like nutrition, fitness, expenses, and daily logs.
 
-## Core purpose
+## What this project is really for
 
-This system should let a single user:
+This project exists so one user can run a serious personal operating system from a Mac mini:
 
-- keep projects, notes, study material, SOPs, and technical documentation in one place,
-- automate note creation, classification, enrichment, and maintenance,
-- use local and external AI agents safely,
-- document repositories, scripts, architectural decisions, and workflows intelligently,
-- run on a Mac mini as a 24/7 knowledge and automation node,
-- stay local-first, modular, and reversible.
+- capture knowledge without writing everything manually,
+- turn raw input into structured notes,
+- maintain project documentation and technical runbooks,
+- track personal operations like diet, gym, expenses, and habits,
+- retrieve context later through Obsidian and AI,
+- keep everything local, reviewable, and extensible.
+
+## Core architecture
+
+```text
+OpenClaw chat / automations
+        |
+        v
+   Ollama local models
+        |
+        v
+      brain-ops
+   /            \
+  v              v
+Obsidian Vault   SQLite
+knowledge        structured life-ops data
+```
+
+## System roles
+
+### Obsidian
+Human-facing memory and navigation layer.
+
+Use it for:
+- knowledge notes
+- source notes
+- maps of content
+- project context
+- systems documentation
+- reflections
+- summaries and reports
+
+### SQLite
+Structured operational data layer.
+
+Use it for:
+- meals and macros
+- workouts and sets
+- expenses
+- body metrics
+- daily structured logs
+
+### brain-ops
+Deterministic execution and transformation layer.
+
+Use it to:
+- create and normalize notes
+- process inbox
+- improve notes
+- enrich notes with grounded research
+- promote source material into durable knowledge
+- suggest and apply links
+- initialize and later query local structured data
+
+### OpenClaw + Ollama
+Conversation and local AI orchestration layer.
+
+Use them to:
+- receive natural language input
+- decide which `brain-ops` command to run
+- call local models
+- keep the system usable without cloud dependencies
+
+## Current project direction
+
+This is not just a notes app and not just a CLI.
+
+It is a local personal operating system composed of:
+- a second brain,
+- a documentation engine,
+- a life-tracking data backend,
+- and an AI interaction layer.
+
+## Current commands
+
+- `brain info`
+- `brain init`
+- `brain init-db`
+- `brain create-note`
+- `brain create-project`
+- `brain process-inbox`
+- `brain weekly-review`
+- `brain audit-vault`
+- `brain normalize-frontmatter`
+- `brain capture`
+- `brain improve-note`
+- `brain research-note`
+- `brain link-suggestions`
+- `brain apply-link-suggestions`
+- `brain promote-note`
+- `brain enrich-note`
 
 ## Design principles
 
-- Local-first
-- Markdown-first
+- local-first
 - Obsidian-compatible
-- Agent-assisted, not agent-chaotic
-- Git-protected
-- Modular CLI first
-- API optional later
-- Security-conscious
-- Easy to review, audit, and extend
+- Markdown-first for knowledge
+- SQLite-first for structured operational tracking
+- agent-assisted, not agent-chaotic
+- reversible and auditable
+- CLI-first
+- Mac mini as primary node
+- OpenClaw + Ollama as default AI stack
 
-## System boundaries
+## What does not belong in the vault
 
-### What belongs in the Obsidian vault
-- project notes
-- MOCs
-- permanent notes
-- source notes
-- study notes
-- runbooks
-- SOPs
-- decision logs
-- architecture notes
-- debugging notes
-- reading notes
-- prompts and reusable workflows
-
-### What does NOT belong in the vault
 - production secrets
 - API keys
-- raw large datasets
-- logs dumps
-- virtualenvs
-- node_modules
-- build artifacts
-- binary junk
-- temporary machine-only clutter
+- raw database dumps
+- bulky generated artifacts
+- machine-only clutter
+- high-frequency numeric logs that should live in SQLite first
 
-## Main components
+## Where to start
 
-- `src/brain_ops/` — application logic
-- `docs/` — product, architecture, and workflow documentation
-- `templates/` — note templates used to create consistent Obsidian notes
-- `config/` — local config examples and conventions
-- `prompts/` — instructions for agents like Codex / Claude Code / OpenClaw
-
-## Recommended environment
-
-- Python project
-- runs locally on a Mac mini
-- operates against a local Obsidian vault path
-- protected by Git
-- invoked from CLI
-- optionally orchestrated by OpenClaw / launchd / cron
-
-## High-level vision
-
-Obsidian is the human brain interface.  
-`brain-ops` is the operations layer that keeps the knowledge system clean, documented, connected, and useful.
-
-Read `docs/PRODUCT_VISION.md` first.
+Read:
+- [docs/MASTER_PLAN.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/MASTER_PLAN.md)
+- [docs/PRODUCT_VISION.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/PRODUCT_VISION.md)
+- [docs/architecture/SYSTEM_ARCHITECTURE.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/architecture/SYSTEM_ARCHITECTURE.md)
+- [docs/operations/MVP_SCOPE.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/operations/MVP_SCOPE.md)

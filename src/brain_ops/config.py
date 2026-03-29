@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from brain_ops.constants import (
     DEFAULT_CONFIG_CANDIDATES,
+    DEFAULT_DATABASE_PATH,
+    DEFAULT_DATA_DIR,
     DEFAULT_FOLDER_MAP,
     DEFAULT_INIT_CONFIG_PATH,
     DEFAULT_TEMPLATE_DIR,
@@ -28,14 +30,25 @@ class FolderConfig(BaseModel):
     reports: str = DEFAULT_FOLDER_MAP["reports"]
 
 
+class AIConfig(BaseModel):
+    provider: str = "ollama"
+    ollama_host: str = "http://127.0.0.1:11434"
+    orchestrator: str = "openclaw"
+    primary_model: str = "qwen2.5-coder:latest"
+    reasoning_model: str = "llama3.1:8b"
+
+
 class VaultConfig(BaseModel):
     vault_path: Path
     default_timezone: str = "America/Tijuana"
     folders: FolderConfig = Field(default_factory=FolderConfig)
     template_dir: Path = DEFAULT_TEMPLATE_DIR
+    data_dir: Path = DEFAULT_DATA_DIR
+    database_path: Path = DEFAULT_DATABASE_PATH
+    ai: AIConfig = Field(default_factory=AIConfig)
     type_folder_map: dict[str, str] = Field(default_factory=lambda: DEFAULT_TYPE_FOLDER_MAP.copy())
 
-    @field_validator("vault_path", "template_dir", mode="before")
+    @field_validator("vault_path", "template_dir", "data_dir", "database_path", mode="before")
     @classmethod
     def _expand_paths(cls, value: str | Path) -> Path:
         return Path(value).expanduser()
@@ -64,6 +77,13 @@ class VaultConfig(BaseModel):
             "archive_folder": self.folders.archive,
             "templates_folder": self.folders.templates,
             "reports_folder": self.folders.reports,
+            "data_dir": str(self.data_dir),
+            "database_path": str(self.database_path),
+            "ai_provider": self.ai.provider,
+            "ollama_host": self.ai.ollama_host,
+            "orchestrator": self.ai.orchestrator,
+            "primary_model": self.ai.primary_model,
+            "reasoning_model": self.ai.reasoning_model,
         }
         return yaml.safe_dump(data, sort_keys=False)
 
@@ -105,4 +125,13 @@ def load_config(explicit_path: Path | None = None) -> VaultConfig:
         default_timezone=raw.get("default_timezone", "America/Tijuana"),
         folders=folders,
         template_dir=DEFAULT_TEMPLATE_DIR,
+        data_dir=raw.get("data_dir", DEFAULT_DATA_DIR),
+        database_path=raw.get("database_path", DEFAULT_DATABASE_PATH),
+        ai=AIConfig(
+            provider=raw.get("ai_provider", "ollama"),
+            ollama_host=raw.get("ollama_host", "http://127.0.0.1:11434"),
+            orchestrator=raw.get("orchestrator", "openclaw"),
+            primary_model=raw.get("primary_model", "qwen2.5-coder:latest"),
+            reasoning_model=raw.get("reasoning_model", "llama3.1:8b"),
+        ),
     )

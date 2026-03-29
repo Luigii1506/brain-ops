@@ -1,38 +1,55 @@
 # Operational Workflows
 
-## 1. Capture workflow
+## 1. Knowledge capture workflow
 
 Input channels:
-- manual note capture
+- OpenClaw chat
 - terminal
-- agent-created note
-- imported article
-- repo-derived docs
-- daily notes
-- quick idea capture
+- voice transcript
+- pasted text
+- URLs
+- imported source material
 
-Destination:
-- `00 - Inbox/`
-
-Processing rules:
-- raw notes should not remain in inbox indefinitely
-- inbox notes should later become source notes, permanent notes, project notes, or archived notes
+Expected behavior:
+1. detect intent
+2. choose note type or structured data target
+3. create or update the right artifact
+4. improve structure if needed
+5. link or promote later if useful
 
 ## 2. Inbox processing workflow
 
 Expected command:
 - `brain process-inbox`
 
-Steps:
-1. scan inbox notes
-2. detect note intent
-3. add or normalize frontmatter
-4. enrich content if needed
-5. move to correct folder
-6. optionally create related links
-7. produce processing report
+Purpose:
+- clear `00 - Inbox`
+- classify notes
+- apply frontmatter
+- improve loose bodies
+- move notes into canonical folders
 
-## 3. Project documentation workflow
+## 3. Note enrichment workflow
+
+Expected command:
+- `brain enrich-note /path/to/note.md`
+
+Pipeline:
+1. improve structure
+2. enrich with grounded research
+3. apply likely internal links
+
+## 4. Source-to-knowledge workflow
+
+Expected command:
+- `brain promote-note /path/to/source.md`
+
+Purpose:
+- extract durable knowledge from source material
+- create a draft knowledge note
+- keep attribution back to the source
+
+## 5. Project documentation workflow
 
 Expected command:
 - `brain create-project "<Project Name>"`
@@ -45,62 +62,62 @@ Should create:
 - changelog note
 - runbook note
 
-## 4. Script documentation workflow
+## 6. Systems documentation workflow
 
-Expected command:
-- `brain document-script /path/to/script.py`
+Current commands involved:
+- `brain capture`
+- `brain improve-note`
+- `brain enrich-note`
 
-Should produce:
-- what it does
-- inputs
-- outputs
-- dependencies
-- how to run it
-- failure modes
-- related project
+Target artifacts:
+- command notes
+- SOPs
+- security notes
+- runbooks
+- setup guides
 
-## 5. Source ingestion workflow
+## 7. Nutrition logging workflow
 
-Expected command:
-- `brain ingest-source "<title>"`
+Expected future command:
+- `brain log-meal "..."`
 
-Possible source types:
-- article
-- paper
-- documentation
-- book chapter
-- video notes
+Should:
+1. parse the meal
+2. store structured rows in SQLite
+3. calculate daily totals
+4. optionally write daily summary notes into the vault
 
-Should output:
-- summary
-- key ideas
-- reusable insights
-- links to related MOCs or knowledge notes
+## 8. Fitness logging workflow
 
-## 6. Weekly review workflow
+Expected future command:
+- `brain log-workout "..."`
 
-Expected command:
+Should:
+1. parse exercises and sets
+2. write structured workout rows
+3. compare against recent sessions
+4. optionally generate summaries or coaching notes
+
+## 9. Expense logging workflow
+
+Expected future command:
+- `brain log-expense "..."`
+
+Should:
+1. capture amount, category, merchant, and note
+2. store the transaction in SQLite
+3. update budget summaries
+4. produce weekly and monthly views when requested
+
+## 10. Review workflow
+
+Current commands:
+- `brain audit-vault`
 - `brain weekly-review`
 
-Should produce:
-- unprocessed inbox items
-- stale project notes
-- orphan notes
-- notes missing frontmatter
-- recently changed important notes
-- suggested follow-ups
-
-## 7. Repository documentation workflow
-
-Potential future command:
-- `brain document-repo /path/to/repo`
-
-Should generate:
-- project summary
-- stack overview
-- local setup guide
-- key scripts
-- architecture outline
-- debugging notes
-- important commands
-- glossary
+Future extension:
+- review vault health
+- review meal adherence
+- review workout progress
+- review spending trends
+- publish weekly summaries to Obsidian

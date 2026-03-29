@@ -1,70 +1,72 @@
 # Codex Handoff
 
-This repository exists to support a local-first, agent-assisted knowledge operations system around an Obsidian vault.
+This repository supports a local-first Jarvis-style system, not just a markdown notes utility.
 
-## What Codex should understand immediately
+## Core system roles
 
-### Primary purpose
-This project is not a generic notes utility.  
-It is an automation layer for a personal second brain.
+- Obsidian = human-facing memory, navigation, and documentation layer
+- SQLite = structured operational tracking layer
+- brain-ops = deterministic operations and transformation layer
+- OpenClaw = conversational orchestration layer
+- Ollama = local model runtime
+- Mac mini = primary always-on node
+- Git = safety boundary for vault-facing changes
 
-### System roles
-- Obsidian = human interface for knowledge
-- brain-ops = structured automation layer
-- Mac mini = local execution host
-- Git = safety boundary
-- OpenClaw / Claude Code / Codex = intelligent operators
+## What Codex should optimize for
 
-### Main jobs to support
-- create and normalize notes
-- process inbox items
-- classify notes
-- generate MOCs
-- document scripts and projects
-- maintain consistency
-- produce reports
-- assist safe automation
+- reliable note operations
+- explicit ontology and folder semantics
+- local structured storage for life-ops domains
+- commands that OpenClaw can call safely
+- minimal manual maintenance for the user
+- local-first execution
+
+## Main jobs to support
+
+- create, normalize, improve, enrich, and promote notes
+- maintain project documentation
+- maintain systems documentation and commands
+- initialize and later query SQLite
+- support future nutrition, fitness, and expense commands
+- preserve clear boundaries between knowledge artifacts and structured logs
 
 ## Constraints
-- local-first
-- markdown-first
-- no secrets in vault
-- minimal manual friction
-- reversible changes preferred
-- avoid overengineering the MVP
 
-## Preferred implementation style
+- local-first
+- markdown-first for knowledge
+- SQLite-first for quantitative tracking
+- no secrets in vault
+- reversible changes preferred
+- avoid overengineering
+
+## Recommended implementation style
+
 - Python-first
 - CLI-first
 - modular
-- testable
+- deterministic around side effects
 - explicit config
-- filesystem-based
 - human-readable outputs
+- safe defaults
 
-## Important UX assumptions
-The user wants:
-- a professional structure
-- one place for interconnected project documentation and study
-- minimal manual maintenance
-- high automation leverage
-- compatibility with agent workflows
+## Commands that matter most now
 
-## Recommended initial commands
+- `brain info`
 - `brain init`
-- `brain process-inbox`
-- `brain create-project`
-- `brain create-note`
-- `brain generate-moc`
-- `brain document-script`
+- `brain init-db`
+- `brain audit-vault`
 - `brain normalize-frontmatter`
-- `brain weekly-review`
+- `brain capture`
+- `brain improve-note`
+- `brain research-note`
+- `brain apply-link-suggestions`
+- `brain promote-note`
+- `brain enrich-note`
+- `brain process-inbox`
 
-## Deliverables Codex should favor
-- clean Python modules
-- maintainable CLI commands
-- templates
-- reports
-- safe file operations
-- clear error handling
-- dry-run support where possible
+## What should come next
+
+- SQLite-backed domain modules
+- OpenClaw routing conventions
+- Mac mini deployment setup
+- life-ops summaries into the vault

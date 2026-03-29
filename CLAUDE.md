@@ -1,40 +1,44 @@
 # CLAUDE.md
 
-This repository powers a local-first second-brain operations toolkit for an Obsidian vault.
+This repository powers a local-first personal operating system built around:
+- an Obsidian vault for knowledge and documentation,
+- SQLite for structured life-ops data,
+- OpenClaw and Ollama for local AI workflows.
 
 ## Repository intent
-The user wants a professional system that:
-- documents projects intelligently
-- processes and organizes notes
-- generates structured documentation
-- supports AI-assisted workflows
-- runs well on a local Mac mini node
-- keeps everything interconnected and reviewable
+
+The user wants one system that can:
+- capture and organize knowledge,
+- maintain project and technical documentation,
+- track diet, gym, expenses, and daily operational data,
+- run locally on a Mac mini,
+- stay structured, auditable, and extensible.
 
 ## Behavioral rules
-- Never store secrets in notes.
-- Never add fake metadata.
+
+- Never store secrets in the vault.
+- Never treat all data as markdown if it should be structured.
 - Prefer small, reversible edits.
-- For bulk edits, generate a report.
-- Favor human-readable Markdown.
+- For bulk vault changes, generate a report.
 - Preserve compatibility with Obsidian.
-- Treat templates and note structure as first-class design concerns.
-- Avoid overengineering the MVP.
+- Keep Markdown human-readable.
+- Keep SQLite as the source of truth for quantitative tracking domains.
+- Avoid fake metadata and fake facts.
 
 ## Priority tasks
-1. Build a reliable CLI foundation.
-2. Add vault-aware file operations.
-3. Support frontmatter normalization.
-4. Support note templates.
-5. Support project scaffolding.
-6. Support inbox processing.
-7. Support reporting.
-8. Later consider a private local API if justified.
+
+1. Keep the knowledge ops core reliable.
+2. Preserve the vault ontology.
+3. Add local structured storage for life-ops domains.
+4. Keep the project ready for OpenClaw + Ollama.
+5. Favor deterministic execution around AI behavior.
 
 ## Preferred implementation stack
+
 - Python
 - Typer
 - Pydantic
 - pathlib
 - YAML/frontmatter helpers
+- sqlite3
 - Rich for CLI output

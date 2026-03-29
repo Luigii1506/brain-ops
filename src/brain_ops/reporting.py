@@ -4,9 +4,12 @@ from datetime import datetime
 from pathlib import Path
 
 from brain_ops.models import (
+    ApplyLinksResult,
+    EnrichNoteResult,
     InboxProcessSummary,
     LinkSuggestionResult,
     NormalizeFrontmatterSummary,
+    PromoteNoteResult,
     VaultAuditSummary,
     WeeklyReviewSummary,
 )
@@ -160,6 +163,55 @@ def render_link_suggestions(result: LinkSuggestionResult) -> str:
             )
     else:
         lines.append("- No link suggestions found.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_applied_links(result: ApplyLinksResult) -> str:
+    lines = [
+        f"# Applied Links - `{result.target}`",
+        "",
+        f"- applied: {len(result.applied_links)}",
+        f"- reason: {result.reason}",
+        "",
+        "## Links",
+        "",
+    ]
+    if result.applied_links:
+        lines.extend([f"- `[[{title}]]`" for title in result.applied_links])
+    else:
+        lines.append("- None")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_promoted_note(result: PromoteNoteResult) -> str:
+    lines = [
+        f"# Promoted Note - `{result.source_path}`",
+        "",
+        f"- promoted_path: `{result.promoted_path}`",
+        f"- promoted_type: `{result.promoted_type}`",
+        f"- operations: {len(result.operations)}",
+        f"- reason: {result.reason}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def render_enriched_note(result: EnrichNoteResult) -> str:
+    lines = [
+        f"# Enriched Note - `{result.path}`",
+        "",
+        f"- operations: {len(result.operations)}",
+        f"- reason: {result.reason}",
+        "",
+        "## Steps",
+        "",
+    ]
+    if result.steps:
+        lines.extend([f"- {step}" for step in result.steps])
+    else:
+        lines.append("- None")
     lines.append("")
     return "\n".join(lines)
 

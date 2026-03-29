@@ -2,72 +2,109 @@
 
 ## Objective
 
-Build a professional, intelligent, local-first knowledge operations system around an Obsidian vault.
+Build a local-first personal operating system that combines:
+- an Obsidian-based second brain,
+- a documentation engine for projects and systems,
+- structured life tracking,
+- and local AI orchestration through OpenClaw and Ollama.
 
-The system must support both:
-1. **personal knowledge management**, and
-2. **project and engineering documentation workflows**.
+## What the product should feel like
 
-It should help the user document, connect, retrieve, and maintain information across multiple domains:
-- programming projects
-- technical architecture
-- scripts and automation
-- study notes
-- books and articles
-- personal systems
-- research
-- operational knowledge
+The user should be able to speak or type naturally and have the system:
+- understand intent,
+- decide where the information belongs,
+- create or update the correct artifact,
+- and maintain both knowledge and operational data over time.
 
-## User profile the system is designed for
-
-The user:
-- works across many software projects,
-- uses agentic coding tools,
-- wants high-quality documentation,
-- needs repeatable workflows,
-- values structure and long-term recall,
-- wants knowledge to be reusable by both humans and AI.
+The end state is closer to a private Jarvis than to a notes app.
 
 ## Product goals
 
-### Goal 1 — Create a reliable second brain
-Notes should be easy to capture, enrich, retrieve, and connect.
+### Goal 1: Reliable knowledge memory
+The system should store and organize durable knowledge about:
+- technology
+- science
+- earth and space
+- personal learning
+- project context
+- reflections and principles
 
-### Goal 2 — Document projects intelligently
-Projects, scripts, architecture, debugging, and operational workflows should be documented with minimal manual effort.
+### Goal 2: Low-friction technical documentation
+The system should keep:
+- project notes
+- setup instructions
+- commands
+- runbooks
+- debugging notes
+- architecture notes
+- decision records
 
-### Goal 3 — Support AI-native workflows
-The system should help local and external agents understand the user's projects, conventions, vault structure, and intent.
+current with minimal manual writing.
 
-### Goal 4 — Remain practical
-The MVP must be useful without needing a public API, VPS, or complex UI.
+### Goal 3: Life-ops tracking
+The system should let the user log and query:
+- diet and macros
+- workouts
+- expenses
+- daily metrics
+- habits and daily status
 
-## Non-goals for the MVP
+without turning the vault into a messy quantitative log store.
 
-- public SaaS product
-- multi-user system
-- public web dashboard
-- heavy database dependency
-- plugin development for Obsidian
-- replacing Obsidian UI
+### Goal 4: AI-native local workflow
+The system should be usable primarily through:
+- OpenClaw
+- Ollama
+- CLI fallbacks
+
+and remain effective even without cloud dependencies.
+
+### Goal 5: Reviewable automation
+Changes should remain:
+- auditable
+- understandable
+- reversible
+- safe for long-term personal use
 
 ## Product stance
 
-This is **not** just a notes app.  
-This is a **knowledge operating system** composed of:
+This is not:
+- a generic notes app
+- a public SaaS
+- a dashboard-first tool
+- an Obsidian replacement
 
-- Obsidian for human navigation and cognition,
-- `brain-ops` for automation and structure,
-- agents for intelligent transformation,
-- a Mac mini as the local always-on execution node.
+This is:
+- a local knowledge and life operations backend
+- an AI-assisted documentation engine
+- a structured memory system
+- a commandable personal operating layer
+
+## MVP interpretation
+
+The MVP is not only "create notes from templates".
+
+The MVP is:
+- a usable knowledge ops core on the vault,
+- SQLite initialization for structured personal domains,
+- a command model that can later be called by OpenClaw,
+- enough intelligence to create, improve, enrich, link, and promote notes,
+- enough structure to support nutrition, fitness, and expenses next.
+
+## Non-goals right now
+
+- public web app
+- multi-user support
+- SaaS auth
+- complex plugin ecosystem
+- mobile app
+- replacing Obsidian UI
 
 ## Success criteria
 
-The system is successful if the user can:
-- capture ideas rapidly,
-- turn raw notes into structured knowledge,
-- document projects with low friction,
-- generate reusable operational docs,
-- retrieve the right context later,
-- let agents assist safely without damaging the vault,
-- review all important changes through Git.
+The product is successful if the user can:
+- stop manually maintaining most notes,
+- trust the system to structure incoming information,
+- keep technical documentation alive,
+- log operational life data conversationally,
+- and use Obsidian as a clean second brain instead of a manual dumping ground.

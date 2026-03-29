@@ -12,22 +12,29 @@ from brain_ops.constants import DEFAULT_INIT_CONFIG_PATH
 from brain_ops.errors import BrainOpsError, ConfigError
 from brain_ops.models import CreateNoteRequest, OperationRecord, OperationStatus
 from brain_ops.reporting import (
+    render_applied_links,
+    render_enriched_note,
     render_inbox_report,
     render_link_suggestions,
     render_normalize_frontmatter,
+    render_promoted_note,
     render_vault_audit,
     render_weekly_review,
 )
 from brain_ops.services.audit_service import audit_vault
+from brain_ops.services.apply_links_service import apply_link_suggestions
 from brain_ops.services.capture_service import capture_text
+from brain_ops.services.enrich_service import enrich_note
 from brain_ops.services.improve_service import improve_note
 from brain_ops.services.inbox_service import process_inbox
 from brain_ops.services.link_service import suggest_links
 from brain_ops.services.note_service import create_note
 from brain_ops.services.normalize_service import normalize_frontmatter
 from brain_ops.services.project_service import create_project_scaffold
+from brain_ops.services.promote_service import promote_note
 from brain_ops.services.research_service import research_note
 from brain_ops.services.review_service import generate_weekly_review
+from brain_ops.storage import initialize_database
 from brain_ops.vault import Vault
 
 app = typer.Typer(help="brain-ops CLI")
@@ -77,6 +84,11 @@ def info(config_path: Path | None = typer.Option(None, "--config", help="Path to
     table.add_row("Vault path", str(config.vault_path))
     table.add_row("Timezone", config.default_timezone)
     table.add_row("Template dir", str(config.template_dir))
+    table.add_row("Data dir", str(config.data_dir))
+    table.add_row("Database path", str(config.database_path))
+    table.add_row("AI provider", config.ai.provider)
+    table.add_row("Ollama host", config.ai.ollama_host)
+    table.add_row("Orchestrator", config.ai.orchestrator)
     table.add_row("Inbox folder", config.folders.inbox)
     table.add_row("Projects folder", config.folders.projects)
     table.add_row("Reports folder", config.folders.reports)
@@ -111,6 +123,22 @@ def init(
         )
     )
     operations.extend(vault.ensure_structure())
+    _print_operations(operations)
+
+
+@app.command("init-db")
+def init_db_command(
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+) -> None:
+    """Initialize the local sqlite database for structured life-ops data."""
+    try:
+        config = load_config(config_path)
+        operations = initialize_database(config.database_path, dry_run=dry_run)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
     _print_operations(operations)
 
 
@@ -318,6 +346,77 @@ def link_suggestions_command(
 
     _print_operations([result.operation])
     console.print(render_link_suggestions(result))
+
+
+@app.command("apply-link-suggestions")
+def apply_link_suggestions_command(
+    note_path: Path,
+    limit: int = typer.Option(3, "--limit", help="Maximum number of suggestions to apply."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+) -> None:
+    """Apply likely internal links into a note using the current suggestion heuristics."""
+    try:
+        vault = _load_vault(config_path, dry_run=dry_run)
+        result = apply_link_suggestions(vault, note_path=note_path, limit=limit)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations([result.operation])
+    console.print(render_applied_links(result))
+
+
+@app.command("promote-note")
+def promote_note_command(
+    note_path: Path,
+    target_type: str | None = typer.Option(None, "--target-type", help="Optional explicit promotion target."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+) -> None:
+    """Promote an existing note into a more durable artifact."""
+    try:
+        vault = _load_vault(config_path, dry_run=dry_run)
+        result = promote_note(vault, note_path=note_path, target_type=target_type)
+    except (BrainOpsError, ValueError) as error:
+        _handle_error(error if isinstance(error, BrainOpsError) else ConfigError(str(error)))
+        return
+
+    _print_operations(result.operations)
+    console.print(render_promoted_note(result))
+
+
+@app.command("enrich-note")
+def enrich_note_command(
+    note_path: Path,
+    query: str | None = typer.Option(None, "--query", help="Optional explicit research query."),
+    max_sources: int = typer.Option(3, "--max-sources", help="Maximum external sources to attach."),
+    link_limit: int = typer.Option(3, "--link-limit", help="Maximum number of links to apply."),
+    improve: bool = typer.Option(True, "--improve/--no-improve", help="Improve note structure before other steps."),
+    research: bool = typer.Option(True, "--research/--no-research", help="Attach grounded research."),
+    apply_links: bool = typer.Option(True, "--apply-links/--no-apply-links", help="Insert likely internal links."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+) -> None:
+    """Run the current note enrichment pipeline on a single note."""
+    try:
+        vault = _load_vault(config_path, dry_run=dry_run)
+        result = enrich_note(
+            vault,
+            note_path=note_path,
+            query=query,
+            max_sources=max_sources,
+            link_limit=link_limit,
+            improve=improve,
+            research=research,
+            apply_links=apply_links,
+        )
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_enriched_note(result))
 
 
 if __name__ == "__main__":
