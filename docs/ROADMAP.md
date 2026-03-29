@@ -27,6 +27,7 @@ Status: current next target
 - explicit OpenClaw + Ollama configuration
 - SQLite initialization
 - structured storage module
+- route-input and command pre-routing
 - canonical data paths for Mac mini deployment
 - domain planning for nutrition, fitness, expenses, and daily logs
 
@@ -34,10 +35,13 @@ Status: current next target
 
 - `log-meal`
 - `daily-macros`
+- `log-supplement`
 - `log-workout`
 - `workout-status`
 - `log-expense`
 - `spending-summary`
+- `habit-checkin`
+- `daily-habits`
 - `daily-log`
 - `body-metric`
 

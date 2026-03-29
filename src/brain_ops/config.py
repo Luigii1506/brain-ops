@@ -36,6 +36,9 @@ class AIConfig(BaseModel):
     orchestrator: str = "openclaw"
     primary_model: str = "qwen2.5-coder:latest"
     reasoning_model: str = "llama3.1:8b"
+    parser_model: str = "llama3.1:8b"
+    enable_llm_routing: bool = False
+    ollama_timeout_seconds: int = 60
 
 
 class VaultConfig(BaseModel):
@@ -84,6 +87,9 @@ class VaultConfig(BaseModel):
             "orchestrator": self.ai.orchestrator,
             "primary_model": self.ai.primary_model,
             "reasoning_model": self.ai.reasoning_model,
+            "parser_model": self.ai.parser_model,
+            "enable_llm_routing": self.ai.enable_llm_routing,
+            "ollama_timeout_seconds": self.ai.ollama_timeout_seconds,
         }
         return yaml.safe_dump(data, sort_keys=False)
 
@@ -133,5 +139,8 @@ def load_config(explicit_path: Path | None = None) -> VaultConfig:
             orchestrator=raw.get("orchestrator", "openclaw"),
             primary_model=raw.get("primary_model", "qwen2.5-coder:latest"),
             reasoning_model=raw.get("reasoning_model", "llama3.1:8b"),
+            parser_model=raw.get("parser_model", "llama3.1:8b"),
+            enable_llm_routing=raw.get("enable_llm_routing", False),
+            ollama_timeout_seconds=raw.get("ollama_timeout_seconds", 60),
         ),
     )

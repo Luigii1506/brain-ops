@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -9,36 +10,131 @@ from rich.table import Table
 from brain_ops import __version__
 from brain_ops.config import VaultConfig, load_config
 from brain_ops.constants import DEFAULT_INIT_CONFIG_PATH
-from brain_ops.errors import BrainOpsError, ConfigError
+from brain_ops.errors import AIProviderError, BrainOpsError, ConfigError
 from brain_ops.models import CreateNoteRequest, OperationRecord, OperationStatus
 from brain_ops.reporting import (
     render_applied_links,
+    render_body_metrics_log,
+    render_body_metrics_status,
+    render_daily_habits,
+    render_daily_log,
+    render_daily_macros,
+    render_daily_summary,
     render_enriched_note,
+    render_expense_log,
+    render_handle_input,
+    render_habit_checkin,
     render_inbox_report,
     render_link_suggestions,
+    render_meal_log,
     render_normalize_frontmatter,
     render_promoted_note,
+    render_route_decision,
+    render_supplement_log,
+    render_spending_summary,
     render_vault_audit,
     render_weekly_review,
+    render_workout_log,
+    render_workout_status,
 )
 from brain_ops.services.audit_service import audit_vault
 from brain_ops.services.apply_links_service import apply_link_suggestions
+from brain_ops.services.body_metrics_service import body_metrics_status, log_body_metrics
 from brain_ops.services.capture_service import capture_text
+from brain_ops.services.daily_log_service import log_daily_event
+from brain_ops.services.daily_summary_service import write_daily_summary
 from brain_ops.services.enrich_service import enrich_note
+from brain_ops.services.expenses_service import log_expense, spending_summary
+from brain_ops.services.fitness_service import log_workout, workout_status
+from brain_ops.services.handle_input_service import handle_input
 from brain_ops.services.improve_service import improve_note
 from brain_ops.services.inbox_service import process_inbox
+from brain_ops.services.life_ops_service import daily_habits, habit_checkin, log_supplement
 from brain_ops.services.link_service import suggest_links
 from brain_ops.services.note_service import create_note
 from brain_ops.services.normalize_service import normalize_frontmatter
+from brain_ops.services.nutrition_service import daily_macros, log_meal
 from brain_ops.services.project_service import create_project_scaffold
 from brain_ops.services.promote_service import promote_note
 from brain_ops.services.research_service import research_note
 from brain_ops.services.review_service import generate_weekly_review
+from brain_ops.services.router_service import route_input
 from brain_ops.storage import initialize_database
 from brain_ops.vault import Vault
+from brain_ops.ai import llm_route_input
 
 app = typer.Typer(help="brain-ops CLI")
 console = Console()
+
+
+OPENCLAW_MANIFEST = {
+    "name": "brain-ops",
+    "entrypoint": "brain",
+    "preferred_natural_input_command": "handle-input",
+    "preferred_natural_input_args": ["<text>", "--json"],
+    "notes": [
+        "Use brain-ops as the deterministic execution layer.",
+        "Prefer handle-input for natural language.",
+        "Prefer route-input for plan-only classification.",
+    ],
+    "tools": [
+        {
+            "name": "handle_input",
+            "command": 'brain handle-input "<text>" --json',
+            "purpose": "Route and execute safe actions from natural language.",
+        },
+        {
+            "name": "route_input",
+            "command": 'brain route-input "<text>" --json',
+            "purpose": "Classify natural language without side effects.",
+        },
+        {
+            "name": "daily_summary",
+            "command": "brain daily-summary --date <yyyy-mm-dd>",
+            "purpose": "Write structured day summaries into the Obsidian vault.",
+        },
+        {
+            "name": "daily_macros",
+            "command": "brain daily-macros --date <yyyy-mm-dd>",
+            "purpose": "Read nutrition totals from SQLite.",
+        },
+        {
+            "name": "daily_habits",
+            "command": "brain daily-habits --date <yyyy-mm-dd>",
+            "purpose": "Read habit status summaries from SQLite.",
+        },
+        {
+            "name": "workout_status",
+            "command": "brain workout-status --date <yyyy-mm-dd>",
+            "purpose": "Read workout summaries from SQLite.",
+        },
+        {
+            "name": "spending_summary",
+            "command": "brain spending-summary --date <yyyy-mm-dd>",
+            "purpose": "Read expense summaries from SQLite.",
+        },
+        {
+            "name": "body_metrics_status",
+            "command": "brain body-metrics-status --date <yyyy-mm-dd>",
+            "purpose": "Read body metrics summaries from SQLite.",
+        },
+        {
+            "name": "capture",
+            "command": 'brain capture "<text>"',
+            "purpose": "Create a note in the vault from natural language.",
+        },
+        {
+            "name": "improve_note",
+            "command": "brain improve-note <note_path>",
+            "purpose": "Improve structure of an existing note.",
+        },
+        {
+            "name": "research_note",
+            "command": "brain research-note <note_path> --query <query>",
+            "purpose": "Enrich a note with grounded research.",
+        },
+    ],
+}
 
 
 def _load_vault(config_path: Path | None, dry_run: bool) -> Vault:
@@ -95,6 +191,32 @@ def info(config_path: Path | None = typer.Option(None, "--config", help="Path to
     console.print(table)
 
 
+@app.command("openclaw-manifest")
+def openclaw_manifest_command(
+    as_json: bool = typer.Option(True, "--json/--no-json", help="Print the manifest as JSON."),
+    output: Path | None = typer.Option(None, "--output", help="Optional file path to write the manifest JSON."),
+) -> None:
+    """Print the preferred OpenClaw integration manifest for brain-ops."""
+    if output is not None:
+        output_path = output.expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(OPENCLAW_MANIFEST, indent=2) + "\n", encoding="utf-8")
+        console.print(f"Wrote OpenClaw manifest to {output_path}")
+        if not as_json:
+            return
+    if as_json:
+        console.print_json(data=OPENCLAW_MANIFEST)
+        return
+
+    table = Table(title="OpenClaw Manifest")
+    table.add_column("Tool")
+    table.add_column("Command")
+    table.add_column("Purpose")
+    for tool in OPENCLAW_MANIFEST["tools"]:
+        table.add_row(tool["name"], tool["command"], tool["purpose"])
+    console.print(table)
+
+
 @app.command()
 def init(
     vault_path: Path = typer.Option(..., "--vault-path", help="Path to the Obsidian vault."),
@@ -140,6 +262,388 @@ def init_db_command(
         return
 
     _print_operations(operations)
+
+
+@app.command("log-meal")
+def log_meal_command(
+    meal_text: str,
+    meal_type: str | None = typer.Option(None, "--meal-type", help="Optional meal type like breakfast, lunch, dinner, snack."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log a structured meal into SQLite using a simple semicolon-separated format."""
+    try:
+        config = load_config(config_path)
+        result = log_meal(config.database_path, meal_text, meal_type=meal_type, dry_run=dry_run)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_meal_log(result))
+
+
+@app.command("daily-macros")
+def daily_macros_command(
+    date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+) -> None:
+    """Show macro totals for a given date from SQLite."""
+    try:
+        config = load_config(config_path)
+        summary = daily_macros(config.database_path, date_text=date)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(summary.model_dump_json(indent=2))
+        return
+    console.print(render_daily_macros(summary))
+
+
+@app.command("log-supplement")
+def log_supplement_command(
+    supplement_name: str,
+    amount: float | None = typer.Option(None, "--amount", help="Optional numeric amount."),
+    unit: str | None = typer.Option(None, "--unit", help="Optional unit like mg, g, caps, ml."),
+    note: str | None = typer.Option(None, "--note", help="Optional freeform note."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log supplement intake into SQLite."""
+    try:
+        config = load_config(config_path)
+        result = log_supplement(
+            config.database_path,
+            supplement_name,
+            amount=amount,
+            unit=unit,
+            note=note,
+            dry_run=dry_run,
+        )
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_supplement_log(result))
+
+
+@app.command("habit-checkin")
+def habit_checkin_command(
+    habit_name: str,
+    status: str = typer.Option("done", "--status", help="Habit status: done, partial, skipped."),
+    note: str | None = typer.Option(None, "--note", help="Optional freeform note."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log a habit check-in into SQLite."""
+    try:
+        config = load_config(config_path)
+        result = habit_checkin(
+            config.database_path,
+            habit_name,
+            status=status,
+            note=note,
+            dry_run=dry_run,
+        )
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_habit_checkin(result))
+
+
+@app.command("daily-habits")
+def daily_habits_command(
+    date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+) -> None:
+    """Show habit check-ins for a given date from SQLite."""
+    try:
+        config = load_config(config_path)
+        summary = daily_habits(config.database_path, date_text=date)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(summary.model_dump_json(indent=2))
+        return
+    console.print(render_daily_habits(summary))
+
+
+@app.command("log-body-metrics")
+def log_body_metrics_command(
+    weight_kg: float | None = typer.Option(None, "--weight-kg", help="Body weight in kilograms."),
+    body_fat_pct: float | None = typer.Option(None, "--body-fat-pct", help="Body fat percentage."),
+    waist_cm: float | None = typer.Option(None, "--waist-cm", help="Waist circumference in centimeters."),
+    note: str | None = typer.Option(None, "--note", help="Optional freeform note."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log body metrics into SQLite."""
+    try:
+        config = load_config(config_path)
+        result = log_body_metrics(
+            config.database_path,
+            weight_kg=weight_kg,
+            body_fat_pct=body_fat_pct,
+            waist_cm=waist_cm,
+            note=note,
+            dry_run=dry_run,
+        )
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_body_metrics_log(result))
+
+
+@app.command("body-metrics-status")
+def body_metrics_status_command(
+    date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+) -> None:
+    """Show the latest body metrics snapshot for a given date."""
+    try:
+        config = load_config(config_path)
+        summary = body_metrics_status(config.database_path, date_text=date)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(summary.model_dump_json(indent=2))
+        return
+    console.print(render_body_metrics_status(summary))
+
+
+@app.command("log-workout")
+def log_workout_command(
+    workout_text: str,
+    routine_name: str | None = typer.Option(None, "--routine-name", help="Optional routine name like push, pull, legs."),
+    duration_minutes: int | None = typer.Option(None, "--duration-minutes", help="Optional workout duration."),
+    note: str | None = typer.Option(None, "--note", help="Optional freeform note."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log a workout session using entries like 'Press banca 4x8@80kg; Dominadas 3x10@bodyweight'."""
+    try:
+        config = load_config(config_path)
+        result = log_workout(
+            config.database_path,
+            workout_text,
+            routine_name=routine_name,
+            duration_minutes=duration_minutes,
+            note=note,
+            dry_run=dry_run,
+        )
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_workout_log(result))
+
+
+@app.command("workout-status")
+def workout_status_command(
+    date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+) -> None:
+    """Show workout summary for a given date from SQLite."""
+    try:
+        config = load_config(config_path)
+        summary = workout_status(config.database_path, date_text=date)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(summary.model_dump_json(indent=2))
+        return
+    console.print(render_workout_status(summary))
+
+
+@app.command("log-expense")
+def log_expense_command(
+    amount: float,
+    category: str | None = typer.Option(None, "--category", help="Optional expense category."),
+    merchant: str | None = typer.Option(None, "--merchant", help="Optional merchant or payee."),
+    currency: str = typer.Option("MXN", "--currency", help="Currency code, defaults to MXN."),
+    note: str | None = typer.Option(None, "--note", help="Optional freeform note."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log an expense into SQLite."""
+    try:
+        config = load_config(config_path)
+        result = log_expense(
+            config.database_path,
+            amount,
+            category=category,
+            merchant=merchant,
+            currency=currency,
+            note=note,
+            dry_run=dry_run,
+        )
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_expense_log(result))
+
+
+@app.command("spending-summary")
+def spending_summary_command(
+    date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+    currency: str = typer.Option("MXN", "--currency", help="Currency code, defaults to MXN."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+) -> None:
+    """Show spending totals for a given date from SQLite."""
+    try:
+        config = load_config(config_path)
+        summary = spending_summary(config.database_path, date_text=date, currency=currency)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(summary.model_dump_json(indent=2))
+        return
+    console.print(render_spending_summary(summary))
+
+
+@app.command("daily-log")
+def daily_log_command(
+    text: str,
+    domain: str = typer.Option("general", "--domain", help="Logical domain label for the event."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to SQLite."),
+) -> None:
+    """Log a generic daily event into SQLite."""
+    try:
+        config = load_config(config_path)
+        result = log_daily_event(config.database_path, text, domain=domain, dry_run=dry_run)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    _print_operations(result.operations)
+    console.print(render_daily_log(result))
+
+
+@app.command("daily-summary")
+def daily_summary_command(
+    date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing to the vault."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+) -> None:
+    """Write the structured daily summary block from SQLite into the daily note in Obsidian."""
+    try:
+        vault = _load_vault(config_path, dry_run=dry_run)
+        result = write_daily_summary(vault, date_text=date)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(result.model_dump_json(indent=2))
+        return
+    _print_operations(result.operations)
+    console.print(render_daily_summary(result))
+
+
+@app.command("route-input")
+def route_input_command(
+    text: str,
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    use_llm: bool = typer.Option(False, "--use-llm", help="Use Ollama-assisted routing instead of only heuristics."),
+) -> None:
+    """Classify a natural-language input into the most likely command/domain."""
+    try:
+        if use_llm:
+            heuristic_result = route_input(text)
+            config = load_config(config_path)
+            try:
+                llm_result = llm_route_input(config.ai, text)
+                result = _pick_route_result(text, heuristic_result, llm_result)
+            except AIProviderError as error:
+                result = heuristic_result
+                result.reason = f"{result.reason} Heuristic fallback after Ollama error: {error}"
+        else:
+            result = route_input(text)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+    if as_json:
+        console.print_json(result.model_dump_json(indent=2))
+        return
+    console.print(render_route_decision(result))
+
+
+def _pick_route_result(text: str, heuristic_result, llm_result):
+    if heuristic_result.command == llm_result.command:
+        llm_result.reason = f"{llm_result.reason} Confirmed by heuristic routing."
+        llm_result.routing_source = "hybrid"
+        return llm_result
+
+    sparse_structured_override = (
+        heuristic_result.command == "daily-log"
+        and llm_result.command.startswith("log-")
+        and set(llm_result.extracted_fields.keys()) <= {"date"}
+    )
+    if sparse_structured_override:
+        heuristic_result.reason = (
+            f"{heuristic_result.reason} Kept heuristic result because the LLM override lacked enough structured fields."
+        )
+        heuristic_result.routing_source = "hybrid"
+        return heuristic_result
+
+    if llm_result.confidence >= heuristic_result.confidence + 0.15:
+        llm_result.reason = f"{llm_result.reason} Selected over heuristic routing."
+        llm_result.routing_source = "hybrid"
+        return llm_result
+
+    heuristic_result.reason = f"{heuristic_result.reason} Kept heuristic result after comparing with LLM routing."
+    heuristic_result.routing_source = "hybrid"
+    return heuristic_result
+
+
+@app.command("handle-input")
+def handle_input_command(
+    text: str,
+    config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without side effects."),
+    as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    use_llm: bool | None = typer.Option(None, "--use-llm/--no-use-llm", help="Override config and allow Ollama-assisted routing."),
+) -> None:
+    """Route a natural-language input and execute the safest matching action when possible."""
+    try:
+        config = load_config(config_path)
+        result = handle_input(config, text, dry_run=dry_run, use_llm=use_llm)
+    except BrainOpsError as error:
+        _handle_error(error)
+        return
+
+    if as_json:
+        console.print_json(result.model_dump_json(indent=2))
+        return
+    if result.operations:
+        _print_operations(result.operations)
+    console.print(render_handle_input(result))
 
 
 @app.command("create-note")

@@ -17,3 +17,6 @@ ollama_host: "http://127.0.0.1:11434"
 orchestrator: "openclaw"
 primary_model: "qwen2.5-coder:latest"
 reasoning_model: "llama3.1:8b"
+parser_model: "llama3.1:8b"
+enable_llm_routing: false
+ollama_timeout_seconds: 60

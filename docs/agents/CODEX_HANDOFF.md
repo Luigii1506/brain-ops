@@ -49,6 +49,21 @@ This repository supports a local-first Jarvis-style system, not just a markdown 
 - human-readable outputs
 - safe defaults
 
+## First read on the Mac mini
+
+If Codex is running on the Mac mini and needs environment context, read these first:
+- [docs/setup/MAC_MINI_SETUP.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/setup/MAC_MINI_SETUP.md)
+- [docs/MASTER_PLAN.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/MASTER_PLAN.md)
+- [docs/operations/OPENCLAW_INTEGRATION.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/operations/OPENCLAW_INTEGRATION.md)
+
+Do not assume:
+- the vault path
+- the config path
+- the installed Ollama model
+- the OpenClaw plugin state
+
+Verify those first on the target machine.
+
 ## Commands that matter most now
 
 - `brain info`

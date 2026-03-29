@@ -1,0 +1,23 @@
+{
+  "id": "brain-ops",
+  "name": "brain-ops",
+  "description": "Expose brain-ops as deterministic OpenClaw tools for Telegram-first Jarvis workflows.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "brainCommand": {
+        "type": "string",
+        "description": "CLI executable used to run brain-ops."
+      },
+      "workingDirectory": {
+        "type": "string",
+        "description": "Repository root or working directory where brain-ops should run."
+      },
+      "configPath": {
+        "type": "string",
+        "description": "Optional path to the vault YAML config file."
+      }
+    }
+  }
+}

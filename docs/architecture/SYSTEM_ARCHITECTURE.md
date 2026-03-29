@@ -6,6 +6,9 @@
 User
   |
   v
+Telegram / chat channel
+  |
+  v
 OpenClaw chat / automations
   |
   v
@@ -153,6 +156,7 @@ Examples:
 - `templates`
 - `services/`
 - `storage/db.py`
+- `docs/operations/OPENCLAW_INTEGRATION.md`
 - later: `domains/nutrition`, `domains/fitness`, `domains/expenses`
 
 ## Safety expectations

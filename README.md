@@ -94,6 +94,22 @@ It is a local personal operating system composed of:
 - `brain info`
 - `brain init`
 - `brain init-db`
+- `brain log-meal`
+- `brain daily-macros`
+- `brain log-supplement`
+- `brain habit-checkin`
+- `brain daily-habits`
+- `brain log-body-metrics`
+- `brain body-metrics-status`
+- `brain log-workout`
+- `brain workout-status`
+- `brain log-expense`
+- `brain spending-summary`
+- `brain daily-log`
+- `brain daily-summary`
+- `brain route-input`
+- `brain handle-input`
+- `brain openclaw-manifest`
 - `brain create-note`
 - `brain create-project`
 - `brain process-inbox`
@@ -132,7 +148,9 @@ It is a local personal operating system composed of:
 ## Where to start
 
 Read:
+- [docs/setup/MAC_MINI_SETUP.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/setup/MAC_MINI_SETUP.md)
 - [docs/MASTER_PLAN.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/MASTER_PLAN.md)
 - [docs/PRODUCT_VISION.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/PRODUCT_VISION.md)
 - [docs/architecture/SYSTEM_ARCHITECTURE.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/architecture/SYSTEM_ARCHITECTURE.md)
 - [docs/operations/MVP_SCOPE.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/operations/MVP_SCOPE.md)
+- [docs/operations/OPENCLAW_INTEGRATION.md](/Users/luisencinas/Documents/GitHub/brain-ops/docs/operations/OPENCLAW_INTEGRATION.md)

@@ -15,5 +15,8 @@ database_path: "/Users/luisencinas/Documents/GitHub/brain-ops/data/brain_ops.db"
 ai_provider: "ollama"
 ollama_host: "http://127.0.0.1:11434"
 orchestrator: "openclaw"
-primary_model: "qwen2.5-coder:latest"
-reasoning_model: "llama3.1:8b"
+primary_model: "qwen2.5-coder:7b"
+reasoning_model: "qwen2.5-coder:7b"
+parser_model: "qwen2.5-coder:7b"
+enable_llm_routing: true
+ollama_timeout_seconds: 60

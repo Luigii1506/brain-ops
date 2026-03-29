@@ -86,6 +86,27 @@ SCHEMA_STATEMENTS = [
         source TEXT DEFAULT 'chat'
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS supplements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        logged_at TEXT NOT NULL,
+        supplement_name TEXT NOT NULL,
+        amount REAL,
+        unit TEXT,
+        note TEXT,
+        source TEXT DEFAULT 'chat'
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS habits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        checked_at TEXT NOT NULL,
+        habit_name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'done',
+        note TEXT,
+        source TEXT DEFAULT 'chat'
+    )
+    """,
 ]
 
 

@@ -161,3 +161,172 @@ class EnrichNoteResult(BaseModel):
     operations: list[OperationRecord] = Field(default_factory=list)
     steps: list[str] = Field(default_factory=list)
     reason: str
+
+
+class MealItemInput(BaseModel):
+    food_name: str
+    grams: float | None = None
+    quantity: float | None = None
+    calories: float | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    note: str | None = None
+
+
+class MealLogResult(BaseModel):
+    logged_at: datetime
+    meal_type: str | None = None
+    items: list[MealItemInput] = Field(default_factory=list)
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class DailyMacrosSummary(BaseModel):
+    date: str
+    meals_logged: int = 0
+    items_logged: int = 0
+    calories: float = 0
+    protein_g: float = 0
+    carbs_g: float = 0
+    fat_g: float = 0
+    database_path: Path
+
+
+class SupplementLogResult(BaseModel):
+    logged_at: datetime
+    supplement_name: str
+    amount: float | None = None
+    unit: str | None = None
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class HabitCheckinResult(BaseModel):
+    checked_at: datetime
+    habit_name: str
+    status: str
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class DailyHabitsSummary(BaseModel):
+    date: str
+    total_checkins: int = 0
+    by_status: dict[str, int] = Field(default_factory=dict)
+    habits: list[str] = Field(default_factory=list)
+    database_path: Path
+
+
+class BodyMetricsLogResult(BaseModel):
+    logged_at: datetime
+    weight_kg: float | None = None
+    body_fat_pct: float | None = None
+    waist_cm: float | None = None
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class BodyMetricsSummary(BaseModel):
+    date: str
+    entries_logged: int = 0
+    latest_logged_at: str | None = None
+    latest_weight_kg: float | None = None
+    latest_body_fat_pct: float | None = None
+    latest_waist_cm: float | None = None
+    database_path: Path
+
+
+class WorkoutSetInput(BaseModel):
+    exercise_name: str
+    sets: int = 1
+    reps: int | None = None
+    weight_kg: float | None = None
+    note: str | None = None
+
+
+class WorkoutLogResult(BaseModel):
+    logged_at: datetime
+    routine_name: str | None = None
+    exercises: list[WorkoutSetInput] = Field(default_factory=list)
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class WorkoutStatusSummary(BaseModel):
+    date: str
+    workouts_logged: int = 0
+    total_sets: int = 0
+    unique_exercises: list[str] = Field(default_factory=list)
+    database_path: Path
+
+
+class ExpenseLogResult(BaseModel):
+    logged_at: datetime
+    amount: float
+    currency: str = "MXN"
+    category: str | None = None
+    merchant: str | None = None
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class SpendingSummary(BaseModel):
+    date: str
+    total_amount: float = 0
+    transaction_count: int = 0
+    by_category: dict[str, float] = Field(default_factory=dict)
+    currency: str = "MXN"
+    database_path: Path
+
+
+class DailyLogResult(BaseModel):
+    logged_at: datetime
+    domain: str
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class RouteDecisionResult(BaseModel):
+    input_text: str
+    domain: str
+    command: str
+    confidence: float
+    reason: str
+    routing_source: str = "heuristic"
+    extracted_fields: dict[str, object] = Field(default_factory=dict)
+
+
+class HandleInputSubResult(BaseModel):
+    input_text: str
+    executed: bool = False
+    executed_command: str | None = None
+    target_domain: str | None = None
+    routing_source: str | None = None
+    extracted_fields: dict[str, object] = Field(default_factory=dict)
+    assistant_message: str | None = None
+    reason: str
+
+
+class HandleInputResult(BaseModel):
+    input_text: str
+    decision: RouteDecisionResult
+    executed: bool = False
+    operations: list[OperationRecord] = Field(default_factory=list)
+    executed_command: str | None = None
+    target_domain: str | None = None
+    routing_source: str | None = None
+    extracted_fields: dict[str, object] = Field(default_factory=dict)
+    needs_follow_up: bool = False
+    follow_up: str | None = None
+    assistant_message: str | None = None
+    sub_results: list[HandleInputSubResult] = Field(default_factory=list)
+    reason: str
+
+
+class DailySummaryResult(BaseModel):
+    date: str
+    path: Path
+    operations: list[OperationRecord] = Field(default_factory=list)
+    sections_written: list[str] = Field(default_factory=list)
+    reason: str
