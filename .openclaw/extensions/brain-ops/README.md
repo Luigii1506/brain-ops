@@ -8,6 +8,12 @@ It exposes `brain-ops` as OpenClaw tools so the final interaction path can be:
 
 ```text
 Telegram -> OpenClaw -> brain-ops -> Obsidian + SQLite
+
+The plugin passes a stable session id to `brain-ops` so it can keep short-lived follow-up context across messages such as:
+
+- `cuál es mi dieta activa`
+- `sí`
+- `objetivos`
 ```
 
 ## Current status

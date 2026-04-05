@@ -1,6 +1,7 @@
 """CLI adapter layer."""
 
 from .app import create_cli_app
+from .automation import present_event_log_alert_delivery_command
 from .commands import register_cli_commands
 from .commands_core import register_core_commands
 from .commands_notes import register_note_and_knowledge_commands
@@ -20,10 +21,17 @@ from .knowledge import (
 )
 from .messages import capture_result_lines, improve_result_lines, research_result_lines
 from .monitoring import (
+    build_event_log_alert_check_table,
+    build_event_log_alert_message_table,
+    build_event_log_alert_presets_table,
     build_event_log_failures_table,
     build_event_log_hotspots_table,
     build_event_log_summary_table,
     build_event_log_tail_table,
+    present_event_log_alert_check_command,
+    present_event_log_alert_message_command,
+    present_event_log_alert_presets_command,
+    present_event_log_alerts_command,
     present_event_log_failures_command,
     present_event_log_hotspots_command,
     present_event_log_report_command,
@@ -119,13 +127,16 @@ from .presenters import (
     print_rendered_with_single_operation,
 )
 from .json_output import print_model_json, print_optional_model_json
-from .runtime import load_database_path, load_event_log_path, load_event_sink, load_runtime_config, load_validated_vault
+from .runtime import load_alert_output_dir, load_database_path, load_event_log_path, load_event_sink, load_runtime_config, load_validated_vault
 from .setup import initialize_cli_config
 from .system import present_info_command, present_init_command, present_init_db_command
 from .tables import build_info_table, build_operations_table
 
 __all__ = [
     "build_info_table",
+    "build_event_log_alert_check_table",
+    "build_event_log_alert_message_table",
+    "build_event_log_alert_presets_table",
     "build_event_log_failures_table",
     "build_event_log_hotspots_table",
     "build_event_log_summary_table",
@@ -137,6 +148,7 @@ __all__ = [
     "exit_with_brain_ops_error",
     "improve_result_lines",
     "register_cli_commands",
+    "present_event_log_alert_delivery_command",
     "present_apply_link_suggestions_command",
     "present_audit_vault_command",
     "present_capture_command",
@@ -153,6 +165,10 @@ __all__ = [
     "present_daily_status_command",
     "present_diet_status_command",
     "present_enrich_note_command",
+    "present_event_log_alert_check_command",
+    "present_event_log_alert_message_command",
+    "present_event_log_alert_presets_command",
+    "present_event_log_alerts_command",
     "present_event_log_failures_command",
     "present_event_log_hotspots_command",
     "present_event_log_report_command",
@@ -240,6 +256,7 @@ __all__ = [
     "print_rendered_with_operations",
     "print_rendered_with_single_operation",
     "load_database_path",
+    "load_alert_output_dir",
     "load_event_log_path",
     "load_event_sink",
     "load_runtime_config",

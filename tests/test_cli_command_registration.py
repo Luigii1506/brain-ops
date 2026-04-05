@@ -53,6 +53,11 @@ class CliCommandRegistrationTestCase(TestCase):
                 "event-log-report",
                 "event-log-hotspots",
                 "event-log-failures",
+                "event-log-alerts",
+                "event-log-alert-check",
+                "event-log-alert-message",
+                "event-log-alert-deliver",
+                "event-log-alert-presets",
                 "daily-summary",
                 "route-input",
                 "handle-input",
@@ -128,6 +133,8 @@ class CliCommandRegistrationTestCase(TestCase):
         self.assertIn("event-log-report", names)
         self.assertIn("event-log-hotspots", names)
         self.assertIn("event-log-failures", names)
+        self.assertIn("event-log-alerts", names)
+        self.assertIn("event-log-alert-check", names)
         self.assertIn("route-input", names)
         self.assertIn("daily-macros", names)
         self.assertIn("capture", names)
@@ -145,6 +152,8 @@ class CliCommandRegistrationTestCase(TestCase):
         self.assertIn("event-log-report", names)
         self.assertIn("event-log-hotspots", names)
         self.assertIn("event-log-failures", names)
+        self.assertIn("event-log-alerts", names)
+        self.assertIn("event-log-alert-check", names)
         self.assertIn("route-input", names)
         self.assertIn("daily-macros", names)
         self.assertIn("process-inbox", names)
@@ -413,6 +422,258 @@ class CliCommandRegistrationTestCase(TestCase):
                 "workflow": "capture",
                 "since": "2026-04-04",
                 "until": "2026-04-05",
+                "as_json": True,
+            },
+        )
+
+    def test_event_log_alerts_command_delegates_to_presenter(self) -> None:
+        app = typer.Typer()
+        with patch("brain_ops.interfaces.cli.commands_core.present_event_log_alerts_command") as presenter_mock:
+            register_core_commands(
+                app,
+                self.console,
+                self.handle_error,
+                version="1.0.0",
+                print_operations=Mock(),
+            )
+            result = self.runner.invoke(
+                app,
+                [
+                    "event-log-alerts",
+                    "--path",
+                    "/tmp/events.jsonl",
+                    "--top",
+                    "3",
+                    "--limit",
+                    "2",
+                    "--source",
+                    "application.notes",
+                    "--workflow",
+                    "capture",
+                    "--since",
+                    "2026-04-04",
+                    "--until",
+                    "2026-04-05",
+                    "--json",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        presenter_mock.assert_called_once()
+        self.assertEqual(
+            presenter_mock.call_args.kwargs,
+            {
+                "event_log_path": Path("/tmp/events.jsonl"),
+                "top": 3,
+                "limit": 2,
+                "source": "application.notes",
+                "workflow": "capture",
+                "since": "2026-04-04",
+                "until": "2026-04-05",
+                "as_json": True,
+            },
+        )
+
+    def test_event_log_alert_check_command_delegates_to_presenter(self) -> None:
+        app = typer.Typer()
+        with patch("brain_ops.interfaces.cli.commands_core.present_event_log_alert_check_command") as presenter_mock:
+            register_core_commands(
+                app,
+                self.console,
+                self.handle_error,
+                version="1.0.0",
+                print_operations=Mock(),
+            )
+            result = self.runner.invoke(
+                app,
+                [
+                    "event-log-alert-check",
+                    "--path",
+                    "/tmp/events.jsonl",
+                    "--top",
+                    "3",
+                    "--limit",
+                    "2",
+                    "--source",
+                    "application.notes",
+                    "--workflow",
+                    "capture",
+                    "--since",
+                    "2026-04-04",
+                    "--until",
+                    "2026-04-05",
+                    "--preset",
+                    "strict",
+                    "--max-total-events",
+                    "0",
+                    "--max-latest-day-events",
+                    "1",
+                    "--fail-on-alerts",
+                    "--json",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        presenter_mock.assert_called_once()
+        self.assertEqual(
+            presenter_mock.call_args.kwargs,
+            {
+                "event_log_path": Path("/tmp/events.jsonl"),
+                "top": 3,
+                "limit": 2,
+                "source": "application.notes",
+                "workflow": "capture",
+                "since": "2026-04-04",
+                "until": "2026-04-05",
+                "preset": "strict",
+                "max_total_events": 0,
+                "max_latest_day_events": 1,
+                "fail_on_alerts": True,
+                "as_json": True,
+            },
+        )
+
+    def test_event_log_alert_presets_command_delegates_to_presenter(self) -> None:
+        app = typer.Typer()
+        with patch("brain_ops.interfaces.cli.commands_core.present_event_log_alert_presets_command") as presenter_mock:
+            register_core_commands(
+                app,
+                self.console,
+                self.handle_error,
+                version="1.0.0",
+                print_operations=Mock(),
+            )
+            result = self.runner.invoke(app, ["event-log-alert-presets", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        presenter_mock.assert_called_once()
+        self.assertEqual(
+            presenter_mock.call_args.kwargs,
+            {
+                "as_json": True,
+            },
+        )
+
+    def test_event_log_alert_message_command_delegates_to_presenter(self) -> None:
+        app = typer.Typer()
+        with patch("brain_ops.interfaces.cli.commands_core.present_event_log_alert_message_command") as presenter_mock:
+            register_core_commands(
+                app,
+                self.console,
+                self.handle_error,
+                version="1.0.0",
+                print_operations=Mock(),
+            )
+            result = self.runner.invoke(
+                app,
+                [
+                    "event-log-alert-message",
+                    "--path",
+                    "/tmp/events.jsonl",
+                    "--top",
+                    "3",
+                    "--limit",
+                    "2",
+                    "--source",
+                    "application.notes",
+                    "--workflow",
+                    "capture",
+                    "--since",
+                    "2026-04-04",
+                    "--until",
+                    "2026-04-05",
+                    "--preset",
+                    "strict",
+                    "--max-total-events",
+                    "0",
+                    "--max-latest-day-events",
+                    "1",
+                    "--json",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        presenter_mock.assert_called_once()
+        self.assertEqual(
+            presenter_mock.call_args.kwargs,
+            {
+                "event_log_path": Path("/tmp/events.jsonl"),
+                "top": 3,
+                "limit": 2,
+                "source": "application.notes",
+                "workflow": "capture",
+                "since": "2026-04-04",
+                "until": "2026-04-05",
+                "preset": "strict",
+                "max_total_events": 0,
+                "max_latest_day_events": 1,
+                "as_json": True,
+            },
+        )
+
+    def test_event_log_alert_deliver_command_delegates_to_presenter(self) -> None:
+        app = typer.Typer()
+        with patch("brain_ops.interfaces.cli.commands_core.present_event_log_alert_delivery_command") as presenter_mock:
+            register_core_commands(
+                app,
+                self.console,
+                self.handle_error,
+                version="1.0.0",
+                print_operations=Mock(),
+            )
+            result = self.runner.invoke(
+                app,
+                [
+                    "event-log-alert-deliver",
+                    "--format",
+                    "json",
+                    "--delivery-mode",
+                    "latest",
+                    "--target",
+                    "file",
+                    "--path",
+                    "/tmp/events.jsonl",
+                    "--top",
+                    "3",
+                    "--limit",
+                    "2",
+                    "--source",
+                    "application.notes",
+                    "--workflow",
+                    "capture",
+                    "--since",
+                    "2026-04-04",
+                    "--until",
+                    "2026-04-05",
+                    "--preset",
+                    "strict",
+                    "--max-total-events",
+                    "0",
+                    "--max-latest-day-events",
+                    "1",
+                    "--json",
+                ],
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        presenter_mock.assert_called_once()
+        self.assertEqual(
+            presenter_mock.call_args.kwargs,
+            {
+                "event_log_path": Path("/tmp/events.jsonl"),
+                "top": 3,
+                "limit": 2,
+                "source": "application.notes",
+                "workflow": "capture",
+                "since": "2026-04-04",
+                "until": "2026-04-05",
+                "preset": "strict",
+                "max_total_events": 0,
+                "max_latest_day_events": 1,
+                "output_path": None,
+                "output_format": "json",
+                "delivery_mode": "latest",
+                "target": "file",
                 "as_json": True,
             },
         )

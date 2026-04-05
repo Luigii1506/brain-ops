@@ -1,14 +1,37 @@
 """Application-level workflow orchestration."""
 
+from .automation import (
+    AlertDelivery,
+    AlertDeliveryPolicy,
+    build_alert_delivery_policy,
+    execute_event_log_alert_delivery_workflow,
+    render_alert_message_text,
+    resolve_alert_delivery_output_path,
+    write_alert_delivery,
+)
+from .alerts import (
+    AlertMessage,
+    build_event_log_alert_message,
+    execute_event_log_alert_message_workflow,
+)
 from .events import publish_result_events, result_operations
 from .conversation import (
     execute_handle_input_workflow,
     execute_route_input_workflow,
 )
 from .monitoring import (
+    EVENT_LOG_ALERT_POLICY_PRESETS,
+    EventLogAlertCheck,
+    EventLogAlertPolicy,
+    EventLogAlerts,
     EventLogFailures,
     EventLogHotspots,
     EventLogReport,
+    build_event_log_alert_policy,
+    evaluate_event_log_alerts,
+    execute_event_log_alert_presets_workflow,
+    execute_event_log_alert_check_workflow,
+    execute_event_log_alerts_workflow,
     execute_event_log_failures_workflow,
     execute_event_log_hotspots_workflow,
     execute_event_log_report_workflow,
@@ -67,7 +90,17 @@ from .system import (
 )
 
 __all__ = [
+    "AlertDelivery",
+    "AlertDeliveryPolicy",
+    "AlertMessage",
+    "build_event_log_alert_message",
+    "build_alert_delivery_policy",
+    "execute_event_log_alert_delivery_workflow",
     "execute_handle_input_workflow",
+    "execute_event_log_alert_message_workflow",
+    "execute_event_log_alert_presets_workflow",
+    "execute_event_log_alert_check_workflow",
+    "execute_event_log_alerts_workflow",
     "execute_event_log_failures_workflow",
     "execute_event_log_hotspots_workflow",
     "execute_event_log_report_workflow",
@@ -118,7 +151,16 @@ __all__ = [
     "execute_workout_status_workflow",
     "publish_result_events",
     "result_operations",
+    "EventLogAlertCheck",
+    "EventLogAlertPolicy",
+    "EventLogAlerts",
+    "EVENT_LOG_ALERT_POLICY_PRESETS",
     "EventLogFailures",
     "EventLogHotspots",
     "EventLogReport",
+    "build_event_log_alert_policy",
+    "evaluate_event_log_alerts",
+    "render_alert_message_text",
+    "resolve_alert_delivery_output_path",
+    "write_alert_delivery",
 ]

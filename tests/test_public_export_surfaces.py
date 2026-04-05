@@ -9,6 +9,8 @@ from brain_ops.storage import obsidian, sqlite
 
 class PublicExportSurfacesTestCase(TestCase):
     def test_application_exports_reuse_workflow_modules(self) -> None:
+        from brain_ops.application import alerts as app_alerts
+        from brain_ops.application import automation as app_automation
         from brain_ops.application import events as app_events
         from brain_ops.application import conversation as app_conversation
         from brain_ops.application import knowledge as app_knowledge
@@ -19,7 +21,17 @@ class PublicExportSurfacesTestCase(TestCase):
 
         exported = set(application.__all__)
 
+        self.assertIs(application.AlertDelivery, app_automation.AlertDelivery)
+        self.assertIs(application.AlertMessage, app_alerts.AlertMessage)
+        self.assertIs(application.build_event_log_alert_message, app_alerts.build_event_log_alert_message)
+        self.assertIs(application.execute_event_log_alert_delivery_workflow, app_automation.execute_event_log_alert_delivery_workflow)
         self.assertIs(application.execute_route_input_workflow, app_conversation.execute_route_input_workflow)
+        self.assertIs(application.EVENT_LOG_ALERT_POLICY_PRESETS, app_monitoring.EVENT_LOG_ALERT_POLICY_PRESETS)
+        self.assertIs(application.execute_event_log_alert_message_workflow, app_alerts.execute_event_log_alert_message_workflow)
+        self.assertIs(application.execute_event_log_alert_presets_workflow, app_monitoring.execute_event_log_alert_presets_workflow)
+        self.assertIs(application.execute_event_log_alert_check_workflow, app_monitoring.execute_event_log_alert_check_workflow)
+        self.assertIs(application.execute_event_log_alerts_workflow, app_monitoring.execute_event_log_alerts_workflow)
+        self.assertIs(application.build_event_log_alert_policy, app_monitoring.build_event_log_alert_policy)
         self.assertIs(application.execute_event_log_failures_workflow, app_monitoring.execute_event_log_failures_workflow)
         self.assertIs(application.execute_event_log_hotspots_workflow, app_monitoring.execute_event_log_hotspots_workflow)
         self.assertIs(application.execute_event_log_report_workflow, app_monitoring.execute_event_log_report_workflow)
@@ -32,7 +44,17 @@ class PublicExportSurfacesTestCase(TestCase):
         self.assertIs(application.publish_result_events, app_events.publish_result_events)
         self.assertIs(application.result_operations, app_events.result_operations)
 
+        self.assertIn("AlertDelivery", exported)
+        self.assertIn("AlertMessage", exported)
+        self.assertIn("build_event_log_alert_message", exported)
+        self.assertIn("execute_event_log_alert_delivery_workflow", exported)
         self.assertIn("execute_route_input_workflow", exported)
+        self.assertIn("EVENT_LOG_ALERT_POLICY_PRESETS", exported)
+        self.assertIn("execute_event_log_alert_message_workflow", exported)
+        self.assertIn("execute_event_log_alert_presets_workflow", exported)
+        self.assertIn("execute_event_log_alert_check_workflow", exported)
+        self.assertIn("execute_event_log_alerts_workflow", exported)
+        self.assertIn("build_event_log_alert_policy", exported)
         self.assertIn("execute_event_log_failures_workflow", exported)
         self.assertIn("execute_event_log_hotspots_workflow", exported)
         self.assertIn("execute_event_log_report_workflow", exported)
@@ -46,6 +68,7 @@ class PublicExportSurfacesTestCase(TestCase):
         self.assertIn("result_operations", exported)
 
     def test_cli_exports_reuse_specialized_adapter_modules(self) -> None:
+        from brain_ops.interfaces.cli import automation as cli_automation
         from brain_ops.interfaces.cli import app as cli_app
         from brain_ops.interfaces.cli import commands as cli_commands
         from brain_ops.interfaces.cli import conversation as cli_conversation
@@ -59,8 +82,13 @@ class PublicExportSurfacesTestCase(TestCase):
         exported = set(cli.__all__)
 
         self.assertIs(cli.create_cli_app, cli_app.create_cli_app)
+        self.assertIs(cli.present_event_log_alert_delivery_command, cli_automation.present_event_log_alert_delivery_command)
         self.assertIs(cli.register_cli_commands, cli_commands.register_cli_commands)
         self.assertIs(cli.run_route_input_command, cli_conversation.run_route_input_command)
+        self.assertIs(cli.present_event_log_alert_message_command, cli_monitoring.present_event_log_alert_message_command)
+        self.assertIs(cli.present_event_log_alert_presets_command, cli_monitoring.present_event_log_alert_presets_command)
+        self.assertIs(cli.present_event_log_alert_check_command, cli_monitoring.present_event_log_alert_check_command)
+        self.assertIs(cli.present_event_log_alerts_command, cli_monitoring.present_event_log_alerts_command)
         self.assertIs(cli.present_event_log_failures_command, cli_monitoring.present_event_log_failures_command)
         self.assertIs(cli.present_event_log_hotspots_command, cli_monitoring.present_event_log_hotspots_command)
         self.assertIs(cli.present_event_log_report_command, cli_monitoring.present_event_log_report_command)
@@ -71,10 +99,16 @@ class PublicExportSurfacesTestCase(TestCase):
         self.assertIs(cli.present_daily_status_command, cli_personal.present_daily_status_command)
         self.assertIs(cli.present_info_command, cli_system.present_info_command)
         self.assertIs(cli.load_event_log_path, cli_runtime.load_event_log_path)
+        self.assertIs(cli.load_alert_output_dir, cli_runtime.load_alert_output_dir)
         self.assertIs(cli.load_event_sink, cli_runtime.load_event_sink)
 
+        self.assertIn("present_event_log_alert_delivery_command", exported)
         self.assertIn("register_cli_commands", exported)
         self.assertIn("run_route_input_command", exported)
+        self.assertIn("present_event_log_alert_message_command", exported)
+        self.assertIn("present_event_log_alert_presets_command", exported)
+        self.assertIn("present_event_log_alert_check_command", exported)
+        self.assertIn("present_event_log_alerts_command", exported)
         self.assertIn("present_event_log_failures_command", exported)
         self.assertIn("present_event_log_hotspots_command", exported)
         self.assertIn("present_event_log_report_command", exported)
@@ -84,6 +118,7 @@ class PublicExportSurfacesTestCase(TestCase):
         self.assertIn("present_capture_command", exported)
         self.assertIn("present_daily_status_command", exported)
         self.assertIn("present_info_command", exported)
+        self.assertIn("load_alert_output_dir", exported)
         self.assertIn("load_event_log_path", exported)
         self.assertIn("load_event_sink", exported)
 

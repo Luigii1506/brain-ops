@@ -8,10 +8,23 @@ from unittest.mock import patch
 
 from brain_ops.core.events import JsonlFileEventSink
 from brain_ops.errors import BrainOpsError
-from brain_ops.interfaces.cli.runtime import load_event_log_path, load_event_sink
+from brain_ops.interfaces.cli.runtime import load_alert_output_dir, load_event_log_path, load_event_sink
 
 
 class CliRuntimeTestCase(TestCase):
+    def test_load_alert_output_dir_prefers_explicit_output_parent(self) -> None:
+        resolved = load_alert_output_dir(Path("/tmp/alerts/custom.json"), event_log_path=Path("/tmp/events.jsonl"))
+        self.assertEqual(resolved, Path("/tmp/alerts"))
+
+    def test_load_alert_output_dir_reads_env_or_falls_back_to_event_log_sibling(self) -> None:
+        with patch.dict(os.environ, {"BRAIN_OPS_ALERT_OUTPUT_DIR": "/tmp/alert-artifacts"}, clear=True):
+            resolved = load_alert_output_dir(None, event_log_path=Path("/tmp/events.jsonl"))
+            self.assertEqual(resolved, Path("/tmp/alert-artifacts"))
+
+        with patch.dict(os.environ, {}, clear=True):
+            resolved = load_alert_output_dir(None, event_log_path=Path("/tmp/events.jsonl"))
+            self.assertEqual(resolved, Path("/tmp/alerts"))
+
     def test_load_event_sink_returns_none_when_env_is_missing(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(load_event_sink())

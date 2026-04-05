@@ -44,4 +44,13 @@ def load_event_log_path(event_log_path: Path | None) -> Path:
     return expanded_path
 
 
-__all__ = ["load_database_path", "load_event_log_path", "load_event_sink", "load_runtime_config", "load_validated_vault"]
+def load_alert_output_dir(output_path: Path | None, *, event_log_path: Path) -> Path:
+    if output_path is not None:
+        return output_path.expanduser().parent
+    configured_dir = os.getenv("BRAIN_OPS_ALERT_OUTPUT_DIR")
+    if configured_dir:
+        return Path(configured_dir).expanduser()
+    return event_log_path.parent / "alerts"
+
+
+__all__ = ["load_alert_output_dir", "load_database_path", "load_event_log_path", "load_event_sink", "load_runtime_config", "load_validated_vault"]

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { definePluginEntry } from "openclaw/plugin-sdk/core";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,7 +14,7 @@ type BrainOpsConfig = {
 type ToolSpec = {
   name: string;
   description: string;
-  inputSchema: Record<string, unknown>;
+  parameters: Record<string, unknown>;
   buildArgs: (input: Record<string, unknown>, cfg: BrainOpsConfig) => string[];
 };
 
@@ -27,17 +27,19 @@ function buildSharedArgs(cfg: BrainOpsConfig): string[] {
   if (cfg.configPath) {
     args.push("--config", cfg.configPath);
   }
+  args.push("--session-id", "telegram-main");
   return args;
 }
 
 async function runBrainOps(cfg: BrainOpsConfig, args: string[]) {
-  const command = cfg.brainCommand || "brain";
+  const command = cfg.brainCommand || "/opt/anaconda3/bin/brain";
   const cwd = cfg.workingDirectory || process.cwd();
   const { stdout, stderr } = await execFileAsync(command, args, {
     cwd,
     env: {
       ...process.env,
       PYTHONPATH: process.env.PYTHONPATH || "src",
+      PATH: ["/opt/anaconda3/bin", process.env.PATH || ""].filter(Boolean).join(":"),
     },
   });
 
@@ -53,11 +55,22 @@ async function runBrainOps(cfg: BrainOpsConfig, args: string[]) {
   };
 }
 
+function asToolContent(result: unknown) {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(result, null, 2),
+      },
+    ],
+  };
+}
+
 const tools: ToolSpec[] = [
   {
     name: "brain_ops_handle_input",
-    description: "Route and execute safe brain-ops actions from natural language.",
-    inputSchema: {
+    description: "MANDATORY first tool for personal operational requests. Use this before answering for daily status, meals, diet, macros, supplements, habits, workouts, expenses, body metrics, goals, reflections, and queries like 'como voy hoy' or 'que me falta hoy'.",
+    parameters: {
       type: "object",
       additionalProperties: false,
       required: ["text"],
@@ -76,96 +89,36 @@ const tools: ToolSpec[] = [
       return args;
     },
   },
-  {
-    name: "brain_ops_route_input",
-    description: "Classify a natural-language message without side effects.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["text"],
-      properties: {
-        text: { type: "string", description: "Natural-language user message." },
-        useLlm: { type: "boolean", description: "Allow Ollama-assisted routing." },
-      },
-    },
-    buildArgs: (input, cfg) => {
-      const text = asString(input.text) || "";
-      const args = ["route-input", text, "--json", ...buildSharedArgs(cfg)];
-      if (input.useLlm === true) args.push("--use-llm");
-      return args;
-    },
-  },
-  {
-    name: "brain_ops_daily_summary",
-    description: "Write the structured daily summary into the Obsidian daily note.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        date: { type: "string", description: "Date in YYYY-MM-DD format." },
-        dryRun: { type: "boolean", description: "Preview without writing to the vault." },
-      },
-    },
-    buildArgs: (input, cfg) => {
-      const args = ["daily-summary", "--json", ...buildSharedArgs(cfg)];
-      if (asString(input.date)) args.push("--date", String(input.date));
-      if (input.dryRun) args.push("--dry-run");
-      return args;
-    },
-  },
-  {
-    name: "brain_ops_daily_macros",
-    description: "Read nutrition totals from SQLite.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        date: { type: "string", description: "Date in YYYY-MM-DD format." },
-      },
-    },
-    buildArgs: (input, cfg) => {
-      const args = ["daily-macros", ...buildSharedArgs(cfg)];
-      if (asString(input.date)) args.push("--date", String(input.date));
-      return args;
-    },
-  },
-  {
-    name: "brain_ops_spending_summary",
-    description: "Read expense totals from SQLite.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        date: { type: "string", description: "Date in YYYY-MM-DD format." },
-      },
-    },
-    buildArgs: (input, cfg) => {
-      const args = ["spending-summary", ...buildSharedArgs(cfg)];
-      if (asString(input.date)) args.push("--date", String(input.date));
-      return args;
-    },
-  },
 ];
 
-export default definePluginEntry({
+const plugin = {
   id: "brain-ops",
   name: "brain-ops",
-  register(api: { config?: BrainOpsConfig; registerTool?: (spec: Record<string, unknown>) => void }) {
-    const cfg = api.config || {};
-
-    if (!api.registerTool) {
-      throw new Error("OpenClaw registerTool API is unavailable.");
-    }
+  description: "Expose brain-ops as deterministic OpenClaw tools for Telegram-first Jarvis workflows.",
+  configSchema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      brainCommand: { type: "string", description: "CLI executable used to run brain-ops." },
+      workingDirectory: { type: "string", description: "Repository root or working directory where brain-ops should run." },
+      configPath: { type: "string", description: "Optional path to the vault YAML config file." },
+    },
+  },
+  register(api: OpenClawPluginApi) {
+    const cfg = (api.config || {}) as BrainOpsConfig;
 
     for (const tool of tools) {
       api.registerTool({
         name: tool.name,
         description: tool.description,
-        inputSchema: tool.inputSchema,
-        async handler(input: Record<string, unknown>) {
-          return runBrainOps(cfg, tool.buildArgs(input, cfg));
+        parameters: tool.parameters,
+        async execute(_id: string, input: Record<string, unknown>) {
+          const result = await runBrainOps(cfg, tool.buildArgs(input, cfg));
+          return asToolContent(result);
         },
       });
     }
   },
-});
+};
+
+export default plugin;

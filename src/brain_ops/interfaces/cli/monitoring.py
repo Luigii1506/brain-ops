@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import typer
 from rich.console import Console
 from rich.table import Table
 
 from brain_ops.application import (
+    execute_event_log_alert_check_workflow,
+    execute_event_log_alert_message_workflow,
+    execute_event_log_alert_presets_workflow,
+    execute_event_log_alerts_workflow,
     execute_event_log_failures_workflow,
     execute_event_log_hotspots_workflow,
     execute_event_log_report_workflow,
@@ -16,7 +21,8 @@ from brain_ops.application import (
 )
 from brain_ops.core.events import DomainEvent, EventLogDayActivity, EventLogSummary, event_to_dict
 
-from .runtime import load_event_log_path
+from .automation import present_event_log_alert_delivery_command
+from .runtime import load_alert_output_dir, load_event_log_path
 
 
 def build_event_log_summary_table(summary: EventLogSummary) -> Table:
@@ -166,6 +172,43 @@ def build_event_log_failures_table(summary: EventLogSummary) -> Table:
     return table
 
 
+def build_event_log_alert_check_table(ok: bool, triggered_rules: list[str]) -> Table:
+    table = Table(title="Alert Check")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Status", "ok" if ok else "alert")
+    table.add_row("Triggered rules", ", ".join(triggered_rules) if triggered_rules else "-")
+    return table
+
+
+def build_event_log_alert_presets_table(presets: dict[str, object]) -> Table:
+    table = Table(title="Alert Policy Presets")
+    table.add_column("Preset")
+    table.add_column("Max Total Events")
+    table.add_column("Max Latest Day Events")
+    for name, policy in presets.items():
+        table.add_row(
+            name,
+            str(policy.max_total_events) if getattr(policy, "max_total_events", None) is not None else "-",
+            str(policy.max_latest_day_events) if getattr(policy, "max_latest_day_events", None) is not None else "-",
+        )
+    return table
+
+
+def build_event_log_alert_message_table(message: dict[str, object]) -> Table:
+    table = Table(title="Alert Message")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Level", str(message.get("level") or "-"))
+    table.add_row("Title", str(message.get("title") or "-"))
+    table.add_row("Summary", str(message.get("summary") or "-"))
+    table.add_row(
+        "Triggered rules",
+        ", ".join(message.get("triggered_rules", [])) if message.get("triggered_rules") else "-",
+    )
+    return table
+
+
 def build_event_log_daily_activity_table(activity: list[EventLogDayActivity]) -> Table:
     table = Table(title="Daily Activity")
     table.add_column("Day")
@@ -303,7 +346,138 @@ def present_event_log_failures_command(
     console.print(build_event_log_tail_table(failures.recent_events))
 
 
+def present_event_log_alerts_command(
+    console: Console,
+    *,
+    event_log_path: Path | None,
+    top: int,
+    limit: int,
+    source: str | None,
+    workflow: str | None,
+    since: str | None,
+    until: str | None,
+    as_json: bool,
+) -> None:
+    alerts = execute_event_log_alerts_workflow(
+        event_log_path=event_log_path,
+        top=top,
+        limit=limit,
+        source=source,
+        workflow=workflow,
+        since=since,
+        until=until,
+        load_event_log_path=load_event_log_path,
+    )
+    if as_json:
+        console.print_json(data=alerts.to_dict())
+        return
+    console.print(build_event_log_failures_table(alerts.summary))
+    console.print(build_event_log_highlights_table(alerts.highlights))
+    console.print(build_event_log_daily_activity_table(alerts.daily_activity))
+    console.print(build_event_log_tail_table(alerts.recent_events))
+
+
+def present_event_log_alert_check_command(
+    console: Console,
+    *,
+    event_log_path: Path | None,
+    top: int,
+    limit: int,
+    source: str | None,
+    workflow: str | None,
+    since: str | None,
+    until: str | None,
+    preset: str | None,
+    max_total_events: int | None,
+    max_latest_day_events: int | None,
+    fail_on_alerts: bool,
+    as_json: bool,
+) -> None:
+    result = execute_event_log_alert_check_workflow(
+        event_log_path=event_log_path,
+        top=top,
+        limit=limit,
+        source=source,
+        workflow=workflow,
+        since=since,
+        until=until,
+        preset=preset,
+        max_total_events=max_total_events,
+        max_latest_day_events=max_latest_day_events,
+        load_event_log_path=load_event_log_path,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+    else:
+        console.print(build_event_log_alert_check_table(result.ok, result.triggered_rules))
+        console.print(build_event_log_failures_table(result.alerts.summary))
+        console.print(build_event_log_highlights_table(result.alerts.highlights))
+        console.print(build_event_log_daily_activity_table(result.alerts.daily_activity))
+        console.print(build_event_log_tail_table(result.alerts.recent_events))
+    if fail_on_alerts and not result.ok:
+        raise typer.Exit(code=2)
+
+
+def present_event_log_alert_presets_command(
+    console: Console,
+    *,
+    as_json: bool,
+) -> None:
+    presets = execute_event_log_alert_presets_workflow()
+    if as_json:
+        console.print_json(
+            data={
+                name: policy.to_dict()
+                for name, policy in presets.items()
+            }
+        )
+        return
+    console.print(build_event_log_alert_presets_table(presets))
+
+
+def present_event_log_alert_message_command(
+    console: Console,
+    *,
+    event_log_path: Path | None,
+    top: int,
+    limit: int,
+    source: str | None,
+    workflow: str | None,
+    since: str | None,
+    until: str | None,
+    preset: str | None,
+    max_total_events: int | None,
+    max_latest_day_events: int | None,
+    as_json: bool,
+) -> None:
+    message = execute_event_log_alert_message_workflow(
+        event_log_path=event_log_path,
+        top=top,
+        limit=limit,
+        source=source,
+        workflow=workflow,
+        since=since,
+        until=until,
+        preset=preset,
+        max_total_events=max_total_events,
+        max_latest_day_events=max_latest_day_events,
+        load_event_log_path=load_event_log_path,
+    )
+    if as_json:
+        console.print_json(data=message.to_dict())
+        return
+    console.print(build_event_log_alert_message_table(message.to_dict()))
+
+
 __all__ = [
+    "present_event_log_alert_delivery_command",
+    "present_event_log_alert_message_command",
+    "build_event_log_alert_message_table",
+    "present_event_log_alert_presets_command",
+    "build_event_log_alert_presets_table",
+    "present_event_log_alert_check_command",
+    "build_event_log_alert_check_table",
+    "present_event_log_alerts_command",
     "present_event_log_failures_command",
     "build_event_log_failures_table",
     "present_event_log_hotspots_command",

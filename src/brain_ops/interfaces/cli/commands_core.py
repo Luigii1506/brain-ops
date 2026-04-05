@@ -10,7 +10,12 @@ from rich.console import Console
 from brain_ops.errors import BrainOpsError
 
 from .conversation import present_handle_input_command, present_route_input_command
+from .automation import present_event_log_alert_delivery_command
 from .monitoring import (
+    present_event_log_alert_check_command,
+    present_event_log_alert_message_command,
+    present_event_log_alert_presets_command,
+    present_event_log_alerts_command,
     present_event_log_failures_command,
     present_event_log_hotspots_command,
     present_event_log_report_command,
@@ -268,6 +273,155 @@ def register_core_commands(app: typer.Typer, console: Console, handle_error, *, 
                 workflow=workflow,
                 since=since,
                 until=until,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("event-log-alerts")
+    def event_log_alerts_command(
+        path: Path | None = typer.Option(None, "--path", help="Path to the JSONL event log. Defaults to BRAIN_OPS_EVENT_LOG."),
+        top: int = typer.Option(5, "--top", min=1, help="How many top sources/workflows/outcomes/paths to show."),
+        limit: int = typer.Option(10, "--limit", min=1, help="How many recent attention events to include."),
+        source: str | None = typer.Option(None, "--source", help="Filter events by exact source, for example application.notes."),
+        workflow: str | None = typer.Option(None, "--workflow", help="Filter events by exact workflow, for example capture."),
+        since: str | None = typer.Option(None, "--since", help="Filter events on or after YYYY-MM-DD or ISO datetime."),
+        until: str | None = typer.Option(None, "--until", help="Filter events on or before YYYY-MM-DD or ISO datetime."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Show a composed alert view over attention-worthy events in the filtered window."""
+        try:
+            present_event_log_alerts_command(
+                console,
+                event_log_path=path,
+                top=top,
+                limit=limit,
+                source=source,
+                workflow=workflow,
+                since=since,
+                until=until,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("event-log-alert-check")
+    def event_log_alert_check_command(
+        path: Path | None = typer.Option(None, "--path", help="Path to the JSONL event log. Defaults to BRAIN_OPS_EVENT_LOG."),
+        top: int = typer.Option(5, "--top", min=1, help="How many top sources/workflows/outcomes/paths to show."),
+        limit: int = typer.Option(10, "--limit", min=1, help="How many recent attention events to include."),
+        source: str | None = typer.Option(None, "--source", help="Filter events by exact source, for example application.notes."),
+        workflow: str | None = typer.Option(None, "--workflow", help="Filter events by exact workflow, for example capture."),
+        since: str | None = typer.Option(None, "--since", help="Filter events on or after YYYY-MM-DD or ISO datetime."),
+        until: str | None = typer.Option(None, "--until", help="Filter events on or before YYYY-MM-DD or ISO datetime."),
+        preset: str | None = typer.Option(None, "--preset", help="Named alert policy preset: lenient, default, strict."),
+        max_total_events: int | None = typer.Option(None, "--max-total-events", min=0, help="Trigger when total attention events exceed this threshold."),
+        max_latest_day_events: int | None = typer.Option(None, "--max-latest-day-events", min=0, help="Trigger when the latest active day exceeds this threshold."),
+        fail_on_alerts: bool = typer.Option(False, "--fail-on-alerts", help="Exit with code 2 when any threshold is triggered."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Evaluate simple alert thresholds over the filtered attention-event window."""
+        try:
+            present_event_log_alert_check_command(
+                console,
+                event_log_path=path,
+                top=top,
+                limit=limit,
+                source=source,
+                workflow=workflow,
+                since=since,
+                until=until,
+                preset=preset,
+                max_total_events=max_total_events,
+                max_latest_day_events=max_latest_day_events,
+                fail_on_alerts=fail_on_alerts,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("event-log-alert-presets")
+    def event_log_alert_presets_command(
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """List the named alert policy presets available for event-log-alert-check."""
+        try:
+            present_event_log_alert_presets_command(
+                console,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("event-log-alert-message")
+    def event_log_alert_message_command(
+        path: Path | None = typer.Option(None, "--path", help="Path to the JSONL event log. Defaults to BRAIN_OPS_EVENT_LOG."),
+        top: int = typer.Option(5, "--top", min=1, help="How many top sources/workflows/outcomes/paths to inspect."),
+        limit: int = typer.Option(10, "--limit", min=1, help="How many recent attention events to include."),
+        source: str | None = typer.Option(None, "--source", help="Filter events by exact source, for example application.notes."),
+        workflow: str | None = typer.Option(None, "--workflow", help="Filter events by exact workflow, for example capture."),
+        since: str | None = typer.Option(None, "--since", help="Filter events on or after YYYY-MM-DD or ISO datetime."),
+        until: str | None = typer.Option(None, "--until", help="Filter events on or before YYYY-MM-DD or ISO datetime."),
+        preset: str | None = typer.Option(None, "--preset", help="Named alert policy preset: lenient, default, strict."),
+        max_total_events: int | None = typer.Option(None, "--max-total-events", min=0, help="Override max total attention events."),
+        max_latest_day_events: int | None = typer.Option(None, "--max-latest-day-events", min=0, help="Override max events for the latest active day."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Render an actionable alert message from the filtered attention-event window."""
+        try:
+            present_event_log_alert_message_command(
+                console,
+                event_log_path=path,
+                top=top,
+                limit=limit,
+                source=source,
+                workflow=workflow,
+                since=since,
+                until=until,
+                preset=preset,
+                max_total_events=max_total_events,
+                max_latest_day_events=max_latest_day_events,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("event-log-alert-deliver")
+    def event_log_alert_deliver_command(
+        output: Path | None = typer.Option(None, "--output", help="Where to write the alert delivery artifact. Defaults to a policy-derived path."),
+        output_format: str = typer.Option("json", "--format", help="Delivery format: json or text."),
+        delivery_mode: str = typer.Option("both", "--delivery-mode", help="Delivery mode: both, archive, or latest."),
+        target: str = typer.Option("file", "--target", help="Delivery target. Supported: file, stdout."),
+        path: Path | None = typer.Option(None, "--path", help="Path to the JSONL event log. Defaults to BRAIN_OPS_EVENT_LOG."),
+        top: int = typer.Option(5, "--top", min=1, help="How many top sources/workflows/outcomes/paths to inspect."),
+        limit: int = typer.Option(10, "--limit", min=1, help="How many recent attention events to include."),
+        source: str | None = typer.Option(None, "--source", help="Filter events by exact source, for example application.notes."),
+        workflow: str | None = typer.Option(None, "--workflow", help="Filter events by exact workflow, for example capture."),
+        since: str | None = typer.Option(None, "--since", help="Filter events on or after YYYY-MM-DD or ISO datetime."),
+        until: str | None = typer.Option(None, "--until", help="Filter events on or before YYYY-MM-DD or ISO datetime."),
+        preset: str | None = typer.Option(None, "--preset", help="Named alert policy preset: lenient, default, strict."),
+        max_total_events: int | None = typer.Option(None, "--max-total-events", min=0, help="Override max total attention events."),
+        max_latest_day_events: int | None = typer.Option(None, "--max-latest-day-events", min=0, help="Override max events for the latest active day."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Write an actionable alert artifact to a file for simple automation handoff."""
+        try:
+            present_event_log_alert_delivery_command(
+                console,
+                event_log_path=path,
+                top=top,
+                limit=limit,
+                source=source,
+                workflow=workflow,
+                since=since,
+                until=until,
+                preset=preset,
+                max_total_events=max_total_events,
+                max_latest_day_events=max_latest_day_events,
+                output_path=output,
+                output_format=output_format,
+                delivery_mode=delivery_mode,
+                target=target,
                 as_json=as_json,
             )
         except BrainOpsError as error:

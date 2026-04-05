@@ -364,6 +364,60 @@ def summarize_event_activity_days(
     return activity
 
 
+def summarize_attention_event_activity_days(
+    path: Path,
+    *,
+    days: int = 5,
+    top: int = 3,
+    source: str | None = None,
+    workflow: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> list[EventLogDayActivity]:
+    if days <= 0:
+        return []
+    events = filter_attention_events(
+        filter_events(
+            read_event_log(path.expanduser()),
+            source=source,
+            workflow=workflow,
+            since=since,
+            until=until,
+        )
+    )
+    grouped: dict[str, list[DomainEvent]] = {}
+    for event in events:
+        day = event.occurred_at.date().isoformat()
+        grouped.setdefault(day, []).append(event)
+    recent_days = sorted(grouped.keys(), reverse=True)[:days]
+    activity: list[EventLogDayActivity] = []
+    for day in sorted(recent_days):
+        day_events = grouped[day]
+        sources = Counter(event.source for event in day_events)
+        workflows = Counter(
+            str(item)
+            for event in day_events
+            for item in [event.payload.get("workflow")]
+            if item
+        )
+        outcomes = Counter(
+            f"{action}:{item_status}"
+            for event in day_events
+            for action, item_status in [(event.payload.get("action"), event.payload.get("status"))]
+            if action and item_status
+        )
+        activity.append(
+            EventLogDayActivity(
+                day=day,
+                total_events=len(day_events),
+                sources=sources.most_common(top),
+                workflows=workflows.most_common(top),
+                outcomes=outcomes.most_common(top),
+            )
+        )
+    return activity
+
+
 def tail_attention_event_log(
     path: Path,
     *,
@@ -405,6 +459,7 @@ __all__ = [
     "resolve_since_datetime",
     "resolve_until_datetime",
     "summarize_attention_event_log",
+    "summarize_attention_event_activity_days",
     "summarize_event_activity_days",
     "summarize_event_log",
     "tail_attention_event_log",

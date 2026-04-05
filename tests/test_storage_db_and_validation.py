@@ -70,7 +70,8 @@ class StorageDbAndValidationTestCase(TestCase):
         second_ops = initialize_database(db_path)
         self.assertEqual(second_ops[0].status, OperationStatus.UPDATED)
 
-        with sqlite3.connect(db_path) as connection:
+        connection = sqlite3.connect(db_path)
+        try:
             tables = {
                 row[0]
                 for row in connection.execute(
@@ -81,6 +82,8 @@ class StorageDbAndValidationTestCase(TestCase):
                 row[1]
                 for row in connection.execute("PRAGMA table_info(body_metrics)").fetchall()
             }
+        finally:
+            connection.close()
 
         self.assertIn("meals", tables)
         self.assertIn("diet_plans", tables)
