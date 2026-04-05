@@ -22,6 +22,9 @@ class PublicExportSurfacesTestCase(TestCase):
         exported = set(application.__all__)
 
         self.assertIs(application.AlertDelivery, app_automation.AlertDelivery)
+        self.assertIs(application.AlertDeliveryPreset, app_automation.AlertDeliveryPreset)
+        self.assertIs(application.ALERT_DELIVERY_PRESETS, app_automation.ALERT_DELIVERY_PRESETS)
+        self.assertIs(application.execute_alert_delivery_presets_workflow, app_automation.execute_alert_delivery_presets_workflow)
         self.assertIs(application.AlertMessage, app_alerts.AlertMessage)
         self.assertIs(application.build_event_log_alert_message, app_alerts.build_event_log_alert_message)
         self.assertIs(application.execute_event_log_alert_delivery_workflow, app_automation.execute_event_log_alert_delivery_workflow)
@@ -45,6 +48,9 @@ class PublicExportSurfacesTestCase(TestCase):
         self.assertIs(application.result_operations, app_events.result_operations)
 
         self.assertIn("AlertDelivery", exported)
+        self.assertIn("AlertDeliveryPreset", exported)
+        self.assertIn("ALERT_DELIVERY_PRESETS", exported)
+        self.assertIn("execute_alert_delivery_presets_workflow", exported)
         self.assertIn("AlertMessage", exported)
         self.assertIn("build_event_log_alert_message", exported)
         self.assertIn("execute_event_log_alert_delivery_workflow", exported)
@@ -82,6 +88,8 @@ class PublicExportSurfacesTestCase(TestCase):
         exported = set(cli.__all__)
 
         self.assertIs(cli.create_cli_app, cli_app.create_cli_app)
+        self.assertIs(cli.present_alert_delivery_presets_command, cli_automation.present_alert_delivery_presets_command)
+        self.assertIs(cli.build_alert_delivery_presets_table, cli_automation.build_alert_delivery_presets_table)
         self.assertIs(cli.present_event_log_alert_delivery_command, cli_automation.present_event_log_alert_delivery_command)
         self.assertIs(cli.register_cli_commands, cli_commands.register_cli_commands)
         self.assertIs(cli.run_route_input_command, cli_conversation.run_route_input_command)
@@ -102,6 +110,8 @@ class PublicExportSurfacesTestCase(TestCase):
         self.assertIs(cli.load_alert_output_dir, cli_runtime.load_alert_output_dir)
         self.assertIs(cli.load_event_sink, cli_runtime.load_event_sink)
 
+        self.assertIn("present_alert_delivery_presets_command", exported)
+        self.assertIn("build_alert_delivery_presets_table", exported)
         self.assertIn("present_event_log_alert_delivery_command", exported)
         self.assertIn("register_cli_commands", exported)
         self.assertIn("run_route_input_command", exported)

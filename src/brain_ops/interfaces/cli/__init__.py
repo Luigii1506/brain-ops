@@ -1,7 +1,11 @@
 """CLI adapter layer."""
 
 from .app import create_cli_app
-from .automation import present_event_log_alert_delivery_command
+from .automation import (
+    build_alert_delivery_presets_table,
+    present_alert_delivery_presets_command,
+    present_event_log_alert_delivery_command,
+)
 from .commands import register_cli_commands
 from .commands_core import register_core_commands
 from .commands_notes import register_note_and_knowledge_commands
@@ -133,6 +137,7 @@ from .system import present_info_command, present_init_command, present_init_db_
 from .tables import build_info_table, build_operations_table
 
 __all__ = [
+    "build_alert_delivery_presets_table",
     "build_info_table",
     "build_event_log_alert_check_table",
     "build_event_log_alert_message_table",
@@ -148,6 +153,7 @@ __all__ = [
     "exit_with_brain_ops_error",
     "improve_result_lines",
     "register_cli_commands",
+    "present_alert_delivery_presets_command",
     "present_event_log_alert_delivery_command",
     "present_apply_link_suggestions_command",
     "present_audit_vault_command",

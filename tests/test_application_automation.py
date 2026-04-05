@@ -6,11 +6,15 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from brain_ops.application.alerts import AlertMessage
+from brain_ops.errors import ConfigError
 from brain_ops.application.automation import (
+    ALERT_DELIVERY_PRESETS,
     AlertDelivery,
     AlertDeliveryPolicy,
+    AlertDeliveryPreset,
     build_alert_delivery_policy,
     deliver_alert_via_target,
+    execute_alert_delivery_presets_workflow,
     execute_event_log_alert_delivery_workflow,
     render_alert_message_text,
     resolve_alert_delivery_latest_path,
@@ -342,3 +346,101 @@ class ApplicationAutomationTestCase(TestCase):
         self.assertEqual(delivery.output_path, Path("<stdout>"))
         self.assertEqual(delivery.target, "stdout")
         self.assertIsNone(delivery.latest_path)
+
+    def test_alert_delivery_presets_contain_expected_named_entries(self) -> None:
+        self.assertIn("default", ALERT_DELIVERY_PRESETS)
+        self.assertIn("file-text", ALERT_DELIVERY_PRESETS)
+        self.assertIn("stdout-json", ALERT_DELIVERY_PRESETS)
+        self.assertIn("stdout-text", ALERT_DELIVERY_PRESETS)
+        self.assertIn("archive-only", ALERT_DELIVERY_PRESETS)
+
+        default = ALERT_DELIVERY_PRESETS["default"]
+        self.assertEqual(default.output_format, "json")
+        self.assertEqual(default.target, "file")
+        self.assertEqual(default.delivery_mode, "both")
+
+        stdout_text = ALERT_DELIVERY_PRESETS["stdout-text"]
+        self.assertEqual(stdout_text.output_format, "text")
+        self.assertEqual(stdout_text.target, "stdout")
+        self.assertEqual(stdout_text.delivery_mode, "archive")
+
+    def test_execute_alert_delivery_presets_workflow_returns_copy(self) -> None:
+        result = execute_alert_delivery_presets_workflow()
+        self.assertEqual(set(result.keys()), set(ALERT_DELIVERY_PRESETS.keys()))
+        self.assertIsNot(result, ALERT_DELIVERY_PRESETS)
+
+    def test_alert_delivery_preset_to_dict_includes_all_fields(self) -> None:
+        preset = AlertDeliveryPreset(output_format="text", target="stdout", delivery_mode="archive")
+        d = preset.to_dict()
+        self.assertEqual(d["output_format"], "text")
+        self.assertEqual(d["target"], "stdout")
+        self.assertEqual(d["delivery_mode"], "archive")
+        self.assertIn("filename_prefix", d)
+        self.assertIn("write_latest", d)
+
+    def test_build_alert_delivery_policy_uses_preset_defaults(self) -> None:
+        policy = build_alert_delivery_policy(
+            output_dir=Path("/tmp/alerts"),
+            preset="stdout-json",
+        )
+        self.assertEqual(policy.output_format, "json")
+        self.assertEqual(policy.target, "stdout")
+        self.assertEqual(policy.delivery_mode, "archive")
+
+    def test_build_alert_delivery_policy_explicit_args_override_preset(self) -> None:
+        policy = build_alert_delivery_policy(
+            output_dir=Path("/tmp/alerts"),
+            preset="stdout-json",
+            output_format="text",
+        )
+        self.assertEqual(policy.output_format, "text")
+        self.assertEqual(policy.target, "stdout")
+
+    def test_build_alert_delivery_policy_rejects_unknown_preset(self) -> None:
+        with self.assertRaises(ConfigError):
+            build_alert_delivery_policy(
+                output_dir=Path("/tmp/alerts"),
+                preset="nonexistent",
+            )
+
+    def test_build_alert_delivery_policy_defaults_to_default_preset_when_no_preset_given(self) -> None:
+        policy = build_alert_delivery_policy(
+            output_dir=Path("/tmp/alerts"),
+        )
+        self.assertEqual(policy.output_format, "json")
+        self.assertEqual(policy.target, "file")
+        self.assertEqual(policy.delivery_mode, "both")
+
+    def test_execute_event_log_alert_delivery_workflow_supports_delivery_preset(self) -> None:
+        message = AlertMessage(
+            level="ok",
+            title="Event log alert check passed",
+            summary="summary text",
+            triggered_rules=[],
+            highlights={"latest_day": "2026-04-04", "total_events": 0},
+        )
+
+        delivery = execute_event_log_alert_delivery_workflow(
+            event_log_path=Path("~/events.jsonl"),
+            top=3,
+            limit=2,
+            source=None,
+            workflow=None,
+            since=None,
+            until=None,
+            preset=None,
+            max_total_events=None,
+            max_latest_day_events=None,
+            output_path=None,
+            output_format=None,
+            delivery_mode=None,
+            target=None,
+            delivery_preset="stdout-text",
+            resolve_output_dir=lambda _explicit_path, **_: Path("/tmp/alerts"),
+            load_event_log_path=lambda _path: Path("/tmp/events.jsonl"),
+            execute_alert_message=lambda **kwargs: message,
+        )
+
+        self.assertEqual(delivery.target, "stdout")
+        self.assertEqual(delivery.output_format, "text")
+        self.assertEqual(delivery.output_path, Path("<stdout>"))

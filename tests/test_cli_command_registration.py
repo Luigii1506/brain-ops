@@ -57,6 +57,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "event-log-alert-check",
                 "event-log-alert-message",
                 "event-log-alert-deliver",
+                "event-log-alert-delivery-presets",
                 "event-log-alert-presets",
                 "daily-summary",
                 "route-input",
@@ -611,6 +612,27 @@ class CliCommandRegistrationTestCase(TestCase):
             },
         )
 
+    def test_event_log_alert_delivery_presets_command_delegates_to_presenter(self) -> None:
+        app = typer.Typer()
+        with patch("brain_ops.interfaces.cli.commands_core.present_alert_delivery_presets_command") as presenter_mock:
+            register_core_commands(
+                app,
+                self.console,
+                self.handle_error,
+                version="1.0.0",
+                print_operations=Mock(),
+            )
+            result = self.runner.invoke(app, ["event-log-alert-delivery-presets", "--json"])
+
+        self.assertEqual(result.exit_code, 0)
+        presenter_mock.assert_called_once()
+        self.assertEqual(
+            presenter_mock.call_args.kwargs,
+            {
+                "as_json": True,
+            },
+        )
+
     def test_event_log_alert_deliver_command_delegates_to_presenter(self) -> None:
         app = typer.Typer()
         with patch("brain_ops.interfaces.cli.commands_core.present_event_log_alert_delivery_command") as presenter_mock:
@@ -631,6 +653,8 @@ class CliCommandRegistrationTestCase(TestCase):
                     "latest",
                     "--target",
                     "file",
+                    "--delivery-preset",
+                    "default",
                     "--path",
                     "/tmp/events.jsonl",
                     "--top",
@@ -674,6 +698,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "output_format": "json",
                 "delivery_mode": "latest",
                 "target": "file",
+                "delivery_preset": "default",
                 "as_json": True,
             },
         )

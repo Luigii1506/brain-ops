@@ -10,7 +10,7 @@ from rich.console import Console
 from brain_ops.errors import BrainOpsError
 
 from .conversation import present_handle_input_command, present_route_input_command
-from .automation import present_event_log_alert_delivery_command
+from .automation import present_alert_delivery_presets_command, present_event_log_alert_delivery_command
 from .monitoring import (
     present_event_log_alert_check_command,
     present_event_log_alert_message_command,
@@ -386,12 +386,26 @@ def register_core_commands(app: typer.Typer, console: Console, handle_error, *, 
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("event-log-alert-delivery-presets")
+    def event_log_alert_delivery_presets_command(
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """List the named delivery presets available for event-log-alert-deliver."""
+        try:
+            present_alert_delivery_presets_command(
+                console,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("event-log-alert-deliver")
     def event_log_alert_deliver_command(
         output: Path | None = typer.Option(None, "--output", help="Where to write the alert delivery artifact. Defaults to a policy-derived path."),
-        output_format: str = typer.Option("json", "--format", help="Delivery format: json or text."),
-        delivery_mode: str = typer.Option("both", "--delivery-mode", help="Delivery mode: both, archive, or latest."),
-        target: str = typer.Option("file", "--target", help="Delivery target. Supported: file, stdout."),
+        output_format: str | None = typer.Option(None, "--format", help="Delivery format: json or text. Defaults to preset value."),
+        delivery_mode: str | None = typer.Option(None, "--delivery-mode", help="Delivery mode: both, archive, or latest. Defaults to preset value."),
+        target: str | None = typer.Option(None, "--target", help="Delivery target: file or stdout. Defaults to preset value."),
+        delivery_preset: str | None = typer.Option(None, "--delivery-preset", help="Named delivery preset: default, file-text, stdout-json, stdout-text, archive-only."),
         path: Path | None = typer.Option(None, "--path", help="Path to the JSONL event log. Defaults to BRAIN_OPS_EVENT_LOG."),
         top: int = typer.Option(5, "--top", min=1, help="How many top sources/workflows/outcomes/paths to inspect."),
         limit: int = typer.Option(10, "--limit", min=1, help="How many recent attention events to include."),
@@ -422,6 +436,7 @@ def register_core_commands(app: typer.Typer, console: Console, handle_error, *, 
                 output_format=output_format,
                 delivery_mode=delivery_mode,
                 target=target,
+                delivery_preset=delivery_preset,
                 as_json=as_json,
             )
         except BrainOpsError as error:
