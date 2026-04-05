@@ -1817,6 +1817,19 @@ Opened the first scheduling layer for cron-driven automation:
 - Added three CLI commands: `init-jobs` (creates default jobs), `list-jobs` (shows all jobs with last run status), `show-crontab` (prints ready-to-use crontab entries)
 - Job registry stored as JSON at `BRAIN_OPS_JOB_REGISTRY` or `~/.brain-ops/jobs.json`
 - Added direct coverage in [test_scheduling.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_scheduling.py) covering job model, registry persistence, run recording, defaults, presets, and crontab generation
+
+### REST API layer
+
+Opened the first REST API interface for external app consumption:
+
+- Created [interfaces/api/](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/api/) with FastAPI application factory and four route modules
+- [routes_entities.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/api/routes_entities.py): `GET /entities/`, `GET /entities/types`, `GET /entities/{name}`, `GET /entities/{name}/relations` — reads from compiled knowledge SQLite
+- [routes_projects.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/api/routes_projects.py): `GET /projects/`, `GET /projects/{name}`, `GET /projects/{name}/context` — reads from project registry JSON
+- [routes_sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/api/routes_sources.py): `GET /sources/`, `GET /sources/{name}` — reads from source registry JSON
+- [routes_personal.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/api/routes_personal.py): `GET /personal/meals`, `GET /personal/expenses`, `GET /personal/workouts`, `GET /personal/body-metrics`, `GET /personal/habits`, `GET /personal/supplements` — reads from life-ops SQLite with optional date filtering
+- FastAPI and uvicorn added as optional dependencies (`pip install brain-ops[api]`)
+- Added `serve-api` CLI command (`brain-ops serve-api --host 127.0.0.1 --port 8420`)
+- Added API route coverage in [test_api_routes.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_api_routes.py) with FastAPI TestClient, covering entity CRUD, project listing, source listing, and 404 handling (tests auto-skip if FastAPI is not installed)
 - Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.

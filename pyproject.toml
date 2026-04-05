@@ -11,6 +11,12 @@ dependencies = [
   "rich>=13.7.0",
 ]
 
+[project.optional-dependencies]
+api = [
+  "fastapi>=0.111.0",
+  "uvicorn>=0.29.0",
+]
+
 [project.scripts]
 brain = "brain_ops.cli:app"
 

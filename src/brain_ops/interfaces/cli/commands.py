@@ -34,5 +34,21 @@ def register_cli_commands(
     register_source_commands(app, console, handle_error)
     register_scheduling_commands(app, console, handle_error)
 
+    @app.command("serve-api")
+    def serve_api_command(
+        host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the API server."),
+        port: int = typer.Option(8420, "--port", help="Port to bind the API server."),
+    ) -> None:
+        """Start the brain-ops REST API server."""
+        try:
+            from brain_ops.interfaces.api import create_api_app
+            import uvicorn
+        except ImportError:
+            console.print("API dependencies not installed. Run: pip install brain-ops[api]")
+            raise typer.Exit(code=1)
+        api_app = create_api_app()
+        console.print(f"Starting brain-ops API at http://{host}:{port}")
+        uvicorn.run(api_app, host=host, port=port)
+
 
 __all__ = ["register_cli_commands"]
