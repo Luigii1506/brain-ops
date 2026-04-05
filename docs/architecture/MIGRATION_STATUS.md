@@ -1793,6 +1793,18 @@ Opened the first external source monitoring domain for web/API observation:
 - Source registry stored as JSON file, path configurable via `BRAIN_OPS_SOURCE_REGISTRY`, defaults to `~/.brain-ops/sources.json`
 - Snapshots stored in `BRAIN_OPS_SNAPSHOTS_DIR` or `~/.brain-ops/snapshots/`
 - Added direct domain and workflow coverage in [test_monitoring_sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_monitoring_sources.py) covering source model validation, registry persistence, snapshot hashing and persistence, diff computation (first/same/changed/shrunk), and full check-source workflow with injected fetcher
+
+### Knowledge compile pipeline
+
+Opened the first knowledge compile pipeline for bridging Obsidian (source of truth) to SQLite (queryable for apps):
+
+- Added [compile.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/knowledge/compile.py) with `CompiledEntity` and `CompiledRelation` models, frontmatter-to-record extraction, and `compile_vault_entities(...)` that processes all notes in one pass
+- Added [storage/sqlite/entities.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/storage/sqlite/entities.py) with `entities` and `entity_relations` SQLite tables, full-replace write semantics, and query functions for entities by name, by type, and for relationship traversal
+- Added `execute_compile_knowledge_workflow(...)` in `application/knowledge.py` that scans vault, compiles entities, and writes to SQLite (defaults to `{vault}/.brain-ops/knowledge.db`)
+- Added `compile-knowledge` CLI command with `--db` and `--json` options
+- Metadata stored as JSON blob per entity, excluding core fields (type, name, entity, tags, related) which are stored as columns
+- Full-replace semantics on each compile: tables are cleared and rebuilt from current vault state
+- Added direct domain and storage coverage in [test_knowledge_compile.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_knowledge_compile.py) covering entity compilation, relation extraction, SQLite roundtrips, connection queries, and replace semantics
 - Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.

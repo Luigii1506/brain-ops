@@ -7,6 +7,10 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from brain_ops.core.events import EventSink
+from brain_ops.domains.knowledge.compile import (
+    CompileResult,
+    compile_vault_entities,
+)
 from brain_ops.domains.knowledge.index import (
     EntityIndexEntry,
     build_entity_index_entry,
@@ -169,10 +173,48 @@ def execute_entity_relations_workflow(
     )
 
 
+@dataclass(slots=True, frozen=True)
+class KnowledgeCompileResult:
+    compile_result: CompileResult
+    db_path: Path
+    total_entities: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "total_entities": self.total_entities,
+            "total_relations": len(self.compile_result.relations),
+            "db_path": str(self.db_path),
+        }
+
+
+def execute_compile_knowledge_workflow(
+    *,
+    config_path: Path | None,
+    db_path: Path | None,
+    load_vault,
+    write_entities=None,
+) -> KnowledgeCompileResult:
+    from brain_ops.storage.sqlite.entities import write_compiled_entities
+
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_frontmatters(vault)
+    result = compile_vault_entities(notes)
+    resolved_db = db_path or (Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db")
+    writer = write_entities or write_compiled_entities
+    total = writer(resolved_db, result)
+    return KnowledgeCompileResult(
+        compile_result=result,
+        db_path=resolved_db,
+        total_entities=total,
+    )
+
+
 __all__ = [
     "EntityIndexResult",
     "EntityRelationsResult",
+    "KnowledgeCompileResult",
     "execute_audit_vault_workflow",
+    "execute_compile_knowledge_workflow",
     "execute_entity_index_workflow",
     "execute_entity_relations_workflow",
     "execute_normalize_frontmatter_workflow",

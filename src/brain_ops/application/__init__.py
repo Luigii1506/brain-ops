@@ -57,7 +57,9 @@ from .notes import (
 from .knowledge import (
     EntityIndexResult,
     EntityRelationsResult,
+    KnowledgeCompileResult,
     execute_audit_vault_workflow,
+    execute_compile_knowledge_workflow,
     execute_entity_index_workflow,
     execute_entity_relations_workflow,
     execute_normalize_frontmatter_workflow,
@@ -156,6 +158,8 @@ __all__ = [
     "execute_entity_relations_workflow",
     "EntityIndexResult",
     "EntityRelationsResult",
+    "KnowledgeCompileResult",
+    "execute_compile_knowledge_workflow",
     "execute_enrich_note_workflow",
     "execute_habit_checkin_workflow",
     "execute_habit_status_workflow",

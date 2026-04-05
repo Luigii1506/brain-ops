@@ -113,6 +113,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "create-entity",
                 "create-note",
                 "create-project",
+                "compile-knowledge",
                 "entity-index",
                 "entity-relations",
                 "process-inbox",

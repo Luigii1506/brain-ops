@@ -11,6 +11,7 @@ from brain_ops.errors import BrainOpsError
 
 from .knowledge import (
     present_audit_vault_command,
+    present_compile_knowledge_command,
     present_entity_index_command,
     present_entity_relations_command,
     present_normalize_frontmatter_command,
@@ -125,6 +126,23 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 console,
                 entity_name=name,
                 config_path=config_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("compile-knowledge")
+    def compile_knowledge_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        db_path: Path | None = typer.Option(None, "--db", help="Output SQLite database path. Defaults to {vault}/.brain-ops/knowledge.db."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Compile all knowledge entities from Obsidian frontmatter into a queryable SQLite database."""
+        try:
+            present_compile_knowledge_command(
+                console,
+                config_path=config_path,
+                db_path=db_path,
                 as_json=as_json,
             )
         except BrainOpsError as error:

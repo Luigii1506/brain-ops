@@ -12,6 +12,14 @@ from brain_ops.domains.knowledge.entities import (
     plan_entity_note,
     validate_entity_type,
 )
+from brain_ops.domains.knowledge.compile import (
+    CompileResult,
+    CompiledEntity,
+    CompiledRelation,
+    compile_entity_from_frontmatter,
+    compile_relations_from_frontmatter,
+    compile_vault_entities,
+)
 from brain_ops.domains.knowledge.index import (
     EntityIndexEntry,
     build_entity_index_entry,
@@ -94,6 +102,12 @@ __all__ = [
     "is_entity_note",
     "plan_entity_note",
     "validate_entity_type",
+    "CompileResult",
+    "CompiledEntity",
+    "CompiledRelation",
+    "compile_entity_from_frontmatter",
+    "compile_relations_from_frontmatter",
+    "compile_vault_entities",
     "EntityIndexEntry",
     "EntityRelation",
     "build_entity_index_entry",

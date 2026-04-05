@@ -8,6 +8,7 @@ from rich.console import Console
 
 from brain_ops.application import (
     execute_audit_vault_workflow,
+    execute_compile_knowledge_workflow,
     execute_entity_index_workflow,
     execute_entity_relations_workflow,
     execute_normalize_frontmatter_workflow,
@@ -138,6 +139,24 @@ def present_normalize_frontmatter_command(
     print_rendered_with_operations(console, summary.operations, render_normalize_frontmatter(summary))
 
 
+def present_compile_knowledge_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    db_path: Path | None,
+    as_json: bool,
+) -> None:
+    result = execute_compile_knowledge_workflow(
+        config_path=config_path,
+        db_path=db_path,
+        load_vault=load_validated_vault,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    console.print(f"Compiled {result.total_entities} entities and {len(result.compile_result.relations)} relations to {result.db_path}")
+
+
 def present_entity_index_command(
     console: Console,
     *,
@@ -174,6 +193,7 @@ def present_entity_relations_command(
 
 __all__ = [
     "present_audit_vault_command",
+    "present_compile_knowledge_command",
     "present_entity_index_command",
     "present_entity_relations_command",
     "present_normalize_frontmatter_command",
