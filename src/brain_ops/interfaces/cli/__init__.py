@@ -11,6 +11,18 @@ from .commands_core import register_core_commands
 from .commands_notes import register_note_and_knowledge_commands
 from .commands_personal import register_personal_commands
 from .commands_projects import register_project_commands
+from .commands_sources import register_source_commands
+from .sources import (
+    build_source_check_table,
+    build_source_list_table,
+    load_snapshots_dir,
+    load_source_registry_path,
+    present_add_source_command,
+    present_check_all_sources_command,
+    present_check_source_command,
+    present_list_sources_command,
+    present_remove_source_command,
+)
 from .projects import (
     build_project_context_table,
     build_project_list_table,
@@ -270,6 +282,16 @@ __all__ = [
     "register_note_and_knowledge_commands",
     "register_personal_commands",
     "register_project_commands",
+    "register_source_commands",
+    "build_source_check_table",
+    "build_source_list_table",
+    "load_snapshots_dir",
+    "load_source_registry_path",
+    "present_add_source_command",
+    "present_check_all_sources_command",
+    "present_check_source_command",
+    "present_list_sources_command",
+    "present_remove_source_command",
     "build_project_context_table",
     "build_project_list_table",
     "load_project_registry_path",

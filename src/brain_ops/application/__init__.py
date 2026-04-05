@@ -99,6 +99,15 @@ from .projects import (
     execute_register_project_workflow,
     execute_update_project_context_workflow,
 )
+from .sources import (
+    SourceCheckResult,
+    SourceRegistryResult,
+    execute_add_source_workflow,
+    execute_check_all_sources_workflow,
+    execute_check_source_workflow,
+    execute_list_sources_workflow,
+    execute_remove_source_workflow,
+)
 from .system import (
     execute_info_workflow,
     execute_init_db_workflow,
@@ -174,6 +183,13 @@ __all__ = [
     "execute_update_project_context_workflow",
     "ProjectClaudeMdResult",
     "ProjectRegistryResult",
+    "SourceCheckResult",
+    "SourceRegistryResult",
+    "execute_add_source_workflow",
+    "execute_check_all_sources_workflow",
+    "execute_check_source_workflow",
+    "execute_list_sources_workflow",
+    "execute_remove_source_workflow",
     "execute_info_workflow",
     "execute_init_db_workflow",
     "execute_init_workflow",

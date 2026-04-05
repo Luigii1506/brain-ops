@@ -1778,6 +1778,21 @@ Opened the first independent projects domain for dev project registry and contex
 - Registry stored as JSON file, path configurable via `BRAIN_OPS_PROJECT_REGISTRY` env var, defaults to `~/.brain-ops/projects.json`
 - Re-registering an existing project preserves its accumulated context while updating metadata
 - Added direct domain and workflow coverage in [test_projects_domain.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_projects_domain.py) covering model roundtrips, persistence, context updates, CLAUDE.md rendering, and full workflow integration
+
+### Monitoring source domain
+
+Opened the first external source monitoring domain for web/API observation:
+
+- Created [domains/monitoring/](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/monitoring/) with source, snapshot, and diff models
+- [sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/monitoring/sources.py): `MonitorSource` model with name, URL, type (web/api), selector, check interval, tags; JSON-based registry persistence
+- [snapshots.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/monitoring/snapshots.py): `SourceSnapshot` model with content hash (SHA256), timestamp, content; per-source latest-snapshot persistence
+- [diffs.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/monitoring/diffs.py): `SourceDiff` model with hash comparison, length delta, and human-readable summary; `compute_diff(...)` detects first capture, no-change, content growth, and content shrinkage
+- Added [application/sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/application/sources.py) with five workflows: add-source, list-sources, remove-source, check-source, check-all-sources; HTTP fetching injected as dependency for testability
+- Added [cli/sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/cli/sources.py) with presenters and table builders for all source commands
+- Added [commands_sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/cli/commands_sources.py) with five CLI commands: `add-source`, `list-sources`, `remove-source`, `check-source`, `check-all-sources`
+- Source registry stored as JSON file, path configurable via `BRAIN_OPS_SOURCE_REGISTRY`, defaults to `~/.brain-ops/sources.json`
+- Snapshots stored in `BRAIN_OPS_SNAPSHOTS_DIR` or `~/.brain-ops/snapshots/`
+- Added direct domain and workflow coverage in [test_monitoring_sources.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_monitoring_sources.py) covering source model validation, registry persistence, snapshot hashing and persistence, diff computation (first/same/changed/shrunk), and full check-source workflow with injected fetcher
 - Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.
