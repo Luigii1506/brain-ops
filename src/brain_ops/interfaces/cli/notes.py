@@ -9,6 +9,7 @@ from rich.console import Console
 from brain_ops.application import (
     execute_apply_link_suggestions_workflow,
     execute_capture_workflow,
+    execute_compile_knowledge_workflow,
     execute_create_entity_workflow,
     execute_create_note_workflow,
     execute_create_project_workflow,
@@ -272,6 +273,17 @@ def present_create_note_command(
     print_operations(console, [operation])
 
 
+def _auto_compile_knowledge(config_path: Path | None) -> None:
+    try:
+        execute_compile_knowledge_workflow(
+            config_path=config_path,
+            db_path=None,
+            load_vault=load_validated_vault,
+        )
+    except Exception:
+        pass
+
+
 def present_create_entity_command(
     console: Console,
     *,
@@ -289,6 +301,8 @@ def present_create_entity_command(
         dry_run=dry_run,
     )
     print_operations(console, [operation])
+    if not dry_run:
+        _auto_compile_knowledge(config_path)
 
 
 def present_create_project_command(

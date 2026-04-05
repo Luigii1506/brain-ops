@@ -7,6 +7,12 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from brain_ops.core.events import EventSink
+from brain_ops.domains.knowledge.ingest import (
+    IngestPlan,
+    build_deterministic_ingest_plan,
+    build_ingest_prompt,
+    parse_ingest_extraction,
+)
 from brain_ops.domains.knowledge.search import SearchResult, search_notes
 from brain_ops.domains.knowledge.compile import (
     CompileResult,
@@ -225,6 +231,83 @@ def execute_compile_knowledge_workflow(
     )
 
 
+@dataclass(slots=True, frozen=True)
+class IngestResult:
+    plan: IngestPlan
+    source_note_path: Path | None
+    used_llm: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "plan": self.plan.to_dict(),
+            "source_note_path": str(self.source_note_path) if self.source_note_path else None,
+            "used_llm": self.used_llm,
+        }
+
+
+def execute_ingest_source_workflow(
+    *,
+    text: str,
+    title: str | None = None,
+    config_path: Path | None,
+    use_llm: bool = False,
+    load_vault,
+    llm_extract=None,
+    event_sink=None,
+) -> IngestResult:
+    from brain_ops.models import CreateNoteRequest
+    from brain_ops.services.note_service import create_note
+
+    used_llm = False
+    if use_llm and llm_extract is not None:
+        try:
+            prompt = build_ingest_prompt(text)
+            extraction = llm_extract(prompt)
+            plan = parse_ingest_extraction(extraction)
+            used_llm = True
+        except Exception:
+            plan = build_deterministic_ingest_plan(text, title=title)
+    else:
+        plan = build_deterministic_ingest_plan(text, title=title)
+
+    vault = load_vault(config_path, dry_run=False)
+    operation = create_note(
+        vault,
+        CreateNoteRequest(
+            title=plan.source_title,
+            note_type="source",
+            tags=[],
+            extra_frontmatter={
+                "source_type": plan.source_type,
+                "summary": plan.summary,
+                "entities_mentioned": plan.entities_mentioned,
+            },
+            body_override=plan.content_for_note,
+        ),
+    )
+
+    if event_sink is not None:
+        from brain_ops.core.events import new_event
+
+        event_sink.publish(new_event(
+            name="source.ingested",
+            source="application.knowledge",
+            payload={
+                "title": plan.source_title,
+                "source_type": plan.source_type,
+                "entities_count": len(plan.entities_mentioned),
+                "used_llm": used_llm,
+                "workflow": "ingest-source",
+            },
+        ))
+
+    return IngestResult(
+        plan=plan,
+        source_note_path=operation.path,
+        used_llm=used_llm,
+    )
+
+
 def execute_search_knowledge_workflow(
     *,
     query: str,
@@ -241,9 +324,11 @@ def execute_search_knowledge_workflow(
 __all__ = [
     "EntityIndexResult",
     "EntityRelationsResult",
+    "IngestResult",
     "KnowledgeCompileResult",
     "execute_audit_vault_workflow",
     "execute_compile_knowledge_workflow",
+    "execute_ingest_source_workflow",
     "execute_search_knowledge_workflow",
     "execute_entity_index_workflow",
     "execute_entity_relations_workflow",

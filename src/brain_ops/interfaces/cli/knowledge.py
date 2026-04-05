@@ -13,13 +13,14 @@ from brain_ops.application import (
     execute_compile_knowledge_workflow,
     execute_entity_index_workflow,
     execute_entity_relations_workflow,
+    execute_ingest_source_workflow,
     execute_normalize_frontmatter_workflow,
     execute_process_inbox_workflow,
     execute_search_knowledge_workflow,
     execute_weekly_review_workflow,
 )
 from brain_ops.interfaces.cli.presenters import print_rendered_with_operations
-from brain_ops.interfaces.cli.runtime import load_event_sink, load_validated_vault
+from brain_ops.interfaces.cli.runtime import load_event_sink, load_runtime_config, load_validated_vault
 from brain_ops.reporting_knowledge import (
     render_inbox_report,
     render_normalize_frontmatter,
@@ -142,6 +143,59 @@ def present_normalize_frontmatter_command(
     print_rendered_with_operations(console, summary.operations, render_normalize_frontmatter(summary))
 
 
+def present_ingest_source_command(
+    console: Console,
+    *,
+    text: str,
+    title: str | None,
+    config_path: Path | None,
+    use_llm: bool,
+    as_json: bool,
+) -> None:
+    from brain_ops.interfaces.cli.runtime import load_event_sink
+
+    llm_extract = None
+    if use_llm:
+        try:
+            config = load_runtime_config(config_path)
+            from brain_ops.ai.ollama_client import generate_json
+
+            llm_extract = lambda prompt: generate_json(
+                host=config.ai.ollama_host,
+                model=config.ai.primary_model,
+                prompt=prompt,
+            )
+        except Exception:
+            pass
+
+    result = execute_ingest_source_workflow(
+        text=text,
+        title=title,
+        config_path=config_path,
+        use_llm=use_llm,
+        load_vault=load_validated_vault,
+        llm_extract=llm_extract,
+        event_sink=load_event_sink(),
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    console.print(f"Ingested: {result.plan.source_title}")
+    if result.source_note_path:
+        console.print(f"Note: {result.source_note_path}")
+    if result.plan.entities_mentioned:
+        console.print(f"Entities mentioned: {', '.join(result.plan.entities_mentioned)}")
+    console.print(f"LLM used: {'Yes' if result.used_llm else 'No'}")
+    try:
+        execute_compile_knowledge_workflow(
+            config_path=config_path,
+            db_path=None,
+            load_vault=load_validated_vault,
+        )
+    except Exception:
+        pass
+
+
 def present_search_knowledge_command(
     console: Console,
     *,
@@ -229,6 +283,7 @@ __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
     "present_entity_index_command",
+    "present_ingest_source_command",
     "present_search_knowledge_command",
     "present_entity_relations_command",
     "present_normalize_frontmatter_command",

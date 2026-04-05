@@ -15,6 +15,7 @@ from .knowledge import (
     present_entity_index_command,
     present_entity_relations_command,
     present_normalize_frontmatter_command,
+    present_ingest_source_command,
     present_process_inbox_command,
     present_search_knowledge_command,
     present_weekly_review_command,
@@ -127,6 +128,27 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 console,
                 entity_name=name,
                 config_path=config_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("ingest-source")
+    def ingest_source_command(
+        text: str,
+        title: str | None = typer.Option(None, "--title", help="Override the inferred title."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        use_llm: bool = typer.Option(False, "--use-llm", help="Use Ollama to extract entities and summary."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Ingest raw text into a structured source note, optionally using LLM for extraction."""
+        try:
+            present_ingest_source_command(
+                console,
+                text=text,
+                title=title,
+                config_path=config_path,
+                use_llm=use_llm,
                 as_json=as_json,
             )
         except BrainOpsError as error:

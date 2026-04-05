@@ -117,6 +117,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "compile-knowledge",
                 "entity-index",
                 "entity-relations",
+                "ingest-source",
                 "search-knowledge",
                 "process-inbox",
                 "weekly-review",
