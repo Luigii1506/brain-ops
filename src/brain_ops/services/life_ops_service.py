@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from brain_ops.errors import ConfigError
-from brain_ops.models import (
-    DailyHabitsSummary,
-    HabitCheckinResult,
-    OperationRecord,
-    OperationStatus,
-    SupplementLogResult,
+from brain_ops.core.validation import resolve_iso_date
+from brain_ops.domains.personal.tracking import (
+    normalize_habit_checkin_inputs,
+    normalize_supplement_log_inputs,
+    build_daily_habits_summary,
+    build_habit_checkin_result,
+    build_supplement_log_result,
 )
-
-ALLOWED_HABIT_STATUSES = {"done", "skipped", "partial"}
+from brain_ops.models import HabitCheckinResult, SupplementLogResult
+from brain_ops.storage.db import ensure_database_parent, require_database_file, resolve_database_path
+from brain_ops.storage.sqlite import fetch_daily_habit_rows, insert_habit_checkin, insert_supplement_log
 
 
 def log_supplement(
@@ -26,36 +26,32 @@ def log_supplement(
     logged_at: datetime | None = None,
     dry_run: bool = False,
 ) -> SupplementLogResult:
-    if not supplement_name.strip():
-        raise ConfigError("Supplement name cannot be empty.")
-
-    logged_at = logged_at or datetime.now()
-    target = database_path.expanduser()
-    if not dry_run:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(target) as connection:
-            connection.execute(
-                """
-                INSERT INTO supplements (logged_at, supplement_name, amount, unit, note, source)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (logged_at.isoformat(timespec="seconds"), supplement_name.strip(), amount, unit, note, "chat"),
-            )
-            connection.commit()
-
-    operation = OperationRecord(
-        action="insert",
-        path=target,
-        detail=f"logged supplement `{supplement_name.strip()}`",
-        status=OperationStatus.CREATED,
-    )
-    return SupplementLogResult(
-        logged_at=logged_at,
-        supplement_name=supplement_name.strip(),
+    normalized = normalize_supplement_log_inputs(
+        supplement_name=supplement_name,
         amount=amount,
         unit=unit,
-        operations=[operation],
-        reason="Logged supplement intake into SQLite.",
+        note=note,
+    )
+
+    logged_at = logged_at or datetime.now()
+    target = resolve_database_path(database_path)
+    if not dry_run:
+        ensure_database_parent(target)
+        insert_supplement_log(
+            target,
+            logged_at=logged_at.isoformat(timespec="seconds"),
+            supplement_name=normalized["supplement_name"],
+            amount=normalized["amount"],
+            unit=normalized["unit"],
+            note=normalized["note"],
+            source="chat",
+        )
+    return build_supplement_log_result(
+        database_path=target,
+        logged_at=logged_at,
+        supplement_name=normalized["supplement_name"],
+        amount=normalized["amount"],
+        unit=normalized["unit"],
     )
 
 
@@ -68,84 +64,42 @@ def habit_checkin(
     checked_at: datetime | None = None,
     dry_run: bool = False,
 ) -> HabitCheckinResult:
-    normalized_status = status.strip().lower()
-    if normalized_status not in ALLOWED_HABIT_STATUSES:
-        raise ConfigError(f"Habit status must be one of: {', '.join(sorted(ALLOWED_HABIT_STATUSES))}.")
-    if not habit_name.strip():
-        raise ConfigError("Habit name cannot be empty.")
+    normalized = normalize_habit_checkin_inputs(
+        habit_name=habit_name,
+        status=status,
+        note=note,
+    )
 
     checked_at = checked_at or datetime.now()
-    target = database_path.expanduser()
+    target = resolve_database_path(database_path)
     if not dry_run:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(target) as connection:
-            connection.execute(
-                """
-                INSERT INTO habits (checked_at, habit_name, status, note, source)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (checked_at.isoformat(timespec="seconds"), habit_name.strip(), normalized_status, note, "chat"),
-            )
-            connection.commit()
-
-    operation = OperationRecord(
-        action="insert",
-        path=target,
-        detail=f"logged habit `{habit_name.strip()}` as `{normalized_status}`",
-        status=OperationStatus.CREATED,
-    )
-    return HabitCheckinResult(
+        ensure_database_parent(target)
+        insert_habit_checkin(
+            target,
+            checked_at=checked_at.isoformat(timespec="seconds"),
+            habit_name=normalized["habit_name"],
+            status=normalized["status"],
+            note=normalized["note"],
+            source="chat",
+        )
+    return build_habit_checkin_result(
+        database_path=target,
         checked_at=checked_at,
-        habit_name=habit_name.strip(),
-        status=normalized_status,
-        operations=[operation],
-        reason="Logged habit check-in into SQLite.",
+        habit_name=normalized["habit_name"],
+        status=normalized["status"],
     )
 
 
-def daily_habits(database_path: Path, date_text: str | None = None) -> DailyHabitsSummary:
-    target = database_path.expanduser()
-    if not target.exists():
-        raise ConfigError(f"Database file not found: {target}")
+def daily_habits(database_path: Path, date_text: str | None = None):
+    target = require_database_file(database_path)
 
-    resolved_date = _resolve_date(date_text)
+    resolved_date = resolve_iso_date(date_text)
     start = f"{resolved_date}T00:00:00"
     end = f"{resolved_date}T23:59:59"
 
-    with sqlite3.connect(target) as connection:
-        rows = connection.execute(
-            """
-            SELECT habit_name, status, COUNT(*)
-            FROM habits
-            WHERE checked_at BETWEEN ? AND ?
-            GROUP BY habit_name, status
-            ORDER BY habit_name, status
-            """,
-            (start, end),
-        ).fetchall()
-
-    by_status: dict[str, int] = {}
-    habits: list[str] = []
-    total = 0
-    for habit_name, status, count in rows:
-        total += int(count)
-        by_status[status] = by_status.get(status, 0) + int(count)
-        if habit_name not in habits:
-            habits.append(habit_name)
-
-    return DailyHabitsSummary(
+    rows = fetch_daily_habit_rows(target, start=start, end=end)
+    return build_daily_habits_summary(
         date=resolved_date,
-        total_checkins=total,
-        by_status=by_status,
-        habits=habits,
         database_path=target,
+        rows=rows,
     )
-
-
-def _resolve_date(date_text: str | None) -> str:
-    if not date_text:
-        return datetime.now().date().isoformat()
-    try:
-        return datetime.fromisoformat(date_text).date().isoformat()
-    except ValueError as exc:
-        raise ConfigError("Date must be in YYYY-MM-DD format.") from exc

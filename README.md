@@ -75,9 +75,21 @@ Conversation and local AI orchestration layer.
 
 Use them to:
 - receive natural language input
+- parse ambiguous intent into structured actions
 - decide which `brain-ops` command to run
 - call local models
 - keep the system usable without cloud dependencies
+
+## Current natural-language pipeline
+
+`brain-ops` now uses a hybrid intent pipeline:
+
+1. heuristic routing for obvious inputs
+2. typed Pydantic intents as the internal contract
+3. optional Ollama structured parsing for ambiguous inputs
+4. deterministic execution against Obsidian or SQLite
+
+This keeps simple inputs fast and predictable while making room for richer local AI parsing on the Mac mini.
 
 ## Current project direction
 
@@ -96,15 +108,25 @@ It is a local personal operating system composed of:
 - `brain init-db`
 - `brain log-meal`
 - `brain daily-macros`
+- `brain set-macro-targets`
+- `brain macro-status`
+- `brain create-diet-plan`
+- `brain set-active-diet`
+- `brain active-diet`
+- `brain diet-status`
 - `brain log-supplement`
 - `brain habit-checkin`
 - `brain daily-habits`
+- `brain set-habit-target`
+- `brain habit-status`
 - `brain log-body-metrics`
 - `brain body-metrics-status`
 - `brain log-workout`
 - `brain workout-status`
 - `brain log-expense`
 - `brain spending-summary`
+- `brain set-budget-target`
+- `brain budget-status`
 - `brain daily-log`
 - `brain daily-summary`
 - `brain route-input`

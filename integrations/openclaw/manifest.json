@@ -11,6 +11,37 @@
     "Prefer handle-input for natural language.",
     "Prefer route-input for plan-only classification."
   ],
+  "natural_input_contract_version": "1",
+  "capabilities": {
+    "write_tools": [
+      "handle_input",
+      "daily_summary",
+      "capture",
+      "improve_note",
+      "research_note",
+      "update_diet_meal"
+    ],
+    "query_tools": [
+      "route_input",
+      "daily_status",
+      "daily_macros",
+      "macro_status",
+      "diet_status",
+      "daily_habits",
+      "habit_status",
+      "workout_status",
+      "spending_summary",
+      "budget_status",
+      "body_metrics_status"
+    ],
+    "confirm_before_write": [
+      "handle_input",
+      "capture",
+      "improve_note",
+      "research_note",
+      "update_diet_meal"
+    ]
+  },
   "tools": [
     {
       "name": "handle_input",
@@ -28,14 +59,39 @@
       "purpose": "Write structured day summaries into the Obsidian vault."
     },
     {
+      "name": "daily_status",
+      "command": "brain daily-status --date <yyyy-mm-dd> --json",
+      "purpose": "Read a compact daily state snapshot across diet, macros, habits, spending, supplements, and workouts."
+    },
+    {
       "name": "daily_macros",
       "command": "brain daily-macros --date <yyyy-mm-dd>",
       "purpose": "Read nutrition totals from SQLite."
     },
     {
+      "name": "macro_status",
+      "command": "brain macro-status --date <yyyy-mm-dd> --json",
+      "purpose": "Compare actual macros against stored macro targets or the active diet."
+    },
+    {
+      "name": "diet_status",
+      "command": "brain diet-status --date <yyyy-mm-dd> --json",
+      "purpose": "Compare actual intake against the active diet plan."
+    },
+    {
+      "name": "update_diet_meal",
+      "command": "brain update-diet-meal --meal-type <breakfast|lunch|dinner> --items \"<items>\" --mode <replace|append>",
+      "purpose": "Change one meal inside the active diet plan."
+    },
+    {
       "name": "daily_habits",
       "command": "brain daily-habits --date <yyyy-mm-dd>",
       "purpose": "Read habit status summaries from SQLite."
+    },
+    {
+      "name": "habit_status",
+      "command": "brain habit-status --period <daily|weekly|monthly> --date <yyyy-mm-dd> --json",
+      "purpose": "Compare habit completion against stored habit targets."
     },
     {
       "name": "workout_status",
@@ -46,6 +102,11 @@
       "name": "spending_summary",
       "command": "brain spending-summary --date <yyyy-mm-dd>",
       "purpose": "Read expense summaries from SQLite."
+    },
+    {
+      "name": "budget_status",
+      "command": "brain budget-status --period <daily|weekly|monthly> --date <yyyy-mm-dd> --json",
+      "purpose": "Compare actual spending against stored budget targets."
     },
     {
       "name": "body_metrics_status",

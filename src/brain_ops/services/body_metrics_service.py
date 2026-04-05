@@ -1,11 +1,20 @@
 from __future__ import annotations
-
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from brain_ops.errors import ConfigError
-from brain_ops.models import BodyMetricsLogResult, BodyMetricsSummary, OperationRecord, OperationStatus
+from brain_ops.core.validation import resolve_iso_date
+from brain_ops.domains.personal.tracking import (
+    build_body_metrics_log_result,
+    build_body_metrics_summary,
+    normalize_body_metrics_inputs,
+)
+from brain_ops.models import BodyMetricsLogResult
+from brain_ops.storage.db import ensure_database_parent, require_database_file, resolve_database_path
+from brain_ops.storage.sqlite import (
+    ensure_body_metrics_schema,
+    fetch_body_metrics_status_rows,
+    insert_body_metrics_log,
+)
 
 
 def log_body_metrics(
@@ -13,108 +22,80 @@ def log_body_metrics(
     *,
     weight_kg: float | None = None,
     body_fat_pct: float | None = None,
+    fat_mass_kg: float | None = None,
+    muscle_mass_kg: float | None = None,
+    visceral_fat: float | None = None,
+    bmr_calories: float | None = None,
+    arm_cm: float | None = None,
     waist_cm: float | None = None,
+    thigh_cm: float | None = None,
+    calf_cm: float | None = None,
     note: str | None = None,
     logged_at: datetime | None = None,
     dry_run: bool = False,
 ) -> BodyMetricsLogResult:
-    if weight_kg is None and body_fat_pct is None and waist_cm is None:
-        raise ConfigError("At least one body metric must be provided.")
-    if weight_kg is not None and weight_kg <= 0:
-        raise ConfigError("Weight must be greater than zero.")
-    if body_fat_pct is not None and not 0 <= body_fat_pct <= 100:
-        raise ConfigError("Body fat percentage must be between 0 and 100.")
-    if waist_cm is not None and waist_cm <= 0:
-        raise ConfigError("Waist must be greater than zero.")
-
-    logged_at = logged_at or datetime.now()
-    target = database_path.expanduser()
-    if not dry_run:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(target) as connection:
-            connection.execute(
-                """
-                INSERT INTO body_metrics (logged_at, weight_kg, body_fat_pct, waist_cm, note, source)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    logged_at.isoformat(timespec="seconds"),
-                    weight_kg,
-                    body_fat_pct,
-                    waist_cm,
-                    note,
-                    "chat",
-                ),
-            )
-            connection.commit()
-
-    pieces = []
-    if weight_kg is not None:
-        pieces.append(f"weight={weight_kg:g}kg")
-    if body_fat_pct is not None:
-        pieces.append(f"body_fat={body_fat_pct:g}%")
-    if waist_cm is not None:
-        pieces.append(f"waist={waist_cm:g}cm")
-    operation = OperationRecord(
-        action="insert",
-        path=target,
-        detail=f"logged body metrics ({', '.join(pieces)})",
-        status=OperationStatus.CREATED,
-    )
-    return BodyMetricsLogResult(
-        logged_at=logged_at,
+    normalized = normalize_body_metrics_inputs(
         weight_kg=weight_kg,
         body_fat_pct=body_fat_pct,
+        fat_mass_kg=fat_mass_kg,
+        muscle_mass_kg=muscle_mass_kg,
+        visceral_fat=visceral_fat,
+        bmr_calories=bmr_calories,
+        arm_cm=arm_cm,
         waist_cm=waist_cm,
-        operations=[operation],
-        reason="Logged body metrics into SQLite.",
+        thigh_cm=thigh_cm,
+        calf_cm=calf_cm,
+        note=note,
+    )
+
+    logged_at = logged_at or datetime.now()
+    target = resolve_database_path(database_path)
+    if not dry_run:
+        ensure_database_parent(target)
+        insert_body_metrics_log(
+            target,
+            logged_at=logged_at.isoformat(timespec="seconds"),
+            weight_kg=normalized["weight_kg"],
+            body_fat_pct=normalized["body_fat_pct"],
+            fat_mass_kg=normalized["fat_mass_kg"],
+            muscle_mass_kg=normalized["muscle_mass_kg"],
+            visceral_fat=normalized["visceral_fat"],
+            bmr_calories=normalized["bmr_calories"],
+            arm_cm=normalized["arm_cm"],
+            waist_cm=normalized["waist_cm"],
+            thigh_cm=normalized["thigh_cm"],
+            calf_cm=normalized["calf_cm"],
+            note=normalized["note"],
+        )
+    return build_body_metrics_log_result(
+        database_path=target,
+        logged_at=logged_at,
+        weight_kg=normalized["weight_kg"],
+        body_fat_pct=normalized["body_fat_pct"],
+        fat_mass_kg=normalized["fat_mass_kg"],
+        muscle_mass_kg=normalized["muscle_mass_kg"],
+        visceral_fat=normalized["visceral_fat"],
+        bmr_calories=normalized["bmr_calories"],
+        arm_cm=normalized["arm_cm"],
+        waist_cm=normalized["waist_cm"],
+        thigh_cm=normalized["thigh_cm"],
+        calf_cm=normalized["calf_cm"],
     )
 
 
-def body_metrics_status(database_path: Path, date_text: str | None = None) -> BodyMetricsSummary:
-    target = database_path.expanduser()
-    if not target.exists():
-        raise ConfigError(f"Database file not found: {target}")
+def body_metrics_status(database_path: Path, date_text: str | None = None):
+    target = require_database_file(database_path)
 
-    resolved_date = _resolve_date(date_text)
+    resolved_date = resolve_iso_date(date_text)
     start = f"{resolved_date}T00:00:00"
     end = f"{resolved_date}T23:59:59"
 
-    with sqlite3.connect(target) as connection:
-        count_row = connection.execute(
-            """
-            SELECT COUNT(*)
-            FROM body_metrics
-            WHERE logged_at BETWEEN ? AND ?
-            """,
-            (start, end),
-        ).fetchone()
-        latest_row = connection.execute(
-            """
-            SELECT logged_at, weight_kg, body_fat_pct, waist_cm
-            FROM body_metrics
-            WHERE logged_at BETWEEN ? AND ?
-            ORDER BY logged_at DESC
-            LIMIT 1
-            """,
-            (start, end),
-        ).fetchone()
+    ensure_body_metrics_schema(target)
+    count_row, latest_row = fetch_body_metrics_status_rows(target, start=start, end=end)
 
-    return BodyMetricsSummary(
+    return build_body_metrics_summary(
         date=resolved_date,
-        entries_logged=int((count_row or [0])[0] or 0),
-        latest_logged_at=latest_row[0] if latest_row else None,
-        latest_weight_kg=float(latest_row[1]) if latest_row and latest_row[1] is not None else None,
-        latest_body_fat_pct=float(latest_row[2]) if latest_row and latest_row[2] is not None else None,
-        latest_waist_cm=float(latest_row[3]) if latest_row and latest_row[3] is not None else None,
         database_path=target,
+        count_row=count_row,
+        latest_row=latest_row,
     )
-
-
-def _resolve_date(date_text: str | None) -> str:
-    if not date_text:
-        return datetime.now().date().isoformat()
-    try:
-        return datetime.fromisoformat(date_text).date().isoformat()
-    except ValueError as exc:
-        raise ConfigError("Date must be in YYYY-MM-DD format.") from exc

@@ -2,10 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from brain_ops.domains.knowledge.enrichment import (
+    describe_apply_links_step,
+    describe_improve_step,
+    describe_research_step,
+    plan_enrichment_steps,
+)
 from brain_ops.models import EnrichNoteResult
 from brain_ops.services.apply_links_service import apply_link_suggestions
 from brain_ops.services.improve_service import improve_note
 from brain_ops.services.research_service import research_note
+from brain_ops.storage.obsidian import resolve_note_document_path
 from brain_ops.vault import Vault
 
 
@@ -20,28 +27,26 @@ def enrich_note(
     max_sources: int = 3,
     link_limit: int = 3,
 ) -> EnrichNoteResult:
-    path = note_path.expanduser()
-    if not path.is_absolute():
-        path = vault.root / path
-    safe_path = vault._safe_path(path)
+    safe_path, _ = resolve_note_document_path(vault, note_path)
 
     operations = []
     steps: list[str] = []
+    for step in plan_enrichment_steps(improve=improve, research=research, apply_links=apply_links):
+        if step == "improve":
+            improve_result = improve_note(vault, safe_path)
+            operations.append(improve_result.operation)
+            steps.append(describe_improve_step(improve_result.reason))
+            continue
 
-    if improve:
-        improve_result = improve_note(vault, safe_path)
-        operations.append(improve_result.operation)
-        steps.append(f"improve-note: {improve_result.reason}")
+        if step == "research":
+            research_result = research_note(vault, safe_path, query=query, max_sources=max_sources)
+            operations.append(research_result.operation)
+            steps.append(describe_research_step(len(research_result.sources)))
+            continue
 
-    if research:
-        research_result = research_note(vault, safe_path, query=query, max_sources=max_sources)
-        operations.append(research_result.operation)
-        steps.append(f"research-note: attached {len(research_result.sources)} source(s)")
-
-    if apply_links:
         link_result = apply_link_suggestions(vault, safe_path, limit=link_limit)
         operations.append(link_result.operation)
-        steps.append(f"apply-link-suggestions: inserted {len(link_result.applied_links)} link(s)")
+        steps.append(describe_apply_links_step(len(link_result.applied_links)))
 
     return EnrichNoteResult(
         path=safe_path,

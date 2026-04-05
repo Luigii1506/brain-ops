@@ -190,6 +190,35 @@ class DailyMacrosSummary(BaseModel):
     protein_g: float = 0
     carbs_g: float = 0
     fat_g: float = 0
+    active_diet_name: str | None = None
+    database_path: Path
+
+
+class MacroTargetsResult(BaseModel):
+    calories: float | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class MacroStatusSummary(BaseModel):
+    date: str
+    target_source: str | None = None
+    active_diet_name: str | None = None
+    calories_target: float | None = None
+    protein_g_target: float | None = None
+    carbs_g_target: float | None = None
+    fat_g_target: float | None = None
+    calories_actual: float = 0
+    protein_g_actual: float = 0
+    carbs_g_actual: float = 0
+    fat_g_actual: float = 0
+    calories_remaining: float | None = None
+    protein_g_remaining: float | None = None
+    carbs_g_remaining: float | None = None
+    fat_g_remaining: float | None = None
     database_path: Path
 
 
@@ -218,11 +247,41 @@ class DailyHabitsSummary(BaseModel):
     database_path: Path
 
 
+class HabitTargetResult(BaseModel):
+    habit_name: str
+    period: str
+    target_count: int
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class HabitStatusItem(BaseModel):
+    habit_name: str
+    period: str
+    target_count: int
+    completed_count: int
+    remaining_count: int
+
+
+class HabitTargetStatusSummary(BaseModel):
+    date: str
+    period: str
+    items: list[HabitStatusItem] = Field(default_factory=list)
+    database_path: Path
+
+
 class BodyMetricsLogResult(BaseModel):
     logged_at: datetime
     weight_kg: float | None = None
     body_fat_pct: float | None = None
+    fat_mass_kg: float | None = None
+    muscle_mass_kg: float | None = None
+    visceral_fat: float | None = None
+    bmr_calories: float | None = None
+    arm_cm: float | None = None
     waist_cm: float | None = None
+    thigh_cm: float | None = None
+    calf_cm: float | None = None
     operations: list[OperationRecord] = Field(default_factory=list)
     reason: str
 
@@ -233,7 +292,14 @@ class BodyMetricsSummary(BaseModel):
     latest_logged_at: str | None = None
     latest_weight_kg: float | None = None
     latest_body_fat_pct: float | None = None
+    latest_fat_mass_kg: float | None = None
+    latest_muscle_mass_kg: float | None = None
+    latest_visceral_fat: float | None = None
+    latest_bmr_calories: float | None = None
+    latest_arm_cm: float | None = None
     latest_waist_cm: float | None = None
+    latest_thigh_cm: float | None = None
+    latest_calf_cm: float | None = None
     database_path: Path
 
 
@@ -280,6 +346,125 @@ class SpendingSummary(BaseModel):
     database_path: Path
 
 
+class BudgetTargetResult(BaseModel):
+    period: str
+    amount: float
+    currency: str = "MXN"
+    category: str | None = None
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class BudgetStatusItem(BaseModel):
+    period: str
+    category: str | None = None
+    target_amount: float
+    actual_amount: float
+    remaining_amount: float
+    currency: str = "MXN"
+
+
+class BudgetStatusSummary(BaseModel):
+    date: str
+    period: str
+    items: list[BudgetStatusItem] = Field(default_factory=list)
+    database_path: Path
+
+
+class DietPlanMealItem(BaseModel):
+    food_name: str
+    grams: float | None = None
+    quantity: float | None = None
+    calories: float | None = None
+    protein_g: float | None = None
+    carbs_g: float | None = None
+    fat_g: float | None = None
+
+
+class DietPlanMeal(BaseModel):
+    meal_type: str
+    label: str
+    items: list[DietPlanMealItem] = Field(default_factory=list)
+    calories_target: float = 0
+    protein_g_target: float = 0
+    carbs_g_target: float = 0
+    fat_g_target: float = 0
+
+
+class DietPlanResult(BaseModel):
+    name: str
+    status: str
+    meals: list[DietPlanMeal] = Field(default_factory=list)
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class DietActivationResult(BaseModel):
+    name: str
+    status: str
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class DietMealUpdateResult(BaseModel):
+    diet_name: str
+    meal_type: str
+    mode: str
+    items: list[DietPlanMealItem] = Field(default_factory=list)
+    operations: list[OperationRecord] = Field(default_factory=list)
+    reason: str
+
+
+class DietPlanSummary(BaseModel):
+    name: str
+    status: str
+    notes: str | None = None
+    meals: list[DietPlanMeal] = Field(default_factory=list)
+    calories_target: float = 0
+    protein_g_target: float = 0
+    carbs_g_target: float = 0
+    fat_g_target: float = 0
+    database_path: Path
+
+
+class DietMealProgress(BaseModel):
+    meal_type: str
+    label: str
+    target_items: list[str] = Field(default_factory=list)
+    actual_items: list[str] = Field(default_factory=list)
+    target_count: int = 0
+    actual_count: int = 0
+    logged: bool = False
+    calories_target: float = 0
+    protein_g_target: float = 0
+    carbs_g_target: float = 0
+    fat_g_target: float = 0
+    calories_actual: float = 0
+    protein_g_actual: float = 0
+    carbs_g_actual: float = 0
+    fat_g_actual: float = 0
+
+
+class DietStatusSummary(BaseModel):
+    date: str
+    active_diet_name: str | None = None
+    notes: str | None = None
+    meals: list[DietMealProgress] = Field(default_factory=list)
+    calories_target: float = 0
+    protein_g_target: float = 0
+    carbs_g_target: float = 0
+    fat_g_target: float = 0
+    calories_actual: float = 0
+    protein_g_actual: float = 0
+    carbs_g_actual: float = 0
+    fat_g_actual: float = 0
+    calories_remaining: float | None = None
+    protein_g_remaining: float | None = None
+    carbs_g_remaining: float | None = None
+    fat_g_remaining: float | None = None
+    database_path: Path
+
+
 class DailyLogResult(BaseModel):
     logged_at: datetime
     domain: str
@@ -299,11 +484,15 @@ class RouteDecisionResult(BaseModel):
 
 class HandleInputSubResult(BaseModel):
     input_text: str
+    intent: str | None = None
+    intent_version: str | None = None
     executed: bool = False
     executed_command: str | None = None
     target_domain: str | None = None
     routing_source: str | None = None
+    confidence: float | None = None
     extracted_fields: dict[str, object] = Field(default_factory=dict)
+    normalized_fields: dict[str, object] = Field(default_factory=dict)
     assistant_message: str | None = None
     reason: str
 
@@ -311,14 +500,19 @@ class HandleInputSubResult(BaseModel):
 class HandleInputResult(BaseModel):
     input_text: str
     decision: RouteDecisionResult
+    intent: str | None = None
+    intent_version: str | None = None
     executed: bool = False
     operations: list[OperationRecord] = Field(default_factory=list)
     executed_command: str | None = None
     target_domain: str | None = None
     routing_source: str | None = None
+    confidence: float | None = None
     extracted_fields: dict[str, object] = Field(default_factory=dict)
+    normalized_fields: dict[str, object] = Field(default_factory=dict)
     needs_follow_up: bool = False
     follow_up: str | None = None
+    follow_up_options: list[str] = Field(default_factory=list)
     assistant_message: str | None = None
     sub_results: list[HandleInputSubResult] = Field(default_factory=list)
     reason: str
@@ -330,3 +524,34 @@ class DailySummaryResult(BaseModel):
     operations: list[OperationRecord] = Field(default_factory=list)
     sections_written: list[str] = Field(default_factory=list)
     reason: str
+
+
+class DailyStatusSummary(BaseModel):
+    date: str
+    active_diet_name: str | None = None
+    calories_actual: float = 0
+    calories_target: float | None = None
+    calories_remaining: float | None = None
+    protein_g_actual: float = 0
+    protein_g_target: float | None = None
+    protein_g_remaining: float | None = None
+    carbs_g_actual: float = 0
+    carbs_g_target: float | None = None
+    carbs_g_remaining: float | None = None
+    fat_g_actual: float = 0
+    fat_g_target: float | None = None
+    fat_g_remaining: float | None = None
+    missing_diet_meals: list[str] = Field(default_factory=list)
+    workouts_logged: int = 0
+    total_workout_sets: int = 0
+    expenses_total: float = 0
+    expense_currency: str = "MXN"
+    supplements_logged: int = 0
+    supplement_names: list[str] = Field(default_factory=list)
+    habit_pending: list[str] = Field(default_factory=list)
+    habits_completed: list[str] = Field(default_factory=list)
+    body_weight_kg: float | None = None
+    body_fat_pct: float | None = None
+    waist_cm: float | None = None
+    daily_logs_count: int = 0
+    database_path: Path

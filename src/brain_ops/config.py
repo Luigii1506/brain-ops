@@ -34,11 +34,11 @@ class AIConfig(BaseModel):
     provider: str = "ollama"
     ollama_host: str = "http://127.0.0.1:11434"
     orchestrator: str = "openclaw"
-    primary_model: str = "qwen2.5-coder:latest"
-    reasoning_model: str = "llama3.1:8b"
-    parser_model: str = "llama3.1:8b"
+    primary_model: str = "qwen3.5:9b"
+    reasoning_model: str = "qwen3.5:9b"
+    parser_model: str = "qwen3.5:9b"
     enable_llm_routing: bool = False
-    ollama_timeout_seconds: int = 60
+    ollama_timeout_seconds: int = 180
 
 
 class VaultConfig(BaseModel):
@@ -137,10 +137,10 @@ def load_config(explicit_path: Path | None = None) -> VaultConfig:
             provider=raw.get("ai_provider", "ollama"),
             ollama_host=raw.get("ollama_host", "http://127.0.0.1:11434"),
             orchestrator=raw.get("orchestrator", "openclaw"),
-            primary_model=raw.get("primary_model", "qwen2.5-coder:latest"),
-            reasoning_model=raw.get("reasoning_model", "llama3.1:8b"),
-            parser_model=raw.get("parser_model", "llama3.1:8b"),
+            primary_model=raw.get("primary_model", "qwen3.5:9b"),
+            reasoning_model=raw.get("reasoning_model", "qwen3.5:9b"),
+            parser_model=raw.get("parser_model", "qwen3.5:9b"),
             enable_llm_routing=raw.get("enable_llm_routing", False),
-            ollama_timeout_seconds=raw.get("ollama_timeout_seconds", 60),
+            ollama_timeout_seconds=raw.get("ollama_timeout_seconds", 180),
         ),
     )

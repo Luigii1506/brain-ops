@@ -29,6 +29,7 @@ OpenClaw is the agent/orchestration layer behind that channel.
 
 OpenClaw should prefer calling:
 - `brain handle-input --json`
+- `brain handle-input --json --session-id <stable-session-id>`
 
 This is the primary natural-language entrypoint.
 
@@ -41,6 +42,7 @@ OpenClaw should only call domain-specific commands directly when:
 
 ### 1. Natural input
 - `brain handle-input --json`
+- For Telegram/OpenClaw, the plugin must always send a stable session id so `brain-ops` can resolve follow-ups like `sí`, `no`, `resumen` or `objetivos` against the last pending question.
 
 Use when:
 - the user speaks naturally,
@@ -48,12 +50,17 @@ Use when:
 - the system should decide the right domain/command.
 
 Expected output fields:
+- `intent`
+- `intent_version`
 - `executed`
 - `executed_command`
 - `target_domain`
 - `routing_source`
+- `confidence`
 - `extracted_fields`
+- `normalized_fields`
 - `needs_follow_up`
+- `follow_up`
 - `assistant_message`
 - `sub_results`
 
@@ -116,6 +123,38 @@ Then OpenClaw should:
   Heuristic and LLM were both consulted and arbitration decided the final route.
 
 OpenClaw should treat `heuristic` and `hybrid` as higher-trust execution paths than unconstrained freeform generation.
+
+## Current operational setup
+
+- Channel: Telegram
+- Main model: `ollama/qwen3.5:9b`
+- Main tool policy: minimal profile with `brain_ops_handle_input` as the primary tool
+- Stable follow-up session id inside the plugin: `telegram-main`
+
+### Enabled hooks
+
+- `command-logger`
+  Purpose: keep an audit trail of command-level activity.
+- `session-memory`
+  Purpose: preserve useful context when starting fresh sessions with `/new`.
+
+### Active cron jobs
+
+- `jarvis-manana`
+  Schedule: `0 8 * * *` in `America/Tijuana`
+  Purpose: send a short morning summary to Telegram with status and pending items.
+- `jarvis-noche`
+  Schedule: `0 21 * * *` in `America/Tijuana`
+  Purpose: send a short night review to Telegram with progress, gaps, and next action.
+
+## Deferred OpenClaw enhancements
+
+- `memory-lancedb`
+  Consider only if core memory search becomes insufficient.
+- `llm-task`
+  Consider for isolated structured subtasks inside OpenClaw, not as a replacement for `brain-ops`.
+- `voice-call`
+  Consider later only if phone-call interaction becomes more valuable than Telegram voice notes.
 
 ## Recommended OpenClaw tool set
 

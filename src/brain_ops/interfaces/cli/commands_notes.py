@@ -1,0 +1,291 @@
+"""Typer command registration for note and knowledge workflows."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import typer
+from rich.console import Console
+
+from brain_ops.errors import BrainOpsError
+
+from .knowledge import (
+    present_audit_vault_command,
+    present_normalize_frontmatter_command,
+    present_process_inbox_command,
+    present_weekly_review_command,
+)
+from .notes import (
+    coerce_note_workflow_error,
+    present_apply_link_suggestions_command,
+    present_capture_command,
+    present_create_note_command,
+    present_create_project_command,
+    present_enrich_note_command,
+    present_improve_note_command,
+    present_link_suggestions_command,
+    present_promote_note_command,
+    present_research_note_command,
+)
+
+
+def register_note_and_knowledge_commands(app: typer.Typer, console: Console, handle_error) -> None:
+    @app.command("create-note")
+    def create_note_command(
+        title: str,
+        note_type: str = typer.Option("permanent_note", "--type", help="Frontmatter note type."),
+        folder: str | None = typer.Option(None, "--folder", help="Custom destination folder inside the vault."),
+        template_name: str | None = typer.Option(None, "--template", help="Template file name."),
+        tags: list[str] = typer.Option(None, "--tag", help="Repeatable tag option."),
+        overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite if the note already exists."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Create a single note from a template."""
+        try:
+            present_create_note_command(
+                console,
+                config_path=config_path,
+                title=title,
+                note_type=note_type,
+                folder=folder,
+                template_name=template_name,
+                tags=tags or [],
+                overwrite=overwrite,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("create-project")
+    def create_project_command(
+        name: str,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Create a project workspace and its core notes."""
+        try:
+            present_create_project_command(
+                console,
+                config_path=config_path,
+                name=name,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("process-inbox")
+    def process_inbox_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+        write_report: bool = typer.Option(False, "--write-report", help="Persist a markdown report in the reports folder."),
+        improve_structure: bool = typer.Option(True, "--improve-structure/--no-improve-structure", help="Wrap loose inbox content into a typed structure before moving."),
+    ) -> None:
+        """Normalize inbox notes and move only clearly classified notes."""
+        try:
+            present_process_inbox_command(
+                console,
+                config_path=config_path,
+                dry_run=dry_run,
+                write_report=write_report,
+                improve_structure=improve_structure,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("weekly-review")
+    def weekly_review_command(
+        stale_days: int = typer.Option(21, "--stale-days", help="Project notes older than this are marked stale."),
+        write_report: bool = typer.Option(False, "--write-report", help="Persist a markdown report in the reports folder."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Generate a weekly review report for the vault."""
+        try:
+            present_weekly_review_command(
+                console,
+                config_path=config_path,
+                dry_run=dry_run,
+                stale_days=stale_days,
+                write_report=write_report,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("audit-vault")
+    def audit_vault_command(
+        write_report: bool = typer.Option(False, "--write-report", help="Persist a markdown report in the reports folder."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Audit the vault structure and note quality without modifying content."""
+        try:
+            present_audit_vault_command(
+                console,
+                config_path=config_path,
+                write_report=write_report,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("normalize-frontmatter")
+    def normalize_frontmatter_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Normalize frontmatter across the vault using folder-aware defaults and type aliases."""
+        try:
+            present_normalize_frontmatter_command(
+                console,
+                config_path=config_path,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("capture")
+    def capture_command(
+        text: str,
+        title: str | None = typer.Option(None, "--title", help="Optional explicit note title."),
+        note_type: str | None = typer.Option(None, "--type", help="Optional explicit type override."),
+        tags: list[str] = typer.Option(None, "--tag", help="Repeatable tag option."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Capture natural language into a structured note."""
+        try:
+            present_capture_command(
+                console,
+                config_path=config_path,
+                text=text,
+                title=title,
+                note_type=note_type,
+                tags=tags or [],
+                dry_run=dry_run,
+            )
+        except (BrainOpsError, ValueError) as error:
+            handle_error(coerce_note_workflow_error(error))
+
+    @app.command("improve-note")
+    def improve_note_command(
+        note_path: Path,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Improve the structure of an existing note without inventing new facts."""
+        try:
+            present_improve_note_command(
+                console,
+                config_path=config_path,
+                note_path=note_path,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("research-note")
+    def research_note_command(
+        note_path: Path,
+        query: str | None = typer.Option(None, "--query", help="Optional explicit research query."),
+        max_sources: int = typer.Option(3, "--max-sources", help="Maximum external sources to attach."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Enrich a note with grounded external research and source attribution."""
+        try:
+            present_research_note_command(
+                console,
+                config_path=config_path,
+                note_path=note_path,
+                query=query,
+                max_sources=max_sources,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("link-suggestions")
+    def link_suggestions_command(
+        note_path: Path,
+        limit: int = typer.Option(8, "--limit", help="Maximum number of suggestions to return."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Suggest likely internal links for a note using vault-local heuristics."""
+        try:
+            present_link_suggestions_command(
+                console,
+                config_path=config_path,
+                note_path=note_path,
+                limit=limit,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("apply-link-suggestions")
+    def apply_link_suggestions_command(
+        note_path: Path,
+        limit: int = typer.Option(3, "--limit", help="Maximum number of suggestions to apply."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Apply likely internal links into a note using the current suggestion heuristics."""
+        try:
+            present_apply_link_suggestions_command(
+                console,
+                config_path=config_path,
+                note_path=note_path,
+                limit=limit,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("promote-note")
+    def promote_note_command(
+        note_path: Path,
+        target_type: str | None = typer.Option(None, "--target-type", help="Optional explicit promotion target."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Promote an existing note into a more durable artifact."""
+        try:
+            present_promote_note_command(
+                console,
+                config_path=config_path,
+                note_path=note_path,
+                target_type=target_type,
+                dry_run=dry_run,
+            )
+        except (BrainOpsError, ValueError) as error:
+            handle_error(coerce_note_workflow_error(error))
+
+    @app.command("enrich-note")
+    def enrich_note_command(
+        note_path: Path,
+        query: str | None = typer.Option(None, "--query", help="Optional explicit research query."),
+        max_sources: int = typer.Option(3, "--max-sources", help="Maximum external sources to attach."),
+        link_limit: int = typer.Option(3, "--link-limit", help="Maximum number of links to apply."),
+        improve: bool = typer.Option(True, "--improve/--no-improve", help="Improve note structure before other steps."),
+        research: bool = typer.Option(True, "--research/--no-research", help="Attach grounded research."),
+        apply_links: bool = typer.Option(True, "--apply-links/--no-apply-links", help="Insert likely internal links."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Run the current note enrichment pipeline on a single note."""
+        try:
+            present_enrich_note_command(
+                console,
+                config_path=config_path,
+                note_path=note_path,
+                query=query,
+                max_sources=max_sources,
+                link_limit=link_limit,
+                improve=improve,
+                research=research,
+                apply_links=apply_links,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+
+__all__ = ["register_note_and_knowledge_commands"]

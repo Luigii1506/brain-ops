@@ -169,9 +169,11 @@ Deliver:
 Deliver:
 - OpenClaw tool calling conventions
 - Telegram -> OpenClaw -> brain-ops interaction flow
+- short-lived conversational follow-up state per session for replies like `sí/no`, `resumen`, `objetivos`
 - domain-aware command selection
 - persistent memory strategy
 - context packs for projects and personal domains
+- OpenClaw operational layer with useful hooks and scheduled automations
 
 ## Phase 5: Continuous operation on Mac mini
 Deliver:
@@ -200,26 +202,45 @@ Deliver:
 ### Structured life-ops
 - log-meal
 - daily-macros
+- set-macro-targets
+- macro-status
+- create-diet-plan
+- set-active-diet
+- active-diet
+- diet-status
 - log-supplement
 - habit-checkin
 - daily-habits
+- set-habit-target
+- habit-status
 - log-body-metrics
 - body-metrics-status
 - log-workout
 - workout-status
 - log-expense
 - spending-summary
+- set-budget-target
+- budget-status
+- daily-status
 - daily-log
 - daily-summary
 
 ### Input handling
 - route-input
 - handle-input
+- typed Pydantic intents as the internal execution contract
+- pipeline split into parse -> validate -> execute -> format
 - heuristic extraction for meals, supplements, habits, workouts, expenses, and basic knowledge capture
+- structured-output Ollama parser path with schema validation
+- conversational target-setting for macros, budgets, and habits
+- conversational status queries for macros, budgets, habits, and active diet progress
+- conversational daily overview queries like `como voy hoy`, `que me falta hoy`, and `resume mi dia`
 - JSON output mode for route-input and handle-input
 - routing source markers for heuristic, llm, and hybrid decisions
 - multi-action execution for mixed safe inputs
 - OpenClaw integration manifest and contract docs
+- OpenClaw hooks enabled: `command-logger`, `session-memory`
+- OpenClaw scheduled jobs: `jarvis-manana`, `jarvis-noche`
 
 ## Master backlog
 
@@ -232,17 +253,16 @@ Rule:
 
 ## Now
 
-### 1. Strengthen natural-language extraction
-Improve parsing for:
-- meals without rigid formatting
-- expenses with merchants/categories mixed into text
-- supplements with units and variants
-- habits with negation or partial completion
-- distinction between reflections and workouts
-- more robust mixed-intent splitting when users send long combined messages
+### 1. Harden the hybrid intent layer
+Improve and stabilize:
+- heuristic-to-intent conversion quality
+- Ollama structured parsing on the Mac mini with `qwen3.5:9b`
+- arbitration rules between heuristic and LLM parsing
+- normalized field quality for OpenClaw consumption
+- multi-intent parsing for longer and more conversational inputs
 
 Why now:
-- this is the shortest path to a more Jarvis-like interaction style
+- this is now the main leverage point for making Jarvis feel natural without sacrificing deterministic safety
 
 ### 2. Mac mini Ollama rollout
 Keep local-model rollout pending for the Mac mini environment:
@@ -285,7 +305,7 @@ Use cases:
 - extracting richer fields from natural language
 
 ### 4. Goals and targets
-Add local configurable targets for:
+Continue expanding local configurable targets for:
 - macro goals
 - workout goals
 - budget targets

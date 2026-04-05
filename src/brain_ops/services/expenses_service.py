@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from brain_ops.errors import ConfigError
-from brain_ops.models import ExpenseLogResult, OperationRecord, OperationStatus, SpendingSummary
+from brain_ops.core.validation import resolve_iso_date
+from brain_ops.domains.personal.tracking import (
+    build_expense_log_result,
+    build_spending_summary,
+    normalize_expense_log_inputs,
+)
+from brain_ops.models import ExpenseLogResult
+from brain_ops.storage.db import ensure_database_parent, require_database_file, resolve_database_path
+from brain_ops.storage.sqlite import (
+    fetch_expense_category_totals,
+    fetch_expense_summary_header,
+    insert_expense,
+)
 
 
 def log_expense(
@@ -19,46 +29,35 @@ def log_expense(
     logged_at: datetime | None = None,
     dry_run: bool = False,
 ) -> ExpenseLogResult:
-    if amount <= 0:
-        raise ConfigError("Expense amount must be greater than zero.")
-
-    logged_at = logged_at or datetime.now()
-    normalized_currency = (currency or "MXN").upper()
-    target = database_path.expanduser()
-    if not dry_run:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(target) as connection:
-            connection.execute(
-                """
-                INSERT INTO expenses (logged_at, amount, currency, category, merchant, note, source)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    logged_at.isoformat(timespec="seconds"),
-                    amount,
-                    normalized_currency,
-                    category,
-                    merchant,
-                    note,
-                    "chat",
-                ),
-            )
-            connection.commit()
-
-    operation = OperationRecord(
-        action="insert",
-        path=target,
-        detail=f"logged expense {amount:.2f} {normalized_currency}",
-        status=OperationStatus.CREATED,
-    )
-    return ExpenseLogResult(
-        logged_at=logged_at,
+    normalized = normalize_expense_log_inputs(
         amount=amount,
-        currency=normalized_currency,
         category=category,
         merchant=merchant,
-        operations=[operation],
-        reason="Logged expense into SQLite.",
+        currency=currency,
+        note=note,
+    )
+
+    logged_at = logged_at or datetime.now()
+    target = resolve_database_path(database_path)
+    if not dry_run:
+        ensure_database_parent(target)
+        insert_expense(
+            target,
+            logged_at_iso=logged_at.isoformat(timespec="seconds"),
+            amount=normalized["amount"],
+            currency=normalized["currency"],
+            category=normalized["category"],
+            merchant=normalized["merchant"],
+            note=normalized["note"],
+            source="chat",
+        )
+    return build_expense_log_result(
+        database_path=target,
+        logged_at=logged_at,
+        amount=normalized["amount"],
+        currency=normalized["currency"],
+        category=normalized["category"],
+        merchant=normalized["merchant"],
     )
 
 
@@ -67,51 +66,31 @@ def spending_summary(
     date_text: str | None = None,
     *,
     currency: str = "MXN",
-) -> SpendingSummary:
-    target = database_path.expanduser()
-    if not target.exists():
-        raise ConfigError(f"Database file not found: {target}")
+):
+    target = require_database_file(database_path)
 
-    resolved_date = _resolve_date(date_text)
+    resolved_date = resolve_iso_date(date_text)
     start = f"{resolved_date}T00:00:00"
     end = f"{resolved_date}T23:59:59"
     normalized_currency = (currency or "MXN").upper()
 
-    with sqlite3.connect(target) as connection:
-        header = connection.execute(
-            """
-            SELECT COUNT(*), COALESCE(SUM(amount), 0)
-            FROM expenses
-            WHERE logged_at BETWEEN ? AND ? AND currency = ?
-            """,
-            (start, end, normalized_currency),
-        ).fetchone()
-        rows = connection.execute(
-            """
-            SELECT COALESCE(category, 'uncategorized'), COALESCE(SUM(amount), 0)
-            FROM expenses
-            WHERE logged_at BETWEEN ? AND ? AND currency = ?
-            GROUP BY COALESCE(category, 'uncategorized')
-            ORDER BY COALESCE(SUM(amount), 0) DESC, COALESCE(category, 'uncategorized')
-            """,
-            (start, end, normalized_currency),
-        ).fetchall()
-
-    by_category = {category: float(total or 0) for category, total in rows}
-    return SpendingSummary(
-        date=resolved_date,
-        total_amount=float(header[1] or 0),
-        transaction_count=int(header[0] or 0),
-        by_category=by_category,
+    transaction_count, total_amount = fetch_expense_summary_header(
+        target,
+        start=start,
+        end=end,
         currency=normalized_currency,
-        database_path=target,
     )
-
-
-def _resolve_date(date_text: str | None) -> str:
-    if not date_text:
-        return datetime.now().date().isoformat()
-    try:
-        return datetime.fromisoformat(date_text).date().isoformat()
-    except ValueError as exc:
-        raise ConfigError("Date must be in YYYY-MM-DD format.") from exc
+    rows = fetch_expense_category_totals(
+        target,
+        start=start,
+        end=end,
+        currency=normalized_currency,
+    )
+    return build_spending_summary(
+        date=resolved_date,
+        database_path=target,
+        total_amount=total_amount,
+        transaction_count=transaction_count,
+        category_rows=rows,
+        currency=normalized_currency,
+    )

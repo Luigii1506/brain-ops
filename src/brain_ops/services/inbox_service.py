@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from brain_ops.frontmatter import dump_frontmatter, split_frontmatter
+from brain_ops.domains.knowledge import normalize_inbox_note, plan_inbox_disposition
 from brain_ops.models import InboxItemResult, InboxProcessSummary
-from brain_ops.services.capture_service import (
-    build_capture_body,
-    build_capture_frontmatter,
-    infer_capture_type,
+from brain_ops.storage.obsidian import (
+    apply_note_frontmatter_defaults_with_change,
+    list_vault_markdown_notes,
+    load_note_document,
+    read_note_text,
+    resolve_inbox_destination_path,
+    write_note_document_if_changed,
 )
-from brain_ops.services.note_service import resolve_folder
 from brain_ops.vault import Vault, now_iso
 
 AMBIGUOUS_PROJECT_TYPES = {"decision", "debugging_note", "changelog", "architecture"}
@@ -17,7 +19,7 @@ AMBIGUOUS_PROJECT_TYPES = {"decision", "debugging_note", "changelog", "architect
 
 def process_inbox(vault: Vault, improve_structure: bool = True) -> InboxProcessSummary:
     summary = InboxProcessSummary()
-    inbox_notes = vault.list_markdown_files(vault.config.folders.inbox)
+    inbox_notes = list_vault_markdown_notes(vault, base_folder=vault.config.folders.inbox)
     for note_path in inbox_notes:
         summary.scanned += 1
         item_result = _process_single_note(vault, note_path, summary, improve_structure=improve_structure)
@@ -31,105 +33,52 @@ def _process_single_note(
     summary: InboxProcessSummary,
     improve_structure: bool,
 ) -> InboxItemResult:
-    content = note_path.read_text(encoding="utf-8")
-    frontmatter, body = split_frontmatter(content)
+    safe_path, _, frontmatter, body = load_note_document(vault, note_path)
+    _, _, content = read_note_text(vault, safe_path)
     normalized = False
-    note_type = _infer_note_type(frontmatter)
-    raw_text = body.strip()
 
-    if (not note_type or note_type == "inbox") and raw_text:
-        note_type, _ = infer_capture_type(raw_text)
+    frontmatter, metadata_changed = apply_note_frontmatter_defaults_with_change(frontmatter, now=now_iso())
+    if metadata_changed:
         normalized = True
 
-    if "created" not in frontmatter or frontmatter.get("created") in (None, ""):
-        frontmatter["created"] = now_iso()
-        normalized = True
-    frontmatter["updated"] = now_iso()
-    frontmatter.setdefault("tags", [])
-
-    if note_type:
-        frontmatter["type"] = note_type
-        for key, value in build_capture_frontmatter(raw_text, note_type).items():
-            if key not in frontmatter or frontmatter[key] in (None, ""):
-                frontmatter[key] = value
-                normalized = True
-    else:
-        frontmatter.setdefault("type", "inbox")
-        frontmatter.setdefault("status", "triage")
-        note_type = None
-
-    if improve_structure and note_type and raw_text and not _looks_structured(body):
-        body = build_capture_body(raw_text, note_type)
+    note_type, frontmatter, body, inbox_normalized = normalize_inbox_note(
+        frontmatter,
+        body,
+        improve_structure=improve_structure,
+    )
+    if inbox_normalized:
         normalized = True
 
-    normalized_content = dump_frontmatter(frontmatter, body)
-    if normalized_content != content:
-        operation = vault.write_text(note_path, normalized_content, overwrite=True)
+    operation = write_note_document_if_changed(
+        vault,
+        safe_path,
+        frontmatter=frontmatter,
+        body=body,
+        original_content=content,
+        overwrite=True,
+    )
+    if operation is not None:
         summary.operations.append(operation)
         summary.normalized += 1
         normalized = True
 
-    destination = _destination_for_note(vault, note_path, frontmatter)
-    if destination is None:
-        summary.left_in_inbox += 1
-        return InboxItemResult(
-            source_path=note_path,
-            note_type=note_type,
-            normalized=normalized,
-            moved=False,
-            reason="No unambiguous destination folder.",
-        )
-
-    if destination == note_path:
-        summary.left_in_inbox += 1
-        return InboxItemResult(
-            source_path=note_path,
-            destination_path=destination,
-            note_type=note_type,
-            normalized=normalized,
-            moved=False,
-            reason="Already in destination folder.",
-        )
-
-    operation = vault.move(note_path, destination)
-    summary.operations.append(operation)
-    summary.moved += 1
-    return InboxItemResult(
+    destination = resolve_inbox_destination_path(
+        vault,
+        note_path,
+        frontmatter,
+        ambiguous_project_types=AMBIGUOUS_PROJECT_TYPES,
+    )
+    disposition = plan_inbox_disposition(
         source_path=note_path,
         destination_path=destination,
         note_type=note_type,
         normalized=normalized,
-        moved=True,
-        reason="Moved using note type mapping.",
     )
+    if disposition.left_in_inbox:
+        summary.left_in_inbox += 1
+        return disposition.result
 
-
-def _infer_note_type(frontmatter: dict[str, object]) -> str | None:
-    note_type = frontmatter.get("type")
-    if isinstance(note_type, str) and note_type.strip():
-        return note_type.strip()
-    source_type = frontmatter.get("source_type")
-    if isinstance(source_type, str) and source_type.strip():
-        return "source"
-    return None
-
-
-def _destination_for_note(vault: Vault, note_path: Path, frontmatter: dict[str, object]) -> Path | None:
-    note_type = frontmatter.get("type")
-    if not isinstance(note_type, str):
-        return None
-
-    if note_type in AMBIGUOUS_PROJECT_TYPES:
-        project_name = frontmatter.get("project")
-        if not isinstance(project_name, str) or not project_name.strip():
-            return None
-        folder = f"{vault.config.folders.projects}/{project_name.strip()}"
-        return vault.note_path(folder, note_path.stem)
-
-    folder = resolve_folder(vault.config, note_type, None)
-    return vault.note_path(folder, note_path.stem)
-
-
-def _looks_structured(body: str) -> bool:
-    stripped = body.strip()
-    return stripped.startswith("# ") or "\n## " in stripped or stripped.startswith("## ")
+    operation = vault.move(note_path, destination)
+    summary.operations.append(operation)
+    summary.moved += 1
+    return disposition.result

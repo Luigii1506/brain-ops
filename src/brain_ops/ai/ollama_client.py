@@ -11,6 +11,7 @@ def generate_json(
     host: str,
     model: str,
     prompt: str,
+    json_schema: dict[str, object] | None = None,
     timeout_seconds: int = 20,
 ) -> dict[str, object]:
     url = host.rstrip("/") + "/api/generate"
@@ -18,10 +19,10 @@ def generate_json(
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "format": "json",
+        "format": json_schema if json_schema is not None else "json",
         "options": {
             "temperature": 0,
-            "num_predict": 180,
+            "num_predict": 96,
         },
     }
     data = json.dumps(payload).encode("utf-8")
