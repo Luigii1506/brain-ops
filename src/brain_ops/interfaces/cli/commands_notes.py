@@ -16,6 +16,7 @@ from .knowledge import (
     present_entity_relations_command,
     present_normalize_frontmatter_command,
     present_process_inbox_command,
+    present_search_knowledge_command,
     present_weekly_review_command,
 )
 from .notes import (
@@ -126,6 +127,27 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 console,
                 entity_name=name,
                 config_path=config_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("search-knowledge")
+    def search_knowledge_command(
+        query: str,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        entity_only: bool = typer.Option(False, "--entity-only", help="Search only entity notes."),
+        max_results: int = typer.Option(20, "--max", min=1, help="Maximum results to return."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Search knowledge entities and notes by content."""
+        try:
+            present_search_knowledge_command(
+                console,
+                query=query,
+                config_path=config_path,
+                entity_only=entity_only,
+                max_results=max_results,
                 as_json=as_json,
             )
         except BrainOpsError as error:

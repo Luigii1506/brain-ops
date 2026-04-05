@@ -154,9 +154,31 @@ def _default_write_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def execute_generate_all_claude_md_workflow(
+    *,
+    load_registry_path,
+    write_file=None,
+) -> list[ProjectClaudeMdResult]:
+    registry_path = load_registry_path()
+    projects = load_project_registry(registry_path)
+    results: list[ProjectClaudeMdResult] = []
+    for project in sorted(projects.values(), key=lambda p: p.name.lower()):
+        content = render_claude_md(project)
+        output_path = Path(project.path) / "CLAUDE.md"
+        writer = write_file or _default_write_file
+        writer(output_path, content)
+        results.append(ProjectClaudeMdResult(
+            project_name=project.name,
+            output_path=output_path,
+            content=content,
+        ))
+    return results
+
+
 __all__ = [
     "ProjectClaudeMdResult",
     "ProjectRegistryResult",
+    "execute_generate_all_claude_md_workflow",
     "execute_generate_claude_md_workflow",
     "execute_list_projects_workflow",
     "execute_project_context_workflow",

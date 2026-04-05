@@ -117,6 +117,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "compile-knowledge",
                 "entity-index",
                 "entity-relations",
+                "search-knowledge",
                 "process-inbox",
                 "weekly-review",
                 "audit-vault",
@@ -144,6 +145,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "project-context",
                 "update-project-context",
                 "generate-claude-md",
+                "generate-all-claude-md",
             },
         )
 

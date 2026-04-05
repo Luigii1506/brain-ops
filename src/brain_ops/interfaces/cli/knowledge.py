@@ -6,6 +6,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from rich.table import Table
+
 from brain_ops.application import (
     execute_audit_vault_workflow,
     execute_compile_knowledge_workflow,
@@ -13,6 +15,7 @@ from brain_ops.application import (
     execute_entity_relations_workflow,
     execute_normalize_frontmatter_workflow,
     execute_process_inbox_workflow,
+    execute_search_knowledge_workflow,
     execute_weekly_review_workflow,
 )
 from brain_ops.interfaces.cli.presenters import print_rendered_with_operations
@@ -139,6 +142,37 @@ def present_normalize_frontmatter_command(
     print_rendered_with_operations(console, summary.operations, render_normalize_frontmatter(summary))
 
 
+def present_search_knowledge_command(
+    console: Console,
+    *,
+    query: str,
+    config_path: Path | None,
+    entity_only: bool,
+    max_results: int,
+    as_json: bool,
+) -> None:
+    results = execute_search_knowledge_workflow(
+        query=query,
+        config_path=config_path,
+        entity_only=entity_only,
+        max_results=max_results,
+        load_vault=load_validated_vault,
+    )
+    if as_json:
+        console.print_json(data=[r.to_dict() for r in results])
+        return
+    if not results:
+        console.print(f"No results for '{query}'.")
+        return
+    table = Table(title=f"Search: {query}")
+    table.add_column("Title")
+    table.add_column("Type")
+    table.add_column("Match")
+    for r in results:
+        table.add_row(r.title, r.entity_type or "-", r.match_context[:80])
+    console.print(table)
+
+
 def present_compile_knowledge_command(
     console: Console,
     *,
@@ -195,6 +229,7 @@ __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
     "present_entity_index_command",
+    "present_search_knowledge_command",
     "present_entity_relations_command",
     "present_normalize_frontmatter_command",
     "present_process_inbox_command",

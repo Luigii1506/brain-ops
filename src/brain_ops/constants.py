@@ -49,6 +49,16 @@ DEFAULT_TYPE_FOLDER_MAP = {
     "decision": DEFAULT_FOLDER_MAP["projects"],
     "debugging_note": DEFAULT_FOLDER_MAP["projects"],
     "changelog": DEFAULT_FOLDER_MAP["projects"],
+    "person": DEFAULT_FOLDER_MAP["knowledge"],
+    "event": DEFAULT_FOLDER_MAP["knowledge"],
+    "place": DEFAULT_FOLDER_MAP["knowledge"],
+    "concept": DEFAULT_FOLDER_MAP["knowledge"],
+    "book": DEFAULT_FOLDER_MAP["knowledge"],
+    "author": DEFAULT_FOLDER_MAP["knowledge"],
+    "war": DEFAULT_FOLDER_MAP["knowledge"],
+    "era": DEFAULT_FOLDER_MAP["knowledge"],
+    "organization": DEFAULT_FOLDER_MAP["knowledge"],
+    "topic": DEFAULT_FOLDER_MAP["knowledge"],
 }
 
 PROJECT_SCAFFOLD_FILES = (

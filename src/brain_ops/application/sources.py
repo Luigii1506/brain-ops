@@ -115,6 +115,7 @@ def execute_check_source_workflow(
     load_registry_path,
     load_snapshots_dir,
     fetch_content=_default_fetch_content,
+    event_sink=None,
 ) -> SourceCheckResult:
     registry_path = load_registry_path()
     sources = load_source_registry(registry_path)
@@ -125,10 +126,25 @@ def execute_check_source_workflow(
 
     snapshots_dir = load_snapshots_dir()
     previous = load_latest_snapshot(snapshots_dir, source.name)
-    content = fetch_content(source.url)
-    current = build_snapshot(source.name, content)
+    raw_content = fetch_content(source.url)
+    current = build_snapshot(source.name, raw_content, selector=source.selector)
     diff = compute_diff(source.name, previous=previous, current=current)
     snapshot_path = save_snapshot(snapshots_dir, current)
+
+    if event_sink is not None and diff.has_changes:
+        from brain_ops.core.events import new_event
+
+        event_sink.publish(new_event(
+            name="source.changed",
+            source="application.sources",
+            payload={
+                "source_name": source.name,
+                "url": source.url,
+                "has_changes": True,
+                "summary": diff.summary,
+                "workflow": "check-source",
+            },
+        ))
 
     return SourceCheckResult(
         source=source,
@@ -143,6 +159,7 @@ def execute_check_all_sources_workflow(
     load_registry_path,
     load_snapshots_dir,
     fetch_content=_default_fetch_content,
+    event_sink=None,
 ) -> list[SourceCheckResult]:
     registry_path = load_registry_path()
     sources = load_source_registry(registry_path)
@@ -151,12 +168,28 @@ def execute_check_all_sources_workflow(
         snapshots_dir = load_snapshots_dir()
         previous = load_latest_snapshot(snapshots_dir, source.name)
         try:
-            content = fetch_content(source.url)
+            raw_content = fetch_content(source.url)
         except Exception:
             continue
-        current = build_snapshot(source.name, content)
+        current = build_snapshot(source.name, raw_content, selector=source.selector)
         diff = compute_diff(source.name, previous=previous, current=current)
         snapshot_path = save_snapshot(snapshots_dir, current)
+
+        if event_sink is not None and diff.has_changes:
+            from brain_ops.core.events import new_event
+
+            event_sink.publish(new_event(
+                name="source.changed",
+                source="application.sources",
+                payload={
+                    "source_name": source.name,
+                    "url": source.url,
+                    "has_changes": True,
+                    "summary": diff.summary,
+                    "workflow": "check-all-sources",
+                },
+            ))
+
         results.append(SourceCheckResult(
             source=source,
             snapshot=current,

@@ -128,15 +128,21 @@ def present_check_source_command(
     name: str,
     as_json: bool,
 ) -> None:
+    from brain_ops.interfaces.cli.runtime import load_event_sink
+
     result = execute_check_source_workflow(
         name=name,
         load_registry_path=lambda: load_source_registry_path(),
         load_snapshots_dir=lambda: load_snapshots_dir(),
+        event_sink=load_event_sink(),
     )
     if as_json:
         console.print_json(data=result.to_dict())
         return
     console.print(build_source_check_table(result))
+    if result.diff.text_diff:
+        console.print("\n[bold]Changes:[/bold]")
+        console.print(result.diff.text_diff)
 
 
 def present_check_all_sources_command(
@@ -144,9 +150,12 @@ def present_check_all_sources_command(
     *,
     as_json: bool,
 ) -> None:
+    from brain_ops.interfaces.cli.runtime import load_event_sink
+
     results = execute_check_all_sources_workflow(
         load_registry_path=lambda: load_source_registry_path(),
         load_snapshots_dir=lambda: load_snapshots_dir(),
+        event_sink=load_event_sink(),
     )
     if as_json:
         console.print_json(data=[r.to_dict() for r in results])
@@ -156,6 +165,9 @@ def present_check_all_sources_command(
         return
     for result in results:
         console.print(build_source_check_table(result))
+        if result.diff.text_diff:
+            console.print("\n[bold]Changes:[/bold]")
+            console.print(result.diff.text_diff)
         console.print()
 
 

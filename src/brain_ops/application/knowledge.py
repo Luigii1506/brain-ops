@@ -7,6 +7,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from brain_ops.core.events import EventSink
+from brain_ops.domains.knowledge.search import SearchResult, search_notes
 from brain_ops.domains.knowledge.compile import (
     CompileResult,
     compile_vault_entities,
@@ -136,6 +137,21 @@ def _scan_vault_frontmatters(
     return results
 
 
+def _scan_vault_full(
+    vault: Vault,
+) -> list[tuple[str, dict[str, object], str]]:
+    results: list[tuple[str, dict[str, object], str]] = []
+    all_notes = list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"})
+    for path in sorted(all_notes):
+        _safe_path, rel, text = read_note_text(vault, path)
+        try:
+            frontmatter, body = split_frontmatter(text)
+        except Exception:
+            continue
+        results.append((str(rel), frontmatter, body))
+    return results
+
+
 def execute_entity_index_workflow(
     *,
     config_path: Path | None,
@@ -209,12 +225,26 @@ def execute_compile_knowledge_workflow(
     )
 
 
+def execute_search_knowledge_workflow(
+    *,
+    query: str,
+    config_path: Path | None,
+    entity_only: bool = False,
+    max_results: int = 20,
+    load_vault,
+) -> list[SearchResult]:
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_full(vault)
+    return search_notes(notes, query, entity_only=entity_only, max_results=max_results)
+
+
 __all__ = [
     "EntityIndexResult",
     "EntityRelationsResult",
     "KnowledgeCompileResult",
     "execute_audit_vault_workflow",
     "execute_compile_knowledge_workflow",
+    "execute_search_knowledge_workflow",
     "execute_entity_index_workflow",
     "execute_entity_relations_workflow",
     "execute_normalize_frontmatter_workflow",

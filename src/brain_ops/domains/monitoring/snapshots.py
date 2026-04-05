@@ -42,13 +42,29 @@ class SourceSnapshot:
         )
 
 
-def build_snapshot(source_name: str, content: str) -> SourceSnapshot:
+def extract_with_selector(html: str, selector: str | None) -> str:
+    if not selector:
+        return html
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        elements = soup.select(selector)
+        if not elements:
+            return html
+        return "\n".join(el.get_text(separator="\n", strip=True) for el in elements)
+    except Exception:
+        return html
+
+
+def build_snapshot(source_name: str, content: str, *, selector: str | None = None) -> SourceSnapshot:
+    extracted = extract_with_selector(content, selector)
     return SourceSnapshot(
         source_name=source_name,
         captured_at=datetime.now(timezone.utc).isoformat(),
-        content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        content=content,
-        content_length=len(content),
+        content_hash=hashlib.sha256(extracted.encode("utf-8")).hexdigest(),
+        content=extracted,
+        content_length=len(extracted),
     )
 
 
@@ -75,6 +91,7 @@ def save_snapshot(snapshots_dir: Path, snapshot: SourceSnapshot) -> Path:
 __all__ = [
     "SourceSnapshot",
     "build_snapshot",
+    "extract_with_selector",
     "load_latest_snapshot",
     "save_snapshot",
 ]

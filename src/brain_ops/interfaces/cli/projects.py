@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from brain_ops.application.projects import (
+    execute_generate_all_claude_md_workflow,
     execute_generate_claude_md_workflow,
     execute_list_projects_workflow,
     execute_project_context_workflow,
@@ -167,10 +168,27 @@ def present_generate_claude_md_command(
     console.print(f"Generated CLAUDE.md for '{result.project_name}' at {result.output_path}")
 
 
+def present_generate_all_claude_md_command(
+    console: Console,
+    *,
+    as_json: bool,
+) -> None:
+    results = execute_generate_all_claude_md_workflow(
+        load_registry_path=lambda: load_project_registry_path(),
+    )
+    if as_json:
+        console.print_json(data=[r.to_dict() for r in results])
+        return
+    for result in results:
+        console.print(f"Generated CLAUDE.md for '{result.project_name}' at {result.output_path}")
+    console.print(f"\nTotal: {len(results)} project(s).")
+
+
 __all__ = [
     "build_project_context_table",
     "build_project_list_table",
     "load_project_registry_path",
+    "present_generate_all_claude_md_command",
     "present_generate_claude_md_command",
     "present_list_projects_command",
     "present_project_context_command",

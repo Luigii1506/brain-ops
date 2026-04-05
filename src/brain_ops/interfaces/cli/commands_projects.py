@@ -10,6 +10,7 @@ from rich.console import Console
 from brain_ops.errors import BrainOpsError
 
 from .projects import (
+    present_generate_all_claude_md_command,
     present_generate_claude_md_command,
     present_list_projects_command,
     present_project_context_command,
@@ -109,6 +110,16 @@ def register_project_commands(app: typer.Typer, console: Console, handle_error) 
                 output_path=output,
                 as_json=as_json,
             )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("generate-all-claude-md")
+    def generate_all_claude_md_command(
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Generate CLAUDE.md files for all registered projects."""
+        try:
+            present_generate_all_claude_md_command(console, as_json=as_json)
         except BrainOpsError as error:
             handle_error(error)
 
