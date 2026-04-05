@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from brain_ops.core.events import EventSink
+from brain_ops.domains.knowledge.entities import plan_entity_note
 from brain_ops.models import CreateNoteRequest
 from brain_ops.services.apply_links_service import apply_link_suggestions
 from brain_ops.services.capture_service import capture_text
@@ -148,9 +149,34 @@ def execute_enrich_note_workflow(
     return publish_result_events("enrich-note", source="application.notes", result=result, event_sink=event_sink)
 
 
+def execute_create_entity_workflow(
+    vault: Vault,
+    *,
+    name: str,
+    entity_type: str,
+    tags: list[str],
+    extra_frontmatter: dict[str, object] | None = None,
+    event_sink: EventSink | None = None,
+):
+    plan = plan_entity_note(name, entity_type=entity_type, extra_frontmatter=extra_frontmatter)
+    merged_frontmatter = dict(plan.frontmatter)
+    result = create_note(
+        vault,
+        CreateNoteRequest(
+            title=plan.title,
+            note_type=plan.entity_type,
+            tags=tags,
+            extra_frontmatter=merged_frontmatter,
+            body_override=plan.body,
+        ),
+    )
+    return publish_result_events("create-entity", source="application.notes", result=result, event_sink=event_sink)
+
+
 __all__ = [
     "execute_apply_link_suggestions_workflow",
     "execute_capture_workflow",
+    "execute_create_entity_workflow",
     "execute_create_note_workflow",
     "execute_create_project_workflow",
     "execute_daily_summary_workflow",

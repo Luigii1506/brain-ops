@@ -19,6 +19,7 @@ from .notes import (
     coerce_note_workflow_error,
     present_apply_link_suggestions_command,
     present_capture_command,
+    present_create_entity_command,
     present_create_note_command,
     present_create_project_command,
     present_enrich_note_command,
@@ -69,6 +70,27 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 console,
                 config_path=config_path,
                 name=name,
+                dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("create-entity")
+    def create_entity_command(
+        name: str,
+        entity_type: str = typer.Option(..., "--type", help="Entity type: person, event, place, concept, book, author, war, era, organization, topic."),
+        tags: list[str] = typer.Option(None, "--tag", help="Repeatable tag option."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+    ) -> None:
+        """Create a structured knowledge entity note with typed frontmatter."""
+        try:
+            present_create_entity_command(
+                console,
+                config_path=config_path,
+                name=name,
+                entity_type=entity_type,
+                tags=tags or [],
                 dry_run=dry_run,
             )
         except BrainOpsError as error:

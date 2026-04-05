@@ -1741,6 +1741,24 @@ Removed six deprecated service-level compatibility wrappers that existed only as
 - `services/intent_formatter_service.py` → was redirecting to `interfaces.conversation.formatting`
 
 Also removed `tests/test_conversation_compat_wrappers.py` which only tested that these wrappers redirected correctly. Updated `tests/test_legacy_surface_boundaries.py` to verify no code imports the removed modules (previously it allowed the compat test as an exception).
+
+### Knowledge entity model
+
+Opened the first structured entity layer in the knowledge domain:
+
+- Added [entities.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/knowledge/entities.py) with a typed entity model for the personal encyclopedia
+- Entity type registry with 10 types: `person`, `event`, `place`, `concept`, `book`, `author`, `war`, `era`, `organization`, `topic`
+- Per-type schemas (`EntitySchema`) defining required/optional frontmatter fields and body sections
+- `plan_entity_note(...)` builds a complete `EntityPlan` (title, validated type, frontmatter with `entity: true` flag, template body with sections)
+- `build_entity_frontmatter(...)` generates typed YAML frontmatter with optional field placeholders and `entity: true` marker for programmatic detection
+- `build_entity_body(...)` generates section templates matching each entity type (e.g., Biography/Key contributions for person, Context/What happened/Consequences for event)
+- `extract_entity_relations(...)` parses the `related` frontmatter field into a flat list of entity names
+- `is_entity_note(...)` detects entity notes by the `entity: true` flag
+- `validate_entity_type(...)` normalizes and validates entity type strings
+- Added `execute_create_entity_workflow(...)` in `application/notes.py` that plans an entity note and creates it via the existing `create_note` service
+- Added `create-entity` CLI command with `--type` (required), `--tag`, `--config`, `--dry-run` options
+- Added `present_create_entity_command(...)` and `run_create_entity_command(...)` in `interfaces/cli/notes.py`
+- Added direct domain coverage in [test_knowledge_entity_domain.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_knowledge_entity_domain.py) covering type registry completeness, schema validation, frontmatter building, body section generation, entity planning, relation extraction, and entity detection
 - Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.

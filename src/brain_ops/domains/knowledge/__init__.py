@@ -1,5 +1,17 @@
 """Knowledge operations domain."""
 
+from brain_ops.domains.knowledge.entities import (
+    ENTITY_SCHEMAS,
+    ENTITY_TYPES,
+    EntityPlan,
+    EntitySchema,
+    build_entity_body,
+    build_entity_frontmatter,
+    extract_entity_relations,
+    is_entity_note,
+    plan_entity_note,
+    validate_entity_type,
+)
 from brain_ops.domains.knowledge.capture import (
     CapturePlan,
     build_capture_body,
@@ -59,6 +71,16 @@ from brain_ops.domains.knowledge.review import (
 )
 
 __all__ = [
+    "ENTITY_SCHEMAS",
+    "ENTITY_TYPES",
+    "EntityPlan",
+    "EntitySchema",
+    "build_entity_body",
+    "build_entity_frontmatter",
+    "extract_entity_relations",
+    "is_entity_note",
+    "plan_entity_note",
+    "validate_entity_type",
     "build_capture_body",
     "build_capture_frontmatter",
     "CapturePlan",

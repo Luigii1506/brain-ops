@@ -9,6 +9,7 @@ from rich.console import Console
 from brain_ops.application import (
     execute_apply_link_suggestions_workflow,
     execute_capture_workflow,
+    execute_create_entity_workflow,
     execute_create_note_workflow,
     execute_create_project_workflow,
     execute_daily_summary_workflow,
@@ -93,6 +94,24 @@ def run_create_project_command(
 ) :
     vault = load_validated_vault(config_path, dry_run=dry_run)
     return execute_create_project_workflow(vault, name=name, event_sink=load_event_sink())
+
+
+def run_create_entity_command(
+    *,
+    config_path: Path | None,
+    name: str,
+    entity_type: str,
+    tags: list[str],
+    dry_run: bool,
+) :
+    vault = load_validated_vault(config_path, dry_run=dry_run)
+    return execute_create_entity_workflow(
+        vault,
+        name=name,
+        entity_type=entity_type,
+        tags=tags,
+        event_sink=load_event_sink(),
+    )
 
 
 def run_daily_summary_command(
@@ -253,6 +272,25 @@ def present_create_note_command(
     print_operations(console, [operation])
 
 
+def present_create_entity_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    name: str,
+    entity_type: str,
+    tags: list[str],
+    dry_run: bool,
+) -> None:
+    operation = run_create_entity_command(
+        config_path=config_path,
+        name=name,
+        entity_type=entity_type,
+        tags=tags,
+        dry_run=dry_run,
+    )
+    print_operations(console, [operation])
+
+
 def present_create_project_command(
     console: Console,
     *,
@@ -393,6 +431,7 @@ __all__ = [
     "coerce_note_workflow_error",
     "present_apply_link_suggestions_command",
     "present_capture_command",
+    "present_create_entity_command",
     "present_create_note_command",
     "present_create_project_command",
     "present_daily_summary_command",
@@ -403,6 +442,7 @@ __all__ = [
     "present_research_note_command",
     "run_apply_link_suggestions_command",
     "run_capture_command",
+    "run_create_entity_command",
     "run_create_note_command",
     "run_create_project_command",
     "run_daily_summary_command",

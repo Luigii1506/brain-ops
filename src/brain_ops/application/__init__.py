@@ -44,6 +44,7 @@ from .monitoring import (
 from .notes import (
     execute_apply_link_suggestions_workflow,
     execute_capture_workflow,
+    execute_create_entity_workflow,
     execute_create_note_workflow,
     execute_create_project_workflow,
     execute_daily_summary_workflow,
@@ -119,6 +120,7 @@ __all__ = [
     "execute_body_metrics_status_workflow",
     "execute_budget_status_workflow",
     "execute_capture_workflow",
+    "execute_create_entity_workflow",
     "execute_create_diet_plan_workflow",
     "execute_create_note_workflow",
     "execute_create_project_workflow",

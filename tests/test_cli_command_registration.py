@@ -108,6 +108,7 @@ class CliCommandRegistrationTestCase(TestCase):
         self.assertEqual(
             names,
             {
+                "create-entity",
                 "create-note",
                 "create-project",
                 "process-inbox",
