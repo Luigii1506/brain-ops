@@ -1728,3 +1728,20 @@ All extraction steps above were done under these rules:
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.
 - Extended `event-log-alert-deliver` with `--delivery-preset`, so delivery can now be configured as a single named preset instead of requiring three separate flags.
+
+### Deprecated conversation compatibility wrappers removed
+
+Removed six deprecated service-level compatibility wrappers that existed only as import redirects to their real homes in `interfaces/conversation/` and `core/execution/`:
+
+- `services/handle_input_service.py` → was redirecting to `interfaces.conversation.handling`
+- `services/follow_up_service.py` → was redirecting to `interfaces.conversation.follow_up_state` / `follow_up_input`
+- `services/intent_parser_service.py` → was redirecting to `interfaces.conversation.parsing_input`
+- `services/router_service.py` → was redirecting to `interfaces.conversation.routing_input`
+- `services/intent_execution_service.py` → was redirecting to `core.execution.dispatch`
+- `services/intent_formatter_service.py` → was redirecting to `interfaces.conversation.formatting`
+
+Also removed `tests/test_conversation_compat_wrappers.py` which only tested that these wrappers redirected correctly. Updated `tests/test_legacy_surface_boundaries.py` to verify no code imports the removed modules (previously it allowed the compat test as an exception).
+- Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
+- Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
+- Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.
+- Extended `event-log-alert-deliver` with `--delivery-preset`, so delivery can now be configured as a single named preset instead of requiring three separate flags.

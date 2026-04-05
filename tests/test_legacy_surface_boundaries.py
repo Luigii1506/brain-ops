@@ -11,8 +11,8 @@ TESTS_ROOT = REPO_ROOT / "tests"
 
 
 class LegacySurfaceBoundariesTestCase(TestCase):
-    def test_src_does_not_import_deprecated_conversation_compat_wrappers(self) -> None:
-        deprecated_modules = {
+    def test_src_does_not_import_removed_conversation_compat_wrappers(self) -> None:
+        removed_modules = {
             "brain_ops.services.handle_input_service",
             "brain_ops.services.intent_parser_service",
             "brain_ops.services.router_service",
@@ -21,15 +21,15 @@ class LegacySurfaceBoundariesTestCase(TestCase):
             "brain_ops.services.intent_execution_service",
         }
 
-        offenders = self._find_import_offenders(deprecated_modules)
+        offenders = self._find_import_offenders(removed_modules)
         self.assertEqual(offenders, [])
 
     def test_src_does_not_import_reporting_compatibility_facade(self) -> None:
         offenders = self._find_import_offenders({"brain_ops.reporting"})
         self.assertEqual(offenders, [])
 
-    def test_tests_only_use_deprecated_conversation_wrappers_in_explicit_compat_suite(self) -> None:
-        deprecated_modules = {
+    def test_tests_do_not_import_removed_conversation_compat_wrappers(self) -> None:
+        removed_modules = {
             "brain_ops.services.handle_input_service",
             "brain_ops.services.intent_parser_service",
             "brain_ops.services.router_service",
@@ -38,9 +38,8 @@ class LegacySurfaceBoundariesTestCase(TestCase):
             "brain_ops.services.intent_execution_service",
         }
         offenders = self._find_import_offenders(
-            deprecated_modules,
+            removed_modules,
             root=TESTS_ROOT,
-            allowed_paths={"tests/test_conversation_compat_wrappers.py"},
         )
         self.assertEqual(offenders, [])
 
