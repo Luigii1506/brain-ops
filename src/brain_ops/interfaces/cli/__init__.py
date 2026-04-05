@@ -15,6 +15,8 @@ from .conversation import present_handle_input_command, present_route_input_comm
 from .errors import exit_with_brain_ops_error
 from .knowledge import (
     present_audit_vault_command,
+    present_entity_index_command,
+    present_entity_relations_command,
     present_normalize_frontmatter_command,
     present_process_inbox_command,
     present_weekly_review_command,
@@ -173,6 +175,8 @@ __all__ = [
     "present_daily_summary_command",
     "present_daily_status_command",
     "present_diet_status_command",
+    "present_entity_index_command",
+    "present_entity_relations_command",
     "present_enrich_note_command",
     "present_event_log_alert_check_command",
     "present_event_log_alert_message_command",

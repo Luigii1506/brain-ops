@@ -8,6 +8,8 @@ from rich.console import Console
 
 from brain_ops.application import (
     execute_audit_vault_workflow,
+    execute_entity_index_workflow,
+    execute_entity_relations_workflow,
     execute_normalize_frontmatter_workflow,
     execute_process_inbox_workflow,
     execute_weekly_review_workflow,
@@ -136,8 +138,44 @@ def present_normalize_frontmatter_command(
     print_rendered_with_operations(console, summary.operations, render_normalize_frontmatter(summary))
 
 
+def present_entity_index_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    as_json: bool,
+) -> None:
+    result = execute_entity_index_workflow(
+        config_path=config_path,
+        load_vault=load_validated_vault,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    console.print(result.markdown)
+
+
+def present_entity_relations_command(
+    console: Console,
+    *,
+    entity_name: str,
+    config_path: Path | None,
+    as_json: bool,
+) -> None:
+    result = execute_entity_relations_workflow(
+        entity_name=entity_name,
+        config_path=config_path,
+        load_vault=load_validated_vault,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    console.print(result.markdown)
+
+
 __all__ = [
     "present_audit_vault_command",
+    "present_entity_index_command",
+    "present_entity_relations_command",
     "present_normalize_frontmatter_command",
     "present_process_inbox_command",
     "present_weekly_review_command",

@@ -55,7 +55,11 @@ from .notes import (
     execute_research_note_workflow,
 )
 from .knowledge import (
+    EntityIndexResult,
+    EntityRelationsResult,
     execute_audit_vault_workflow,
+    execute_entity_index_workflow,
+    execute_entity_relations_workflow,
     execute_normalize_frontmatter_workflow,
     execute_process_inbox_workflow,
     execute_weekly_review_workflow,
@@ -130,6 +134,10 @@ __all__ = [
     "execute_daily_summary_workflow",
     "execute_daily_status_workflow",
     "execute_diet_status_workflow",
+    "execute_entity_index_workflow",
+    "execute_entity_relations_workflow",
+    "EntityIndexResult",
+    "EntityRelationsResult",
     "execute_enrich_note_workflow",
     "execute_habit_checkin_workflow",
     "execute_habit_status_workflow",

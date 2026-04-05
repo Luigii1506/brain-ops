@@ -13,6 +13,19 @@ from brain_ops.domains.knowledge.entities import (
     plan_entity_note,
     validate_entity_type,
 )
+from brain_ops.domains.knowledge.index import (
+    EntityIndexEntry,
+    build_entity_index_entry,
+    group_index_entries_by_type,
+    render_entity_index_markdown,
+)
+from brain_ops.domains.knowledge.relations import (
+    EntityRelation,
+    build_relation_adjacency,
+    extract_relations_from_note,
+    find_entity_connections,
+    render_entity_relations_markdown,
+)
 
 
 class EntityTypeRegistryTestCase(TestCase):
@@ -160,6 +173,129 @@ class IsEntityNoteTestCase(TestCase):
 
     def test_returns_false_when_entity_flag_is_false(self) -> None:
         self.assertFalse(is_entity_note({"entity": False}))
+
+
+class BuildEntityIndexEntryTestCase(TestCase):
+    def test_builds_entry_from_entity_frontmatter(self) -> None:
+        fm = {"entity": True, "type": "person", "name": "Napoleón"}
+        entry = build_entity_index_entry(fm, "02 - Knowledge/Napoleón.md")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.title, "Napoleón")
+        self.assertEqual(entry.entity_type, "person")
+        self.assertEqual(entry.relative_path, "02 - Knowledge/Napoleón.md")
+
+    def test_returns_none_for_non_entity_note(self) -> None:
+        fm = {"type": "source"}
+        self.assertIsNone(build_entity_index_entry(fm, "01 - Sources/article.md"))
+
+    def test_returns_none_for_entity_with_unknown_type(self) -> None:
+        fm = {"entity": True, "type": "spaceship", "name": "Enterprise"}
+        self.assertIsNone(build_entity_index_entry(fm, "test.md"))
+
+    def test_uses_relative_path_as_title_when_name_missing(self) -> None:
+        fm = {"entity": True, "type": "concept"}
+        entry = build_entity_index_entry(fm, "02 - Knowledge/idea.md")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.title, "02 - Knowledge/idea.md")
+
+
+class GroupIndexEntriesTestCase(TestCase):
+    def test_groups_entries_by_type_and_sorts_by_title(self) -> None:
+        entries = [
+            EntityIndexEntry(title="Zeno", entity_type="person", relative_path="z.md"),
+            EntityIndexEntry(title="Aristóteles", entity_type="person", relative_path="a.md"),
+            EntityIndexEntry(title="Grecia", entity_type="place", relative_path="g.md"),
+        ]
+        groups = group_index_entries_by_type(entries)
+        self.assertEqual(list(groups.keys()), ["person", "place"])
+        self.assertEqual([e.title for e in groups["person"]], ["Aristóteles", "Zeno"])
+
+    def test_empty_list_returns_empty_groups(self) -> None:
+        self.assertEqual(group_index_entries_by_type([]), {})
+
+
+class RenderEntityIndexMarkdownTestCase(TestCase):
+    def test_renders_grouped_markdown_with_wikilinks(self) -> None:
+        entries = [
+            EntityIndexEntry(title="Napoleón", entity_type="person", relative_path="n.md"),
+            EntityIndexEntry(title="Francia", entity_type="place", relative_path="f.md"),
+        ]
+        md = render_entity_index_markdown(entries)
+        self.assertIn("# Knowledge Entity Index", md)
+        self.assertIn("Total entities: 2", md)
+        self.assertIn("## Person (1)", md)
+        self.assertIn("## Place (1)", md)
+        self.assertIn("[[Napoleón]]", md)
+        self.assertIn("[[Francia]]", md)
+
+    def test_renders_empty_state_when_no_entries(self) -> None:
+        md = render_entity_index_markdown([])
+        self.assertIn("No entities found.", md)
+
+
+class ExtractRelationsFromNoteTestCase(TestCase):
+    def test_extracts_relations_from_entity_with_related_field(self) -> None:
+        fm = {"entity": True, "type": "person", "name": "Alejandro Magno", "related": ["Aristóteles", "Darío III"]}
+        rels = extract_relations_from_note(fm)
+        self.assertEqual(len(rels), 2)
+        self.assertEqual(rels[0].source, "Alejandro Magno")
+        self.assertEqual(rels[0].target, "Aristóteles")
+        self.assertEqual(rels[0].source_type, "person")
+
+    def test_returns_empty_for_non_entity(self) -> None:
+        fm = {"type": "source", "name": "Article"}
+        self.assertEqual(extract_relations_from_note(fm), [])
+
+    def test_returns_empty_when_no_name(self) -> None:
+        fm = {"entity": True, "type": "person"}
+        self.assertEqual(extract_relations_from_note(fm), [])
+
+
+class BuildRelationAdjacencyTestCase(TestCase):
+    def test_builds_bidirectional_adjacency(self) -> None:
+        rels = [
+            EntityRelation(source="A", target="B"),
+            EntityRelation(source="A", target="C"),
+            EntityRelation(source="B", target="C"),
+        ]
+        adj = build_relation_adjacency(rels)
+        self.assertEqual(adj["A"], ["B", "C"])
+        self.assertIn("A", adj["B"])
+        self.assertIn("C", adj["B"])
+        self.assertEqual(sorted(adj["C"]), ["A", "B"])
+
+
+class FindEntityConnectionsTestCase(TestCase):
+    def test_finds_all_connections_for_entity(self) -> None:
+        rels = [
+            EntityRelation(source="Alejandro", target="Aristóteles"),
+            EntityRelation(source="Alejandro", target="Darío"),
+            EntityRelation(source="César", target="Cleopatra"),
+        ]
+        connections = find_entity_connections("Alejandro", rels)
+        self.assertEqual(connections, ["Aristóteles", "Darío"])
+
+    def test_finds_reverse_connections(self) -> None:
+        rels = [EntityRelation(source="Aristóteles", target="Alejandro")]
+        connections = find_entity_connections("Alejandro", rels)
+        self.assertEqual(connections, ["Aristóteles"])
+
+    def test_returns_empty_when_no_connections(self) -> None:
+        rels = [EntityRelation(source="César", target="Cleopatra")]
+        self.assertEqual(find_entity_connections("Alejandro", rels), [])
+
+
+class RenderEntityRelationsMarkdownTestCase(TestCase):
+    def test_renders_connections_with_wikilinks(self) -> None:
+        md = render_entity_relations_markdown("Alejandro Magno", ["Aristóteles", "Darío III"])
+        self.assertIn("# Relations: Alejandro Magno", md)
+        self.assertIn("Connected entities: 2", md)
+        self.assertIn("[[Aristóteles]]", md)
+        self.assertIn("[[Darío III]]", md)
+
+    def test_renders_empty_state(self) -> None:
+        md = render_entity_relations_markdown("Alejandro Magno", [])
+        self.assertIn("No connections found.", md)
 
 
 if __name__ == "__main__":

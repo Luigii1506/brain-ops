@@ -4,13 +4,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dataclasses import dataclass
+
 from brain_ops.core.events import EventSink
+from brain_ops.domains.knowledge.index import (
+    EntityIndexEntry,
+    build_entity_index_entry,
+    render_entity_index_markdown,
+)
+from brain_ops.domains.knowledge.relations import (
+    EntityRelation,
+    extract_relations_from_note,
+    find_entity_connections,
+    render_entity_relations_markdown,
+)
+from brain_ops.frontmatter import split_frontmatter
 from brain_ops.reporting_knowledge import render_inbox_report
 from brain_ops.services.audit_service import audit_vault
 from brain_ops.services.inbox_service import process_inbox
 from brain_ops.services.normalize_service import normalize_frontmatter
 from brain_ops.services.review_service import generate_weekly_review
-from brain_ops.storage.obsidian import write_report_text
+from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text, write_report_text
+from brain_ops.vault import Vault
 from .events import publish_result_events
 
 
@@ -75,8 +90,91 @@ def execute_normalize_frontmatter_workflow(
     )
 
 
+@dataclass(slots=True, frozen=True)
+class EntityIndexResult:
+    entries: list[EntityIndexEntry]
+    markdown: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "total": len(self.entries),
+            "entries": [e.to_dict() for e in self.entries],
+        }
+
+
+@dataclass(slots=True, frozen=True)
+class EntityRelationsResult:
+    entity_name: str
+    connections: list[str]
+    all_relations: list[EntityRelation]
+    markdown: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "entity_name": self.entity_name,
+            "connections": list(self.connections),
+            "total_connections": len(self.connections),
+        }
+
+
+def _scan_vault_frontmatters(
+    vault: Vault,
+) -> list[tuple[str, dict[str, object]]]:
+    results: list[tuple[str, dict[str, object]]] = []
+    all_notes = list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"})
+    for path in sorted(all_notes):
+        _safe_path, rel, text = read_note_text(vault, path)
+        try:
+            frontmatter, _body = split_frontmatter(text)
+        except Exception:
+            continue
+        results.append((str(rel), frontmatter))
+    return results
+
+
+def execute_entity_index_workflow(
+    *,
+    config_path: Path | None,
+    load_vault,
+) -> EntityIndexResult:
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_frontmatters(vault)
+    entries: list[EntityIndexEntry] = []
+    for rel_path, frontmatter in notes:
+        entry = build_entity_index_entry(frontmatter, rel_path)
+        if entry is not None:
+            entries.append(entry)
+    markdown = render_entity_index_markdown(entries)
+    return EntityIndexResult(entries=entries, markdown=markdown)
+
+
+def execute_entity_relations_workflow(
+    *,
+    entity_name: str,
+    config_path: Path | None,
+    load_vault,
+) -> EntityRelationsResult:
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_frontmatters(vault)
+    all_relations: list[EntityRelation] = []
+    for _rel_path, frontmatter in notes:
+        all_relations.extend(extract_relations_from_note(frontmatter))
+    connections = find_entity_connections(entity_name, all_relations)
+    markdown = render_entity_relations_markdown(entity_name, connections)
+    return EntityRelationsResult(
+        entity_name=entity_name,
+        connections=connections,
+        all_relations=all_relations,
+        markdown=markdown,
+    )
+
+
 __all__ = [
+    "EntityIndexResult",
+    "EntityRelationsResult",
     "execute_audit_vault_workflow",
+    "execute_entity_index_workflow",
+    "execute_entity_relations_workflow",
     "execute_normalize_frontmatter_workflow",
     "execute_process_inbox_workflow",
     "execute_weekly_review_workflow",

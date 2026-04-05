@@ -11,6 +11,8 @@ from brain_ops.errors import BrainOpsError
 
 from .knowledge import (
     present_audit_vault_command,
+    present_entity_index_command,
+    present_entity_relations_command,
     present_normalize_frontmatter_command,
     present_process_inbox_command,
     present_weekly_review_command,
@@ -92,6 +94,38 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 entity_type=entity_type,
                 tags=tags or [],
                 dry_run=dry_run,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("entity-index")
+    def entity_index_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Generate an index of all knowledge entities in the vault."""
+        try:
+            present_entity_index_command(
+                console,
+                config_path=config_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("entity-relations")
+    def entity_relations_command(
+        name: str,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Show entities connected to a given entity via relationships."""
+        try:
+            present_entity_relations_command(
+                console,
+                entity_name=name,
+                config_path=config_path,
+                as_json=as_json,
             )
         except BrainOpsError as error:
             handle_error(error)

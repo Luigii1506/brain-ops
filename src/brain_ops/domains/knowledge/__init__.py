@@ -12,6 +12,19 @@ from brain_ops.domains.knowledge.entities import (
     plan_entity_note,
     validate_entity_type,
 )
+from brain_ops.domains.knowledge.index import (
+    EntityIndexEntry,
+    build_entity_index_entry,
+    group_index_entries_by_type,
+    render_entity_index_markdown,
+)
+from brain_ops.domains.knowledge.relations import (
+    EntityRelation,
+    build_relation_adjacency,
+    extract_relations_from_note,
+    find_entity_connections,
+    render_entity_relations_markdown,
+)
 from brain_ops.domains.knowledge.capture import (
     CapturePlan,
     build_capture_body,
@@ -81,6 +94,15 @@ __all__ = [
     "is_entity_note",
     "plan_entity_note",
     "validate_entity_type",
+    "EntityIndexEntry",
+    "EntityRelation",
+    "build_entity_index_entry",
+    "build_relation_adjacency",
+    "extract_relations_from_note",
+    "find_entity_connections",
+    "group_index_entries_by_type",
+    "render_entity_index_markdown",
+    "render_entity_relations_markdown",
     "build_capture_body",
     "build_capture_frontmatter",
     "CapturePlan",

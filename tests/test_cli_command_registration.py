@@ -111,6 +111,8 @@ class CliCommandRegistrationTestCase(TestCase):
                 "create-entity",
                 "create-note",
                 "create-project",
+                "entity-index",
+                "entity-relations",
                 "process-inbox",
                 "weekly-review",
                 "audit-vault",
