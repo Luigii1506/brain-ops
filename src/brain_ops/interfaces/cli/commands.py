@@ -9,6 +9,7 @@ from .commands_core import register_core_commands
 from .commands_notes import register_note_and_knowledge_commands
 from .commands_personal import register_personal_commands
 from .commands_projects import register_project_commands
+from .commands_scheduling import register_scheduling_commands
 from .commands_sources import register_source_commands
 from .presenters import print_operations
 
@@ -31,6 +32,7 @@ def register_cli_commands(
     register_note_and_knowledge_commands(app, console, handle_error)
     register_project_commands(app, console, handle_error)
     register_source_commands(app, console, handle_error)
+    register_scheduling_commands(app, console, handle_error)
 
 
 __all__ = ["register_cli_commands"]

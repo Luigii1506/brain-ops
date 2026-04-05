@@ -15,6 +15,7 @@ from brain_ops.interfaces.cli.commands_core import register_core_commands
 from brain_ops.interfaces.cli.commands_notes import register_note_and_knowledge_commands
 from brain_ops.interfaces.cli.commands_personal import register_personal_commands
 from brain_ops.interfaces.cli.commands_projects import register_project_commands
+from brain_ops.interfaces.cli.commands_scheduling import register_scheduling_commands
 from brain_ops.interfaces.cli.commands_sources import register_source_commands
 
 
@@ -162,6 +163,20 @@ class CliCommandRegistrationTestCase(TestCase):
             },
         )
 
+    def test_register_scheduling_commands_registers_expected_names(self) -> None:
+        app = typer.Typer()
+        register_scheduling_commands(app, self.console, self.handle_error)
+
+        names = self._command_names(app)
+        self.assertEqual(
+            names,
+            {
+                "list-jobs",
+                "init-jobs",
+                "show-crontab",
+            },
+        )
+
     def test_create_cli_app_registers_all_major_command_clusters(self) -> None:
         app = create_cli_app(version="1.0.0", console=self.console)
         names = self._command_names(app)
@@ -186,6 +201,9 @@ class CliCommandRegistrationTestCase(TestCase):
         self.assertIn("add-source", names)
         self.assertIn("check-source", names)
         self.assertIn("check-all-sources", names)
+        self.assertIn("list-jobs", names)
+        self.assertIn("init-jobs", names)
+        self.assertIn("show-crontab", names)
 
     def test_register_cli_commands_registers_representative_commands(self) -> None:
         app = typer.Typer()

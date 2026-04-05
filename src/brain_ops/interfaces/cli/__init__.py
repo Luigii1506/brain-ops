@@ -11,7 +11,15 @@ from .commands_core import register_core_commands
 from .commands_notes import register_note_and_knowledge_commands
 from .commands_personal import register_personal_commands
 from .commands_projects import register_project_commands
+from .commands_scheduling import register_scheduling_commands
 from .commands_sources import register_source_commands
+from .scheduling import (
+    build_job_list_table,
+    load_job_registry_path,
+    present_init_jobs_command,
+    present_list_jobs_command,
+    present_show_crontab_command,
+)
 from .sources import (
     build_source_check_table,
     build_source_list_table,
@@ -284,7 +292,13 @@ __all__ = [
     "register_note_and_knowledge_commands",
     "register_personal_commands",
     "register_project_commands",
+    "register_scheduling_commands",
     "register_source_commands",
+    "build_job_list_table",
+    "load_job_registry_path",
+    "present_init_jobs_command",
+    "present_list_jobs_command",
+    "present_show_crontab_command",
     "build_source_check_table",
     "build_source_list_table",
     "load_snapshots_dir",

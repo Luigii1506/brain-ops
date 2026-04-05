@@ -1805,6 +1805,18 @@ Opened the first knowledge compile pipeline for bridging Obsidian (source of tru
 - Metadata stored as JSON blob per entity, excluding core fields (type, name, entity, tags, related) which are stored as columns
 - Full-replace semantics on each compile: tables are cleared and rebuilt from current vault state
 - Added direct domain and storage coverage in [test_knowledge_compile.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_knowledge_compile.py) covering entity compilation, relation extraction, SQLite roundtrips, connection queries, and replace semantics
+
+### Scheduling primitives
+
+Opened the first scheduling layer for cron-driven automation:
+
+- Created [core/scheduling/](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/core/scheduling/) with `ScheduledJob` model, `JobRunResult` tracking, JSON-based job registry, and `generate_crontab_entries(...)` for system cron integration
+- Four default jobs pre-defined: `check-all-sources` (daily), `audit-vault` (weekly), `compile-knowledge` (daily), `entity-index` (daily)
+- Schedule presets map human names to cron expressions: `daily` → `0 6 * * *`, `hourly` → `0 * * * *`, `weekly` → `0 6 * * 1`
+- Custom cron expressions supported as passthrough
+- Added three CLI commands: `init-jobs` (creates default jobs), `list-jobs` (shows all jobs with last run status), `show-crontab` (prints ready-to-use crontab entries)
+- Job registry stored as JSON at `BRAIN_OPS_JOB_REGISTRY` or `~/.brain-ops/jobs.json`
+- Added direct coverage in [test_scheduling.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_scheduling.py) covering job model, registry persistence, run recording, defaults, presets, and crontab generation
 - Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.
