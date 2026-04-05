@@ -10,6 +10,17 @@ from .commands import register_cli_commands
 from .commands_core import register_core_commands
 from .commands_notes import register_note_and_knowledge_commands
 from .commands_personal import register_personal_commands
+from .commands_projects import register_project_commands
+from .projects import (
+    build_project_context_table,
+    build_project_list_table,
+    load_project_registry_path,
+    present_generate_claude_md_command,
+    present_list_projects_command,
+    present_project_context_command,
+    present_register_project_command,
+    present_update_project_context_command,
+)
 from .conversation import run_handle_input_command, run_route_input_command
 from .conversation import present_handle_input_command, present_route_input_command
 from .errors import exit_with_brain_ops_error
@@ -258,6 +269,15 @@ __all__ = [
     "register_core_commands",
     "register_note_and_knowledge_commands",
     "register_personal_commands",
+    "register_project_commands",
+    "build_project_context_table",
+    "build_project_list_table",
+    "load_project_registry_path",
+    "present_generate_claude_md_command",
+    "present_list_projects_command",
+    "present_project_context_command",
+    "present_register_project_command",
+    "present_update_project_context_command",
     "initialize_cli_config",
     "present_openclaw_manifest",
     "print_handle_input_result",

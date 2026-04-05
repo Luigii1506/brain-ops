@@ -90,6 +90,15 @@ from .personal import (
     execute_update_diet_meal_workflow,
     execute_workout_status_workflow,
 )
+from .projects import (
+    ProjectClaudeMdResult,
+    ProjectRegistryResult,
+    execute_generate_claude_md_workflow,
+    execute_list_projects_workflow,
+    execute_project_context_workflow,
+    execute_register_project_workflow,
+    execute_update_project_context_workflow,
+)
 from .system import (
     execute_info_workflow,
     execute_init_db_workflow,
@@ -158,6 +167,13 @@ __all__ = [
     "execute_set_habit_target_workflow",
     "execute_set_macro_targets_workflow",
     "execute_spending_summary_workflow",
+    "execute_generate_claude_md_workflow",
+    "execute_list_projects_workflow",
+    "execute_project_context_workflow",
+    "execute_register_project_workflow",
+    "execute_update_project_context_workflow",
+    "ProjectClaudeMdResult",
+    "ProjectRegistryResult",
     "execute_info_workflow",
     "execute_init_db_workflow",
     "execute_init_workflow",

@@ -1764,6 +1764,20 @@ Opened the first structured entity layer in the knowledge domain:
 - Added `execute_entity_index_workflow(...)` and `execute_entity_relations_workflow(...)` in `application/knowledge.py` with vault scanning, frontmatter parsing, and result composition
 - Added `entity-index` and `entity-relations` CLI commands with `--json` and `--config` options
 - Extended domain test coverage with index entry building, grouping, markdown rendering, relation extraction, adjacency building, connection finding, and relationship markdown rendering
+
+### Projects domain
+
+Opened the first independent projects domain for dev project registry and context management:
+
+- Created [domains/projects/](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/projects/) as a standalone domain separate from the knowledge domain
+- Added [registry.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/projects/registry.py) with `Project` and `ProjectContext` models, JSON-based persistence via `load_project_registry(...)` / `save_project_registry(...)`, and builders for project and context construction
+- Added [claude_md.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/domains/projects/claude_md.py) with `render_claude_md(...)` to generate CLAUDE.md files from project context for persistent AI context across conversations
+- Added [application/projects.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/application/projects.py) with five workflows: register, list, context, update-context, and generate-claude-md
+- Added [cli/projects.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/cli/projects.py) with presenters and table builders for all project commands
+- Added [commands_projects.py](/Users/luisencinas/Documents/GitHub/brain-ops/src/brain_ops/interfaces/cli/commands_projects.py) with five CLI commands: `register-project`, `list-projects`, `project-context`, `update-project-context`, `generate-claude-md`
+- Registry stored as JSON file, path configurable via `BRAIN_OPS_PROJECT_REGISTRY` env var, defaults to `~/.brain-ops/projects.json`
+- Re-registering an existing project preserves its accumulated context while updating metadata
+- Added direct domain and workflow coverage in [test_projects_domain.py](/Users/luisencinas/Documents/GitHub/brain-ops/tests/test_projects_domain.py) covering model roundtrips, persistence, context updates, CLAUDE.md rendering, and full workflow integration
 - Extracted a reusable `AlertDeliveryPreset` dataclass in `application/automation.py`, so delivery configuration (format, target, delivery mode) can now be described and resolved by named preset instead of requiring explicit flags every time, mirroring the existing `EventLogAlertPolicy` preset pattern.
 - Added `ALERT_DELIVERY_PRESETS` with five named entries (`default`, `file-text`, `stdout-json`, `stdout-text`, `archive-only`) plus `execute_alert_delivery_presets_workflow()` and `event-log-alert-delivery-presets` CLI command, so the delivery preset catalog is now discoverable from CLI and stable as a public application/adapter contract.
 - Extended `build_alert_delivery_policy(...)` with an optional `preset` parameter and override semantics, so explicit `--format`/`--target`/`--delivery-mode` flags override preset defaults instead of being required, and unknown presets raise `ConfigError` with the allowed list.

@@ -14,6 +14,7 @@ from brain_ops.interfaces.cli.commands import register_cli_commands
 from brain_ops.interfaces.cli.commands_core import register_core_commands
 from brain_ops.interfaces.cli.commands_notes import register_note_and_knowledge_commands
 from brain_ops.interfaces.cli.commands_personal import register_personal_commands
+from brain_ops.interfaces.cli.commands_projects import register_project_commands
 
 
 class CliCommandRegistrationTestCase(TestCase):
@@ -127,6 +128,22 @@ class CliCommandRegistrationTestCase(TestCase):
             },
         )
 
+    def test_register_project_commands_registers_expected_names(self) -> None:
+        app = typer.Typer()
+        register_project_commands(app, self.console, self.handle_error)
+
+        names = self._command_names(app)
+        self.assertEqual(
+            names,
+            {
+                "register-project",
+                "list-projects",
+                "project-context",
+                "update-project-context",
+                "generate-claude-md",
+            },
+        )
+
     def test_create_cli_app_registers_all_major_command_clusters(self) -> None:
         app = create_cli_app(version="1.0.0", console=self.console)
         names = self._command_names(app)
@@ -144,6 +161,10 @@ class CliCommandRegistrationTestCase(TestCase):
         self.assertIn("capture", names)
         self.assertIn("process-inbox", names)
         self.assertIn("enrich-note", names)
+        self.assertIn("register-project", names)
+        self.assertIn("list-projects", names)
+        self.assertIn("project-context", names)
+        self.assertIn("generate-claude-md", names)
 
     def test_register_cli_commands_registers_representative_commands(self) -> None:
         app = typer.Typer()
