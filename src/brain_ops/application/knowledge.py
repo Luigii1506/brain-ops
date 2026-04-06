@@ -264,6 +264,7 @@ def execute_ingest_source_workflow(
     event_sink=None,
 ) -> IngestResult:
     from brain_ops.domains.knowledge.ingest import classify_source_type, fetch_url_content
+    from brain_ops.domains.knowledge.registry import learn_from_ingest, load_entity_registry, save_entity_registry
     from brain_ops.models import CreateNoteRequest
     from brain_ops.services.note_service import create_note
 
@@ -278,10 +279,31 @@ def execute_ingest_source_workflow(
         raise ValueError("Either text or url must be provided for ingest.")
 
     source_type = classify_source_type(url, text)
+
+    # Load accumulated intelligence to improve extraction
+    known_entity_names: list[str] | None = None
+    user_context: str | None = None
+    try:
+        vault_for_context = load_vault(config_path, dry_run=True)
+        registry_path = Path(vault_for_context.config.vault_path) / ".brain-ops" / "entity_registry.json"
+        prefs_path = Path(vault_for_context.config.vault_path) / ".brain-ops" / "preferences.json"
+        registry = load_entity_registry(registry_path)
+        known_entity_names = [e.canonical_name for e in registry.list_all()]
+        from brain_ops.domains.knowledge.preferences import load_user_preferences
+        prefs = load_user_preferences(prefs_path)
+        user_context = prefs.to_prompt_context()
+    except Exception:
+        pass
+
     used_llm = False
     if use_llm and llm_generate_json_fn is not None:
         try:
-            prompt = build_ingest_prompt(text, source_type=source_type)
+            prompt = build_ingest_prompt(
+                text,
+                source_type=source_type,
+                known_entities=known_entity_names,
+                user_context=user_context,
+            )
             extraction = llm_generate_json_fn(prompt)
             plan = parse_ingest_extraction(extraction)
             used_llm = True
@@ -328,6 +350,22 @@ def execute_ingest_source_workflow(
                 "workflow": "ingest-source",
             },
         ))
+
+    # Learn from this ingest — update entity registry with new intelligence
+    try:
+        registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+        registry = load_entity_registry(registry_path)
+        entity_dicts = [e.to_dict() for e in plan.entities] if plan.entities else []
+        rel_dicts = [r.to_dict() for r in plan.relationships] if plan.relationships else []
+        learn_from_ingest(
+            registry,
+            entities_mentioned=entity_dicts,
+            relationships=rel_dicts,
+            source_domain=plan.source_type,
+        )
+        save_entity_registry(registry_path, registry)
+    except Exception:
+        pass
 
     return IngestResult(
         plan=plan,

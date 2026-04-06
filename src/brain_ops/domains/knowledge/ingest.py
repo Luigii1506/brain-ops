@@ -171,9 +171,26 @@ Rules:
 - Return ONLY valid JSON, no extra text"""
 
 
-def build_ingest_prompt(text: str, *, source_type: str = "article") -> str:
+def build_ingest_prompt(
+    text: str,
+    *,
+    source_type: str = "article",
+    known_entities: list[str] | None = None,
+    user_context: str | None = None,
+) -> str:
     truncated = text[:12000] if len(text) > 12000 else text
-    return INGEST_EXTRACT_PROMPT.format(text=truncated, source_type=source_type)
+    prompt = INGEST_EXTRACT_PROMPT.format(text=truncated, source_type=source_type)
+
+    context_parts: list[str] = []
+    if known_entities:
+        top = known_entities[:50]
+        context_parts.append(f"\nKnown entities in the system (use these canonical names when possible, link to them):\n{', '.join(top)}")
+    if user_context:
+        context_parts.append(f"\n{user_context}")
+    if context_parts:
+        prompt = prompt.replace("Rules:", "\n".join(context_parts) + "\n\nRules:")
+
+    return prompt
 
 
 def _parse_entities(raw: list) -> list[EntityMention]:
