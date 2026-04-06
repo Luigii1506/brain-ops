@@ -164,17 +164,19 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
     def enrich_entity_command(
         name: str,
         new_info: str | None = typer.Option(None, "--info", help="New information to integrate into the entity."),
+        url: str | None = typer.Option(None, "--url", help="URL to download and use as enrichment source."),
         auto_generate: bool = typer.Option(False, "--auto-generate", help="Generate initial content if entity is empty."),
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
         llm_provider: str | None = typer.Option(None, "--llm-provider", help="LLM provider: ollama, deepseek, gemini, openai."),
         as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
     ) -> None:
-        """Enrich an existing entity with new info or auto-generate content using LLM."""
+        """Enrich an existing entity with new info, a URL, or auto-generate content using LLM."""
         try:
             present_enrich_entity_command(
                 console,
                 entity_name=name,
                 new_info=new_info,
+                url=url,
                 auto_generate=auto_generate,
                 config_path=config_path,
                 llm_provider=llm_provider,

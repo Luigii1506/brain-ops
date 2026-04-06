@@ -293,6 +293,7 @@ def present_enrich_entity_command(
     *,
     entity_name: str,
     new_info: str | None,
+    url: str | None,
     auto_generate: bool,
     config_path: Path | None,
     llm_provider: str | None,
@@ -301,6 +302,7 @@ def present_enrich_entity_command(
     result = execute_enrich_entity_workflow(
         entity_name=entity_name,
         new_info=new_info,
+        url=url,
         auto_generate=auto_generate,
         config_path=config_path,
         load_vault=load_validated_vault,

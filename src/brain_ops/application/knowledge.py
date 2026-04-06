@@ -353,13 +353,22 @@ def execute_enrich_entity_workflow(
     *,
     entity_name: str,
     new_info: str | None = None,
+    url: str | None = None,
     auto_generate: bool = False,
     config_path: Path | None,
     load_vault,
     llm_generate_text_fn=None,
+    fetch_url=None,
 ) -> EnrichmentResult:
     from brain_ops.frontmatter import render_frontmatter
     from brain_ops.storage.obsidian import write_note_document_if_changed
+
+    if url and not new_info:
+        from brain_ops.domains.knowledge.ingest import fetch_url_content
+
+        fetcher = fetch_url or fetch_url_content
+        fetched_text, _title = fetcher(url)
+        new_info = fetched_text
 
     vault = load_vault(config_path, dry_run=False)
     notes = _scan_vault_full(vault)
