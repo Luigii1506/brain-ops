@@ -296,6 +296,7 @@ def execute_ingest_source_workflow(
         pass
 
     used_llm = False
+    raw_extraction: dict[str, object] | None = None
     if use_llm and llm_generate_json_fn is not None:
         try:
             prompt = build_ingest_prompt(
@@ -305,12 +306,28 @@ def execute_ingest_source_workflow(
                 user_context=user_context,
             )
             extraction = llm_generate_json_fn(prompt)
+            raw_extraction = dict(extraction)
             plan = parse_ingest_extraction(extraction)
             used_llm = True
         except Exception:
             plan = build_deterministic_ingest_plan(text, title=title, url=url)
     else:
         plan = build_deterministic_ingest_plan(text, title=title, url=url)
+
+    # Save full extraction JSON for replay and debugging
+    if raw_extraction is not None:
+        try:
+            from brain_ops.domains.knowledge.extraction_store import save_extraction_record
+            extractions_dir = Path(vault_for_context.config.vault_path) / ".brain-ops" / "extractions"
+            save_extraction_record(
+                extractions_dir,
+                source_title=plan.source_title,
+                source_url=url,
+                source_type=plan.source_type,
+                raw_llm_json=raw_extraction,
+            )
+        except Exception:
+            pass
 
     vault = load_vault(config_path, dry_run=False)
     extra_fm: dict[str, object] = {
