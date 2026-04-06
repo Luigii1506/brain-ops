@@ -91,21 +91,23 @@ class BuildEntityFrontmatterTestCase(TestCase):
 class BuildEntityBodyTestCase(TestCase):
     def test_person_body_has_expected_sections(self) -> None:
         body = build_entity_body("person", "Alejandro Magno")
-        self.assertIn("## Biography", body)
-        self.assertIn("## Key contributions", body)
+        self.assertIn("## Identity", body)
+        self.assertIn("## Key Facts", body)
+        self.assertIn("## Timeline", body)
+        self.assertIn("## Relationships", body)
         self.assertIn("## Related notes", body)
 
     def test_event_body_has_expected_sections(self) -> None:
         body = build_entity_body("event", "Batalla de Gaugamela")
-        self.assertIn("## Context", body)
-        self.assertIn("## What happened", body)
-        self.assertIn("## Consequences", body)
+        self.assertIn("## Identity", body)
+        self.assertIn("## Key Facts", body)
+        self.assertIn("## Impact", body)
 
     def test_place_body_has_expected_sections(self) -> None:
         body = build_entity_body("place", "Grecia")
-        self.assertIn("## Overview", body)
-        self.assertIn("## History", body)
-        self.assertIn("## Geography", body)
+        self.assertIn("## Identity", body)
+        self.assertIn("## Key Facts", body)
+        self.assertIn("## Strategic Insights", body)
 
     def test_unknown_type_returns_minimal_body(self) -> None:
         body = build_entity_body("unknown_type", "Test")
@@ -121,7 +123,7 @@ class PlanEntityNoteTestCase(TestCase):
         self.assertEqual(plan.frontmatter["type"], "person")
         self.assertEqual(plan.frontmatter["name"], "Alejandro Magno")
         self.assertIs(plan.frontmatter["entity"], True)
-        self.assertIn("## Biography", plan.body)
+        self.assertIn("## Identity", plan.body)
 
     def test_plan_normalizes_entity_type(self) -> None:
         plan = plan_entity_note("Grecia", entity_type="PLACE")

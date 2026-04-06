@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-ENTITY_ENRICH_PROMPT = """You are a personal knowledge librarian. You are enriching an existing wiki page with new information.
+ENTITY_ENRICH_PROMPT = """You are updating an existing knowledge note using new evidence.
+
+Your job is not to rewrite the page, but to improve it while preserving structure.
 
 Current note content:
 ---
@@ -17,33 +19,80 @@ New information to integrate:
 {new_info}
 ---
 
-Rules:
-- Keep the existing structure (sections with ##)
-- ADD new content under the appropriate sections — never delete existing content
-- Add new wikilinks as [[Entity Name]] for any entities mentioned
-- If new info contradicts existing content, note the contradiction explicitly
-- Add a TLDR at the top if one doesn't exist (as a blockquote > **TLDR:** ...)
-- Keep the "## Related notes" section at the bottom
-- Write in the same language as the existing note
+When integrating the new information:
+- Preserve existing valid content — never delete what's already there
+- Add new atomic facts under ## Key Facts
+- Expand ## Timeline when new dated events appear
+- Expand ## Relationships when new entities or connections appear
+- Add contradictions explicitly under ## Contradictions & Uncertainties
+- Do not duplicate existing facts
+- Prefer concise, information-dense additions
+- Use wikilinks [[Entity Name]] for any entities mentioned
+- Keep the markdown structure stable
+- Preserve the TLDR (update it only if the new info significantly changes the picture)
+- Keep ## Related notes at the bottom
 
-Return ONLY the updated note body (no frontmatter), starting from the TLDR or first ## section."""
+Required sections (create if missing):
+- > **TLDR:** ...
+- ## Identity
+- ## Key Facts
+- ## Timeline
+- ## Impact
+- ## Relationships
+- ## Strategic Insights
+- ## Contradictions & Uncertainties
+- ## Related notes
+
+Return ONLY the updated note body, starting from the TLDR blockquote."""
 
 
-ENTITY_GENERATE_PROMPT = """You are a personal knowledge librarian. Generate initial content for a wiki page about this entity.
+ENTITY_GENERATE_PROMPT = """You are generating a high-quality wiki page for a personal knowledge system.
 
 Entity: {name}
 Type: {entity_type}
-Sections to fill: {sections}
+
+Write the note in a way that is:
+- concise but information-dense
+- easy to scan
+- useful for retrieval and future reasoning
+- rich in explicit relationships
+- factually grounded
+
+Use this structure:
+
+> **TLDR:** one-sentence summary
+
+## Identity
+Who or what this entity is. Titles, period, classification.
+
+## Key Facts
+- concise factual bullets
+- names, dates, titles, locations, roles
+- be specific: prefer "356 a.C." over "siglo IV a.C."
+
+## Timeline
+- date — event
+- date — event
+
+## Impact
+Why this entity matters. What changed because of it.
+
+## Relationships
+- [[Entity]] — relationship type (mentor of, father of, conquered, founded, etc.)
+- [[Entity]] — relationship type
+
+## Strategic Insights
+Non-obvious lessons, patterns, behaviors, or principles worth remembering.
+
+## Related notes
 
 Rules:
-- Write comprehensive but concise content for each section
-- Use wikilinks [[Entity Name]] for related entities
-- Start with a TLDR blockquote: > **TLDR:** one sentence summary
+- Use wikilinks [[Entity Name]] for every entity mentioned
+- Prefer specific facts over generic claims
+- Do not invent details you're not confident about
+- Keep sections compact and high-signal
 - Write in Spanish if the entity name is in Spanish, otherwise English
-- Focus on what's most important and useful to remember
-- Be factual and specific — dates, names, places
-
-Return ONLY the note body, starting from the TLDR blockquote."""
+- Return ONLY the note body, starting from the TLDR blockquote"""
 
 
 @dataclass(slots=True, frozen=True)
@@ -71,7 +120,6 @@ def build_generate_prompt(name: str, entity_type: str, sections: tuple[str, ...]
     return ENTITY_GENERATE_PROMPT.format(
         name=name,
         entity_type=entity_type,
-        sections=", ".join(sections),
     )
 
 

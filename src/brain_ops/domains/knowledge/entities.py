@@ -27,66 +27,69 @@ class EntitySchema:
     sections: tuple[str, ...]
 
 
+# Standard sections for all entity types — consistent structure for indexing and retrieval
+_STANDARD_SECTIONS = ("Identity", "Key Facts", "Timeline", "Impact", "Relationships", "Strategic Insights", "Contradictions & Uncertainties", "Related notes")
+
 ENTITY_SCHEMAS: dict[str, EntitySchema] = {
     "person": EntitySchema(
         entity_type="person",
         required_fields=("name",),
         optional_fields=("born", "died", "nationality", "era", "occupation", "related", "tags"),
-        sections=("Biography", "Key contributions", "Related events", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "event": EntitySchema(
         entity_type="event",
         required_fields=("name",),
         optional_fields=("date", "end_date", "location", "participants", "related", "tags"),
-        sections=("Context", "What happened", "Consequences", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "place": EntitySchema(
         entity_type="place",
         required_fields=("name",),
         optional_fields=("capital", "continent", "region", "population", "language", "related", "tags"),
-        sections=("Overview", "History", "Geography", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "concept": EntitySchema(
         entity_type="concept",
         required_fields=("name",),
         optional_fields=("field", "originated", "originated_by", "related", "tags"),
-        sections=("Definition", "Why it matters", "Examples", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "book": EntitySchema(
         entity_type="book",
         required_fields=("name",),
         optional_fields=("author", "year", "genre", "language", "pages", "related", "tags"),
-        sections=("Summary", "Key ideas", "Quotes", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "author": EntitySchema(
         entity_type="author",
         required_fields=("name",),
         optional_fields=("born", "died", "nationality", "genre", "notable_works", "related", "tags"),
-        sections=("Biography", "Major works", "Style and influence", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "war": EntitySchema(
         entity_type="war",
         required_fields=("name",),
         optional_fields=("start_date", "end_date", "location", "belligerents", "outcome", "related", "tags"),
-        sections=("Background", "Key battles", "Outcome", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "era": EntitySchema(
         entity_type="era",
         required_fields=("name",),
         optional_fields=("start_date", "end_date", "region", "related", "tags"),
-        sections=("Overview", "Key events", "Key figures", "Legacy", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "organization": EntitySchema(
         entity_type="organization",
         required_fields=("name",),
         optional_fields=("founded", "dissolved", "location", "type", "related", "tags"),
-        sections=("Overview", "History", "Significance", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
     "topic": EntitySchema(
         entity_type="topic",
         required_fields=("name",),
         optional_fields=("field", "related", "tags"),
-        sections=("Overview", "Key concepts", "Key figures", "Related notes"),
+        sections=_STANDARD_SECTIONS,
     ),
 }
 

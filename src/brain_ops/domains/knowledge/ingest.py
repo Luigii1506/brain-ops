@@ -1,11 +1,41 @@
-"""Knowledge ingest — process raw sources into structured wiki content."""
+"""Knowledge ingest — process raw sources into structured intelligence."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+
+@dataclass(slots=True, frozen=True)
+class EntityMention:
+    name: str
+    entity_type: str
+    importance: str
+    role_in_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"name": self.name, "type": self.entity_type, "importance": self.importance, "role": self.role_in_source}
+
+
+@dataclass(slots=True, frozen=True)
+class Relationship:
+    subject: str
+    predicate: str
+    object: str
+    confidence: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"subject": self.subject, "predicate": self.predicate, "object": self.object, "confidence": self.confidence}
+
+
+@dataclass(slots=True, frozen=True)
+class TimelineEntry:
+    date: str
+    event: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"date": self.date, "event": self.event}
 
 
 @dataclass(slots=True, frozen=True)
@@ -14,11 +44,15 @@ class IngestPlan:
     source_type: str
     summary: str
     tldr: str
-    key_ideas: list[str]
-    entities_mentioned: list[str]
-    suggested_entity_type: str | None
-    content_for_note: str
+    core_facts: list[str]
+    key_insights: list[str]
+    timeline: list[TimelineEntry]
+    entities: list[EntityMention]
+    relationships: list[Relationship]
+    strategic_patterns: list[str]
+    contradictions: list[str]
     personal_relevance: str | None
+    content_for_note: str
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -26,9 +60,13 @@ class IngestPlan:
             "source_type": self.source_type,
             "summary": self.summary,
             "tldr": self.tldr,
-            "key_ideas": list(self.key_ideas),
-            "entities_mentioned": list(self.entities_mentioned),
-            "suggested_entity_type": self.suggested_entity_type,
+            "core_facts": list(self.core_facts),
+            "key_insights": list(self.key_insights),
+            "timeline": [t.to_dict() for t in self.timeline],
+            "entities": [e.to_dict() for e in self.entities],
+            "relationships": [r.to_dict() for r in self.relationships],
+            "strategic_patterns": list(self.strategic_patterns),
+            "contradictions": list(self.contradictions),
             "personal_relevance": self.personal_relevance,
         }
 
@@ -76,9 +114,15 @@ def fetch_url_content(url: str) -> tuple[str, str | None]:
         return html, None
 
 
-INGEST_EXTRACT_PROMPT = """You are a personal knowledge librarian building a wiki for your user. Analyze this source and extract structured information.
+INGEST_EXTRACT_PROMPT = """You are not summarizing. You are building a high-quality personal knowledge system.
 
-Important: This wiki is PERSONAL. When you mention entities, think about what they mean in context of someone learning and building knowledge. The summary should be useful for future reference.
+Your task is to extract reusable intelligence from a source, not just rewrite it.
+
+Think like:
+- a historian
+- a strategist
+- a knowledge graph builder
+- an information architect
 
 Source type: {source_type}
 Source text:
@@ -86,17 +130,45 @@ Source text:
 {text}
 ---
 
-Respond in JSON with these exact fields:
-- "title": a clear, descriptive title for this source (string)
-- "source_type": one of "article", "book_chapter", "video_transcript", "research_paper", "encyclopedia", "documentation", "notes" (string)
-- "summary": a 3-5 sentence comprehensive summary (string)
-- "tldr": one sentence that captures the core insight (string)
-- "key_ideas": the 5-7 most important ideas, facts, or takeaways (array of strings)
-- "entities_mentioned": names of notable people, places, events, concepts, technologies mentioned — be thorough (array of strings)
-- "suggested_entity_type": if this source is primarily about ONE entity, what type? One of "person", "event", "place", "concept", "book", "war", "era", "organization", "topic", or null
-- "personal_relevance": one sentence on why this might be valuable to remember (string)
+Analyze the source and return valid JSON with the following fields:
 
-Respond ONLY with valid JSON, no extra text."""
+{{
+  "title": "clear descriptive title",
+  "source_type": "article | book_chapter | video_transcript | research_paper | encyclopedia | documentation | notes",
+  "tldr": "one sentence that captures the core insight",
+  "summary": "3-5 sentence comprehensive summary",
+  "core_facts": [
+    "atomic, factual statements with dates, places, names where possible"
+  ],
+  "key_insights": [
+    "important insights or conclusions worth remembering"
+  ],
+  "timeline": [
+    {{"date": "356 a.C.", "event": "description of what happened"}}
+  ],
+  "entities": [
+    {{"name": "canonical name", "type": "person | place | event | concept | organization | era | war | book | topic", "importance": "high | medium | low", "role_in_source": "brief role description"}}
+  ],
+  "relationships": [
+    {{"subject": "Entity A", "predicate": "mentor of | father of | conquered | founded | died in | participated in | opposed | influenced | succeeded", "object": "Entity B", "confidence": "high | medium | low"}}
+  ],
+  "strategic_patterns": [
+    "repeatable patterns, behaviors, strategic approaches, or principles"
+  ],
+  "contradictions_or_uncertainties": [
+    "uncertain dates, conflicting accounts, disputed interpretations"
+  ],
+  "personal_relevance": "one sentence on why this might be valuable to remember"
+}}
+
+Rules:
+- Be specific, not generic
+- Prefer concrete facts over vague phrasing
+- Extract relationships explicitly with clear predicates
+- Include important dates where available
+- If the source is mostly about one entity, make that clear
+- Keep wording concise and information-dense
+- Return ONLY valid JSON, no extra text"""
 
 
 def build_ingest_prompt(text: str, *, source_type: str = "article") -> str:
@@ -104,41 +176,137 @@ def build_ingest_prompt(text: str, *, source_type: str = "article") -> str:
     return INGEST_EXTRACT_PROMPT.format(text=truncated, source_type=source_type)
 
 
-def parse_ingest_extraction(extraction: dict[str, object]) -> IngestPlan:
-    title = str(extraction.get("title", "Untitled Source"))
-    source_type = str(extraction.get("source_type", "article"))
-    summary = str(extraction.get("summary", ""))
-    tldr = str(extraction.get("tldr", ""))
-    key_ideas = [str(item) for item in extraction.get("key_ideas", []) if item]
-    entities_mentioned = [str(item) for item in extraction.get("entities_mentioned", []) if item]
-    suggested = extraction.get("suggested_entity_type")
-    suggested_type = str(suggested) if isinstance(suggested, str) and suggested.strip() else None
-    personal_relevance = extraction.get("personal_relevance")
-    personal_rel = str(personal_relevance) if isinstance(personal_relevance, str) and personal_relevance.strip() else None
+def _parse_entities(raw: list) -> list[EntityMention]:
+    result = []
+    for item in raw:
+        if isinstance(item, dict):
+            result.append(EntityMention(
+                name=str(item.get("name", "")),
+                entity_type=str(item.get("type", "concept")),
+                importance=str(item.get("importance", "medium")),
+                role_in_source=str(item.get("role_in_source", "")),
+            ))
+        elif isinstance(item, str):
+            result.append(EntityMention(name=item, entity_type="concept", importance="medium", role_in_source=""))
+    return result
 
-    sections = []
+
+def _parse_relationships(raw: list) -> list[Relationship]:
+    result = []
+    for item in raw:
+        if isinstance(item, dict):
+            result.append(Relationship(
+                subject=str(item.get("subject", "")),
+                predicate=str(item.get("predicate", "")),
+                object=str(item.get("object", "")),
+                confidence=str(item.get("confidence", "medium")),
+            ))
+    return result
+
+
+def _parse_timeline(raw: list) -> list[TimelineEntry]:
+    result = []
+    for item in raw:
+        if isinstance(item, dict):
+            result.append(TimelineEntry(
+                date=str(item.get("date", "")),
+                event=str(item.get("event", "")),
+            ))
+    return result
+
+
+def _render_structured_note(plan_data: dict) -> str:
+    sections: list[str] = []
+
+    tldr = plan_data.get("tldr", "")
     if tldr:
         sections.append(f"> **TLDR:** {tldr}")
-    sections.append(f"## Summary\n\n{summary}")
-    if key_ideas:
-        sections.append("## Key Ideas\n\n" + "\n".join(f"- {idea}" for idea in key_ideas))
-    if entities_mentioned:
-        sections.append("## Entities Mentioned\n\n" + "\n".join(f"- [[{name}]]" for name in entities_mentioned))
-    if personal_rel:
-        sections.append(f"## Why This Matters\n\n{personal_rel}")
+
+    summary = plan_data.get("summary", "")
+    if summary:
+        sections.append(f"## Summary\n\n{summary}")
+
+    facts = plan_data.get("core_facts", [])
+    if facts:
+        sections.append("## Key Facts\n\n" + "\n".join(f"- {f}" for f in facts))
+
+    insights = plan_data.get("key_insights", [])
+    if insights:
+        sections.append("## Key Insights\n\n" + "\n".join(f"- {i}" for i in insights))
+
+    timeline = plan_data.get("timeline", [])
+    if timeline:
+        lines = []
+        for entry in timeline:
+            if isinstance(entry, dict):
+                lines.append(f"- **{entry.get('date', '?')}** — {entry.get('event', '')}")
+        if lines:
+            sections.append("## Timeline\n\n" + "\n".join(lines))
+
+    entities = plan_data.get("entities", [])
+    if entities:
+        lines = []
+        for e in entities:
+            if isinstance(e, dict):
+                name = e.get("name", "")
+                role = e.get("role_in_source", "")
+                lines.append(f"- [[{name}]] — {role}" if role else f"- [[{name}]]")
+            elif isinstance(e, str):
+                lines.append(f"- [[{e}]]")
+        if lines:
+            sections.append("## Entities\n\n" + "\n".join(lines))
+
+    relationships = plan_data.get("relationships", [])
+    if relationships:
+        lines = []
+        for r in relationships:
+            if isinstance(r, dict):
+                lines.append(f"- [[{r.get('subject', '')}]] — {r.get('predicate', '')} → [[{r.get('object', '')}]]")
+        if lines:
+            sections.append("## Relationships\n\n" + "\n".join(lines))
+
+    patterns = plan_data.get("strategic_patterns", [])
+    if patterns:
+        sections.append("## Strategic Insights\n\n" + "\n".join(f"- {p}" for p in patterns))
+
+    contradictions = plan_data.get("contradictions_or_uncertainties", [])
+    if contradictions:
+        sections.append("## Contradictions & Uncertainties\n\n" + "\n".join(f"- {c}" for c in contradictions))
+
+    relevance = plan_data.get("personal_relevance", "")
+    if relevance:
+        sections.append(f"## Why This Matters\n\n{relevance}")
+
     sections.append("## Related notes")
-    content = "\n\n".join(sections)
+    return "\n\n".join(sections)
+
+
+def parse_ingest_extraction(extraction: dict[str, object]) -> IngestPlan:
+    entities = _parse_entities(extraction.get("entities", extraction.get("entities_mentioned", [])))
+    relationships = _parse_relationships(extraction.get("relationships", []))
+    timeline = _parse_timeline(extraction.get("timeline", []))
+    contradictions = [str(c) for c in extraction.get("contradictions_or_uncertainties", []) if c]
+    patterns = [str(p) for p in extraction.get("strategic_patterns", []) if p]
+    core_facts = [str(f) for f in extraction.get("core_facts", []) if f]
+    key_insights = [str(i) for i in extraction.get("key_insights", extraction.get("key_ideas", [])) if i]
+    personal_relevance = extraction.get("personal_relevance")
+
+    content = _render_structured_note(extraction)
 
     return IngestPlan(
-        source_title=title,
-        source_type=source_type,
-        summary=summary,
-        tldr=tldr,
-        key_ideas=key_ideas,
-        entities_mentioned=entities_mentioned,
-        suggested_entity_type=suggested_type,
+        source_title=str(extraction.get("title", "Untitled Source")),
+        source_type=str(extraction.get("source_type", "article")),
+        summary=str(extraction.get("summary", "")),
+        tldr=str(extraction.get("tldr", "")),
+        core_facts=core_facts,
+        key_insights=key_insights,
+        timeline=timeline,
+        entities=entities,
+        relationships=relationships,
+        strategic_patterns=patterns,
+        contradictions=contradictions,
+        personal_relevance=str(personal_relevance) if isinstance(personal_relevance, str) else None,
         content_for_note=content,
-        personal_relevance=personal_rel,
     )
 
 
@@ -160,17 +328,24 @@ def build_deterministic_ingest_plan(text: str, *, title: str | None = None, url:
         source_type=source_type,
         summary=preview,
         tldr=preview,
-        key_ideas=[],
-        entities_mentioned=[],
-        suggested_entity_type=None,
-        content_for_note=content,
+        core_facts=[],
+        key_insights=[],
+        timeline=[],
+        entities=[],
+        relationships=[],
+        strategic_patterns=[],
+        contradictions=[],
         personal_relevance=None,
+        content_for_note=content,
     )
 
 
 __all__ = [
+    "EntityMention",
     "INGEST_EXTRACT_PROMPT",
     "IngestPlan",
+    "Relationship",
+    "TimelineEntry",
     "build_deterministic_ingest_plan",
     "build_ingest_prompt",
     "classify_source_type",

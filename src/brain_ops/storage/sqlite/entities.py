@@ -15,6 +15,8 @@ ENTITY_SCHEMA_STATEMENTS = [
         name TEXT PRIMARY KEY,
         entity_type TEXT NOT NULL,
         relative_path TEXT NOT NULL,
+        summary TEXT,
+        aliases TEXT,
         metadata_json TEXT NOT NULL DEFAULT '{}'
     )
     """,
@@ -23,7 +25,35 @@ ENTITY_SCHEMA_STATEMENTS = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_entity TEXT NOT NULL,
         target_entity TEXT NOT NULL,
+        predicate TEXT,
+        confidence TEXT DEFAULT 'medium',
         source_type TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS entity_facts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_name TEXT NOT NULL,
+        fact_text TEXT NOT NULL,
+        source_id TEXT,
+        confidence TEXT DEFAULT 'medium'
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS entity_timeline (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_name TEXT NOT NULL,
+        date TEXT NOT NULL,
+        event_text TEXT NOT NULL,
+        source_id TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS entity_insights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_name TEXT NOT NULL,
+        insight_text TEXT NOT NULL,
+        source_id TEXT
     )
     """,
     """
@@ -34,6 +64,15 @@ ENTITY_SCHEMA_STATEMENTS = [
     """,
     """
     CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations(target_entity)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_entity_facts_name ON entity_facts(entity_name)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_entity_timeline_name ON entity_timeline(entity_name)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_entity_insights_name ON entity_insights(entity_name)
     """,
 ]
 
@@ -55,6 +94,9 @@ def write_compiled_entities(db_path: Path, result: CompileResult) -> int:
     conn = sqlite3.connect(str(db_path))
     try:
         cursor = conn.cursor()
+        cursor.execute("DELETE FROM entity_insights")
+        cursor.execute("DELETE FROM entity_timeline")
+        cursor.execute("DELETE FROM entity_facts")
         cursor.execute("DELETE FROM entity_relations")
         cursor.execute("DELETE FROM entities")
         for entity in result.entities:
