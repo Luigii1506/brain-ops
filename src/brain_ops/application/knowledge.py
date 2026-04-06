@@ -345,7 +345,7 @@ def execute_ingest_source_workflow(
         "source_type": plan.source_type,
         "summary": plan.summary,
         "tldr": plan.tldr,
-        "entities_mentioned": plan.entities_mentioned,
+        "entities_mentioned": [e.name for e in plan.entities] if plan.entities else [],
     }
     if url:
         extra_fm["url"] = [url]
@@ -373,7 +373,7 @@ def execute_ingest_source_workflow(
                 "title": plan.source_title,
                 "source_type": plan.source_type,
                 "url": url,
-                "entities_count": len(plan.entities_mentioned),
+                "entities_count": len(plan.entities),
                 "used_llm": used_llm,
                 "workflow": "ingest-source",
             },

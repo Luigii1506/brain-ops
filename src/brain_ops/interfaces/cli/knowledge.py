@@ -176,8 +176,8 @@ def present_ingest_source_command(
     console.print(f"Ingested: {result.plan.source_title}")
     if result.source_note_path:
         console.print(f"Note: {result.source_note_path}")
-    if result.plan.entities_mentioned:
-        console.print(f"Entities mentioned: {', '.join(result.plan.entities_mentioned)}")
+    if result.plan.entities:
+        console.print(f"Entities mentioned: {', '.join(e.name for e in result.plan.entities)}")
     console.print(f"LLM used: {'Yes' if result.used_llm else 'No'}")
     try:
         execute_compile_knowledge_workflow(
