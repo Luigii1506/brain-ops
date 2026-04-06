@@ -75,7 +75,7 @@ def resolve_provider(
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> LLMProvider:
-    name = (provider_name or os.getenv("BRAIN_OPS_LLM_PROVIDER", "ollama")).strip().lower()
+    name = (provider_name or os.getenv("BRAIN_OPS_LLM_PROVIDER", "openai")).strip().lower()
     known = KNOWN_PROVIDERS.get(name, {})
 
     resolved_url = base_url or os.getenv("BRAIN_OPS_LLM_BASE_URL") or known.get("base_url", "")

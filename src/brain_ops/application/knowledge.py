@@ -360,8 +360,7 @@ def execute_enrich_entity_workflow(
     llm_generate_text_fn=None,
     fetch_url=None,
 ) -> EnrichmentResult:
-    from brain_ops.frontmatter import render_frontmatter
-    from brain_ops.storage.obsidian import write_note_document_if_changed
+    from brain_ops.frontmatter import dump_frontmatter
 
     if url and not new_info:
         from brain_ops.domains.knowledge.ingest import fetch_url_content
@@ -419,7 +418,7 @@ def execute_enrich_entity_workflow(
         )
 
     if existing_path and existing_frontmatter is not None:
-        full_content = render_frontmatter(existing_frontmatter) + "\n" + updated_body
+        full_content = dump_frontmatter(existing_frontmatter, updated_body)
         existing_path.write_text(full_content, encoding="utf-8")
 
     return EnrichmentResult(
