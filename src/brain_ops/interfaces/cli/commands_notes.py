@@ -14,9 +14,11 @@ from .knowledge import (
     present_compile_knowledge_command,
     present_entity_index_command,
     present_entity_relations_command,
-    present_normalize_frontmatter_command,
+    present_enrich_entity_command,
     present_ingest_source_command,
+    present_normalize_frontmatter_command,
     present_process_inbox_command,
+    present_query_knowledge_command,
     present_search_knowledge_command,
     present_weekly_review_command,
 )
@@ -135,20 +137,68 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
 
     @app.command("ingest-source")
     def ingest_source_command(
-        text: str,
+        text: str | None = typer.Argument(None, help="Raw text to ingest. Omit if using --url."),
+        url: str | None = typer.Option(None, "--url", help="URL to download and ingest."),
         title: str | None = typer.Option(None, "--title", help="Override the inferred title."),
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
-        use_llm: bool = typer.Option(False, "--use-llm", help="Use Ollama to extract entities and summary."),
+        use_llm: bool = typer.Option(False, "--use-llm", help="Use LLM to extract entities and summary."),
+        llm_provider: str | None = typer.Option(None, "--llm-provider", help="LLM provider: ollama, deepseek, gemini, openai."),
         as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
     ) -> None:
-        """Ingest raw text into a structured source note, optionally using LLM for extraction."""
+        """Ingest raw text or a URL into a structured source note with LLM extraction."""
         try:
             present_ingest_source_command(
                 console,
                 text=text,
+                url=url,
                 title=title,
                 config_path=config_path,
                 use_llm=use_llm,
+                llm_provider=llm_provider,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("enrich-entity")
+    def enrich_entity_command(
+        name: str,
+        new_info: str | None = typer.Option(None, "--info", help="New information to integrate into the entity."),
+        auto_generate: bool = typer.Option(False, "--auto-generate", help="Generate initial content if entity is empty."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        llm_provider: str | None = typer.Option(None, "--llm-provider", help="LLM provider: ollama, deepseek, gemini, openai."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Enrich an existing entity with new info or auto-generate content using LLM."""
+        try:
+            present_enrich_entity_command(
+                console,
+                entity_name=name,
+                new_info=new_info,
+                auto_generate=auto_generate,
+                config_path=config_path,
+                llm_provider=llm_provider,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("query-knowledge")
+    def query_knowledge_command(
+        query: str,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        file_back: bool = typer.Option(False, "--file-back", help="Save the answer as a new note in the wiki."),
+        llm_provider: str | None = typer.Option(None, "--llm-provider", help="LLM provider: ollama, deepseek, gemini, openai."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Ask a question and get an answer synthesized from your knowledge base."""
+        try:
+            present_query_knowledge_command(
+                console,
+                query=query,
+                config_path=config_path,
+                file_back=file_back,
+                llm_provider=llm_provider,
                 as_json=as_json,
             )
         except BrainOpsError as error:

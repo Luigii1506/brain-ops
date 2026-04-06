@@ -7,6 +7,12 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from brain_ops.core.events import EventSink
+from brain_ops.domains.knowledge.enrichment_llm import (
+    EnrichmentResult,
+    build_enrich_prompt,
+    build_generate_prompt,
+)
+from brain_ops.domains.knowledge.entities import ENTITY_SCHEMAS
 from brain_ops.domains.knowledge.ingest import (
     IngestPlan,
     build_deterministic_ingest_plan,
@@ -247,41 +253,62 @@ class IngestResult:
 
 def execute_ingest_source_workflow(
     *,
-    text: str,
+    text: str | None = None,
+    url: str | None = None,
     title: str | None = None,
     config_path: Path | None,
     use_llm: bool = False,
     load_vault,
-    llm_extract=None,
+    llm_generate_json_fn=None,
+    fetch_url=None,
     event_sink=None,
 ) -> IngestResult:
+    from brain_ops.domains.knowledge.ingest import classify_source_type, fetch_url_content
     from brain_ops.models import CreateNoteRequest
     from brain_ops.services.note_service import create_note
 
+    fetcher = fetch_url or fetch_url_content
+    if url and not text:
+        fetched_text, fetched_title = fetcher(url)
+        text = fetched_text
+        if not title:
+            title = fetched_title
+
+    if not text:
+        raise ValueError("Either text or url must be provided for ingest.")
+
+    source_type = classify_source_type(url, text)
     used_llm = False
-    if use_llm and llm_extract is not None:
+    if use_llm and llm_generate_json_fn is not None:
         try:
-            prompt = build_ingest_prompt(text)
-            extraction = llm_extract(prompt)
+            prompt = build_ingest_prompt(text, source_type=source_type)
+            extraction = llm_generate_json_fn(prompt)
             plan = parse_ingest_extraction(extraction)
             used_llm = True
         except Exception:
-            plan = build_deterministic_ingest_plan(text, title=title)
+            plan = build_deterministic_ingest_plan(text, title=title, url=url)
     else:
-        plan = build_deterministic_ingest_plan(text, title=title)
+        plan = build_deterministic_ingest_plan(text, title=title, url=url)
 
     vault = load_vault(config_path, dry_run=False)
+    extra_fm: dict[str, object] = {
+        "source_type": plan.source_type,
+        "summary": plan.summary,
+        "tldr": plan.tldr,
+        "entities_mentioned": plan.entities_mentioned,
+    }
+    if url:
+        extra_fm["url"] = [url]
+    if plan.personal_relevance:
+        extra_fm["personal_relevance"] = plan.personal_relevance
+
     operation = create_note(
         vault,
         CreateNoteRequest(
             title=plan.source_title,
             note_type="source",
             tags=[],
-            extra_frontmatter={
-                "source_type": plan.source_type,
-                "summary": plan.summary,
-                "entities_mentioned": plan.entities_mentioned,
-            },
+            extra_frontmatter=extra_fm,
             body_override=plan.content_for_note,
         ),
     )
@@ -295,6 +322,7 @@ def execute_ingest_source_workflow(
             payload={
                 "title": plan.source_title,
                 "source_type": plan.source_type,
+                "url": url,
                 "entities_count": len(plan.entities_mentioned),
                 "used_llm": used_llm,
                 "workflow": "ingest-source",
@@ -321,18 +349,202 @@ def execute_search_knowledge_workflow(
     return search_notes(notes, query, entity_only=entity_only, max_results=max_results)
 
 
+def execute_enrich_entity_workflow(
+    *,
+    entity_name: str,
+    new_info: str | None = None,
+    auto_generate: bool = False,
+    config_path: Path | None,
+    load_vault,
+    llm_generate_text_fn=None,
+) -> EnrichmentResult:
+    from brain_ops.frontmatter import render_frontmatter
+    from brain_ops.storage.obsidian import write_note_document_if_changed
+
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_full(vault)
+
+    existing_note = None
+    existing_body = None
+    existing_frontmatter = None
+    existing_path = None
+    for rel_path, fm, body in notes:
+        if fm.get("entity") is True and fm.get("name") == entity_name:
+            existing_note = rel_path
+            existing_body = body
+            existing_frontmatter = fm
+            existing_path = vault.config.vault_path / rel_path
+            break
+
+    if existing_note is None:
+        from brain_ops.errors import ConfigError
+        raise ConfigError(f"Entity '{entity_name}' not found in vault.")
+
+    if llm_generate_text_fn is None:
+        return EnrichmentResult(
+            entity_name=entity_name,
+            updated_body=existing_body or "",
+            had_existing_content=bool(existing_body and existing_body.strip()),
+        )
+
+    has_content = bool(existing_body and existing_body.strip() and "## " in existing_body)
+    body_is_empty_template = all(
+        line.startswith("## ") or not line.strip()
+        for line in (existing_body or "").splitlines()
+    )
+
+    if body_is_empty_template and auto_generate:
+        entity_type = existing_frontmatter.get("type", "topic")
+        schema = ENTITY_SCHEMAS.get(entity_type)
+        sections = schema.sections if schema else ("Overview",)
+        prompt = build_generate_prompt(entity_name, entity_type, sections)
+        updated_body = llm_generate_text_fn(prompt)
+    elif new_info:
+        prompt = build_enrich_prompt(existing_body or "", new_info)
+        updated_body = llm_generate_text_fn(prompt)
+    else:
+        return EnrichmentResult(
+            entity_name=entity_name,
+            updated_body=existing_body or "",
+            had_existing_content=has_content,
+        )
+
+    if existing_path and existing_frontmatter is not None:
+        full_content = render_frontmatter(existing_frontmatter) + "\n" + updated_body
+        existing_path.write_text(full_content, encoding="utf-8")
+
+    return EnrichmentResult(
+        entity_name=entity_name,
+        updated_body=updated_body,
+        had_existing_content=has_content,
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class QueryResult:
+    query: str
+    answer: str
+    sources_used: list[str]
+    filed_back: bool
+    filed_path: Path | None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "query": self.query,
+            "answer": self.answer,
+            "sources_used": list(self.sources_used),
+            "filed_back": self.filed_back,
+            "filed_path": str(self.filed_path) if self.filed_path else None,
+        }
+
+
+QUERY_SYNTHESIS_PROMPT = """You are a personal knowledge assistant. Answer the user's question using ONLY the knowledge base content provided below.
+
+Question: {query}
+
+Knowledge base context:
+---
+{context}
+---
+
+Rules:
+- Answer based ONLY on the provided context. If the context doesn't have enough info, say so.
+- Use wikilinks [[Entity Name]] when referencing entities in the knowledge base.
+- Be concise but thorough.
+- If the question is about relationships between entities, explain the connections.
+- Answer in the same language as the question.
+
+Answer:"""
+
+
+def execute_query_knowledge_workflow(
+    *,
+    query: str,
+    config_path: Path | None,
+    file_back: bool = False,
+    max_context_notes: int = 10,
+    load_vault,
+    llm_generate_text_fn=None,
+) -> QueryResult:
+    from brain_ops.models import CreateNoteRequest
+    from brain_ops.services.note_service import create_note
+
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_full(vault)
+    search_results = search_notes(notes, query, max_results=max_context_notes)
+
+    if not search_results:
+        return QueryResult(
+            query=query,
+            answer=f"No relevant notes found for '{query}'.",
+            sources_used=[],
+            filed_back=False,
+            filed_path=None,
+        )
+
+    context_parts: list[str] = []
+    sources_used: list[str] = []
+    for sr in search_results:
+        for rel_path, fm, body in notes:
+            if rel_path == sr.relative_path:
+                name = fm.get("name", rel_path)
+                context_parts.append(f"### {name}\n{body[:2000]}")
+                sources_used.append(str(name))
+                break
+
+    if llm_generate_text_fn is None:
+        answer_parts = [f"Found {len(search_results)} relevant notes:"]
+        for sr in search_results:
+            answer_parts.append(f"- [[{sr.title}]]: {sr.match_context}")
+        answer = "\n".join(answer_parts)
+    else:
+        context = "\n\n".join(context_parts)
+        prompt = QUERY_SYNTHESIS_PROMPT.format(query=query, context=context[:12000])
+        answer = llm_generate_text_fn(prompt)
+
+    filed_path = None
+    if file_back and llm_generate_text_fn is not None:
+        safe_title = query[:60].strip()
+        body = f"> **Query:** {query}\n\n## Answer\n\n{answer}\n\n## Sources\n\n"
+        body += "\n".join(f"- [[{s}]]" for s in sources_used)
+        body += "\n\n## Related notes\n"
+        operation = create_note(
+            vault,
+            CreateNoteRequest(
+                title=f"Q - {safe_title}",
+                note_type="knowledge",
+                tags=["query-answer"],
+                extra_frontmatter={"query": query, "sources_count": len(sources_used)},
+                body_override=body,
+            ),
+        )
+        filed_path = operation.path
+
+    return QueryResult(
+        query=query,
+        answer=answer,
+        sources_used=sources_used,
+        filed_back=filed_path is not None,
+        filed_path=filed_path,
+    )
+
+
 __all__ = [
     "EntityIndexResult",
     "EntityRelationsResult",
+    "EnrichmentResult",
     "IngestResult",
     "KnowledgeCompileResult",
+    "QueryResult",
     "execute_audit_vault_workflow",
     "execute_compile_knowledge_workflow",
-    "execute_ingest_source_workflow",
-    "execute_search_knowledge_workflow",
+    "execute_enrich_entity_workflow",
     "execute_entity_index_workflow",
     "execute_entity_relations_workflow",
+    "execute_ingest_source_workflow",
     "execute_normalize_frontmatter_workflow",
     "execute_process_inbox_workflow",
+    "execute_query_knowledge_workflow",
+    "execute_search_knowledge_workflow",
     "execute_weekly_review_workflow",
 ]

@@ -11,9 +11,11 @@ from rich.table import Table
 from brain_ops.application import (
     execute_audit_vault_workflow,
     execute_compile_knowledge_workflow,
+    execute_enrich_entity_workflow,
     execute_entity_index_workflow,
     execute_entity_relations_workflow,
     execute_ingest_source_workflow,
+    execute_query_knowledge_workflow,
     execute_normalize_frontmatter_workflow,
     execute_process_inbox_workflow,
     execute_search_knowledge_workflow,
@@ -146,35 +148,32 @@ def present_normalize_frontmatter_command(
 def present_ingest_source_command(
     console: Console,
     *,
-    text: str,
+    text: str | None,
+    url: str | None,
     title: str | None,
     config_path: Path | None,
     use_llm: bool,
+    llm_provider: str | None,
     as_json: bool,
 ) -> None:
-    from brain_ops.interfaces.cli.runtime import load_event_sink
-
-    llm_extract = None
+    llm_json_fn = None
     if use_llm:
         try:
-            config = load_runtime_config(config_path)
-            from brain_ops.ai.ollama_client import generate_json
+            from brain_ops.ai.llm_client import llm_generate_json, resolve_provider
 
-            llm_extract = lambda prompt: generate_json(
-                host=config.ai.ollama_host,
-                model=config.ai.primary_model,
-                prompt=prompt,
-            )
+            provider = resolve_provider(llm_provider)
+            llm_json_fn = lambda prompt: llm_generate_json(provider, prompt)
         except Exception:
             pass
 
     result = execute_ingest_source_workflow(
         text=text,
+        url=url,
         title=title,
         config_path=config_path,
         use_llm=use_llm,
         load_vault=load_validated_vault,
-        llm_extract=llm_extract,
+        llm_generate_json_fn=llm_json_fn,
         event_sink=load_event_sink(),
     )
     if as_json:
@@ -279,11 +278,82 @@ def present_entity_relations_command(
     console.print(result.markdown)
 
 
+def _resolve_llm_text_fn(llm_provider: str | None):
+    try:
+        from brain_ops.ai.llm_client import llm_generate_text, resolve_provider
+
+        provider = resolve_provider(llm_provider)
+        return lambda prompt: llm_generate_text(provider, prompt)
+    except Exception:
+        return None
+
+
+def present_enrich_entity_command(
+    console: Console,
+    *,
+    entity_name: str,
+    new_info: str | None,
+    auto_generate: bool,
+    config_path: Path | None,
+    llm_provider: str | None,
+    as_json: bool,
+) -> None:
+    result = execute_enrich_entity_workflow(
+        entity_name=entity_name,
+        new_info=new_info,
+        auto_generate=auto_generate,
+        config_path=config_path,
+        load_vault=load_validated_vault,
+        llm_generate_text_fn=_resolve_llm_text_fn(llm_provider),
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    if result.had_existing_content:
+        console.print(f"Enriched '{result.entity_name}' with new content.")
+    else:
+        console.print(f"Generated initial content for '{result.entity_name}'.")
+    try:
+        execute_compile_knowledge_workflow(
+            config_path=config_path, db_path=None, load_vault=load_validated_vault,
+        )
+    except Exception:
+        pass
+
+
+def present_query_knowledge_command(
+    console: Console,
+    *,
+    query: str,
+    config_path: Path | None,
+    file_back: bool,
+    llm_provider: str | None,
+    as_json: bool,
+) -> None:
+    result = execute_query_knowledge_workflow(
+        query=query,
+        config_path=config_path,
+        file_back=file_back,
+        load_vault=load_validated_vault,
+        llm_generate_text_fn=_resolve_llm_text_fn(llm_provider),
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    console.print(f"\n{result.answer}\n")
+    if result.sources_used:
+        console.print(f"Sources: {', '.join(result.sources_used)}")
+    if result.filed_back:
+        console.print(f"Answer filed at: {result.filed_path}")
+
+
 __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
+    "present_enrich_entity_command",
     "present_entity_index_command",
     "present_ingest_source_command",
+    "present_query_knowledge_command",
     "present_search_knowledge_command",
     "present_entity_relations_command",
     "present_normalize_frontmatter_command",
