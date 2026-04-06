@@ -326,6 +326,8 @@ def present_enrich_entity_command(
         console.print(f"Enriched '{result.entity_name}' with new content.")
     else:
         console.print(f"Generated initial content for '{result.entity_name}'.")
+    if result.sections_repaired:
+        console.print(f"Repaired empty sections: {', '.join(result.sections_repaired)}")
     try:
         execute_compile_knowledge_workflow(
             config_path=config_path, db_path=None, load_vault=load_validated_vault,

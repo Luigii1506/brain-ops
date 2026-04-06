@@ -426,6 +426,12 @@ def execute_enrich_entity_workflow(
     llm_generate_text_fn=None,
     fetch_url=None,
 ) -> EnrichmentResult:
+    from brain_ops.domains.knowledge.chunking import build_prioritized_context
+    from brain_ops.domains.knowledge.enrichment_llm import (
+        build_section_repair_prompt,
+        repair_section,
+        validate_note_sections,
+    )
     from brain_ops.frontmatter import dump_frontmatter
 
     if url and not new_info:
@@ -459,6 +465,7 @@ def execute_enrich_entity_workflow(
             entity_name=entity_name,
             updated_body=existing_body or "",
             had_existing_content=bool(existing_body and existing_body.strip()),
+            sections_repaired=[],
         )
 
     has_content = bool(existing_body and existing_body.strip() and "## " in existing_body)
@@ -466,6 +473,11 @@ def execute_enrich_entity_workflow(
         line.startswith("## ") or not line.strip()
         for line in (existing_body or "").splitlines()
     )
+
+    # Smart chunking: prioritize context by subtype
+    subtype = existing_frontmatter.get("subtype", existing_frontmatter.get("type", "person"))
+    if new_info:
+        new_info = build_prioritized_context(new_info, subtype, max_chars=8000)
 
     if body_is_empty_template and auto_generate:
         entity_type = existing_frontmatter.get("type", "topic")
@@ -481,7 +493,20 @@ def execute_enrich_entity_workflow(
             entity_name=entity_name,
             updated_body=existing_body or "",
             had_existing_content=has_content,
+            sections_repaired=[],
         )
+
+    # Post-validation: repair empty required sections
+    sections_repaired: list[str] = []
+    empty_sections = validate_note_sections(updated_body)
+    for section_name in empty_sections:
+        try:
+            repair_prompt = build_section_repair_prompt(entity_name, section_name, updated_body)
+            repair_content = llm_generate_text_fn(repair_prompt)
+            updated_body = repair_section(updated_body, section_name, repair_content)
+            sections_repaired.append(section_name)
+        except Exception:
+            pass
 
     if existing_path and existing_frontmatter is not None:
         full_content = dump_frontmatter(existing_frontmatter, updated_body)
@@ -491,6 +516,7 @@ def execute_enrich_entity_workflow(
         entity_name=entity_name,
         updated_body=updated_body,
         had_existing_content=has_content,
+        sections_repaired=sections_repaired,
     )
 
 
