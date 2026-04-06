@@ -158,13 +158,7 @@ def present_ingest_source_command(
 ) -> None:
     llm_json_fn = None
     if use_llm:
-        try:
-            from brain_ops.ai.llm_client import llm_generate_json, resolve_provider
-
-            provider = resolve_provider(llm_provider)
-            llm_json_fn = lambda prompt: llm_generate_json(provider, prompt)
-        except Exception:
-            pass
+        llm_json_fn = _resolve_llm_json_fn(llm_provider, task="extract")
 
     result = execute_ingest_source_workflow(
         text=text,
@@ -278,12 +272,28 @@ def present_entity_relations_command(
     console.print(result.markdown)
 
 
-def _resolve_llm_text_fn(llm_provider: str | None):
+def _resolve_llm_text_fn(llm_provider: str | None, *, task: str = "extract"):
     try:
-        from brain_ops.ai.llm_client import llm_generate_text, resolve_provider
+        if llm_provider:
+            from brain_ops.ai.llm_client import llm_generate_text, resolve_provider
+            provider = resolve_provider(llm_provider)
+            return lambda prompt: llm_generate_text(provider, prompt)
+        from brain_ops.ai.llm_client import resolve_smart_router
+        router = resolve_smart_router()
+        return lambda prompt: router.generate_text(prompt, task=task)
+    except Exception:
+        return None
 
-        provider = resolve_provider(llm_provider)
-        return lambda prompt: llm_generate_text(provider, prompt)
+
+def _resolve_llm_json_fn(llm_provider: str | None, *, task: str = "extract"):
+    try:
+        if llm_provider:
+            from brain_ops.ai.llm_client import llm_generate_json, resolve_provider
+            provider = resolve_provider(llm_provider)
+            return lambda prompt: llm_generate_json(provider, prompt)
+        from brain_ops.ai.llm_client import resolve_smart_router
+        router = resolve_smart_router()
+        return lambda prompt: router.generate_json(prompt, task=task)
     except Exception:
         return None
 
@@ -299,6 +309,7 @@ def present_enrich_entity_command(
     llm_provider: str | None,
     as_json: bool,
 ) -> None:
+    task = "generate" if auto_generate else "enrich"
     result = execute_enrich_entity_workflow(
         entity_name=entity_name,
         new_info=new_info,
@@ -306,7 +317,7 @@ def present_enrich_entity_command(
         auto_generate=auto_generate,
         config_path=config_path,
         load_vault=load_validated_vault,
-        llm_generate_text_fn=_resolve_llm_text_fn(llm_provider),
+        llm_generate_text_fn=_resolve_llm_text_fn(llm_provider, task=task),
     )
     if as_json:
         console.print_json(data=result.to_dict())
@@ -337,7 +348,7 @@ def present_query_knowledge_command(
         config_path=config_path,
         file_back=file_back,
         load_vault=load_validated_vault,
-        llm_generate_text_fn=_resolve_llm_text_fn(llm_provider),
+        llm_generate_text_fn=_resolve_llm_text_fn(llm_provider, task="query"),
     )
     if as_json:
         console.print_json(data=result.to_dict())

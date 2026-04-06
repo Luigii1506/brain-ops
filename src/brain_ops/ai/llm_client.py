@@ -47,6 +47,24 @@ KNOWN_PROVIDERS: dict[str, dict[str, str]] = {
         "default_model": "gpt-4o-mini",
         "api_key_env": "OPENAI_API_KEY",
     },
+    "claude": {
+        "base_url": "https://api.anthropic.com",
+        "default_model": "claude-sonnet-4-6",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    },
+}
+
+
+# Task routing: which provider to use for each task type
+TASK_ROUTING: dict[str, str] = {
+    "extract": "fast",         # parsing, bullet extraction, classification
+    "classify": "fast",        # source type detection
+    "summarize": "fast",       # quick summaries, TLDRs
+    "write_wiki": "quality",   # final wiki page writing
+    "enrich": "quality",       # enriching entities with synthesis
+    "query": "quality",        # answering questions with depth
+    "lint": "quality",         # detecting contradictions, gaps
+    "generate": "quality",     # generating initial entity content
 }
 
 
@@ -79,12 +97,16 @@ def resolve_provider(
 def llm_generate_text(provider: LLMProvider, prompt: str) -> str:
     if provider.name == "ollama":
         return _ollama_generate(provider, prompt)
+    if provider.name == "claude":
+        return _claude_generate(provider, prompt)
     return _openai_compatible_generate(provider, prompt)
 
 
 def llm_generate_json(provider: LLMProvider, prompt: str) -> dict[str, object]:
     if provider.name == "ollama":
         return _ollama_generate_json(provider, prompt)
+    if provider.name == "claude":
+        return _claude_generate_json(provider, prompt)
     return _openai_compatible_generate_json(provider, prompt)
 
 
@@ -168,6 +190,77 @@ def _openai_compatible_generate_json(provider: LLMProvider, prompt: str) -> dict
     return parsed
 
 
+def _claude_generate(provider: LLMProvider, prompt: str) -> str:
+    url = provider.base_url.rstrip("/") + "/v1/messages"
+    payload = {
+        "model": provider.model,
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": provider.api_key or "",
+        "anthropic-version": "2023-06-01",
+    }
+    raw = _http_post(url, payload, timeout=provider.timeout_seconds, headers=headers)
+    response = json.loads(raw)
+    content_blocks = response.get("content", [])
+    if not content_blocks:
+        raise AIProviderError("Claude returned no content.")
+    text = content_blocks[0].get("text", "")
+    if not text.strip():
+        raise AIProviderError("Claude returned empty text.")
+    return text.strip()
+
+
+def _claude_generate_json(provider: LLMProvider, prompt: str) -> dict[str, object]:
+    text = _claude_generate(provider, prompt + "\n\nRespond ONLY with valid JSON.")
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start >= 0 and end > start:
+        text = text[start:end]
+    parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise AIProviderError("Claude JSON response must be an object.")
+    return parsed
+
+
+@dataclass(slots=True, frozen=True)
+class SmartRouter:
+    fast_provider: LLMProvider
+    quality_provider: LLMProvider
+
+    def provider_for_task(self, task: str) -> LLMProvider:
+        tier = TASK_ROUTING.get(task, "fast")
+        return self.quality_provider if tier == "quality" else self.fast_provider
+
+    def generate_text(self, prompt: str, *, task: str = "extract") -> str:
+        return llm_generate_text(self.provider_for_task(task), prompt)
+
+    def generate_json(self, prompt: str, *, task: str = "extract") -> dict[str, object]:
+        return llm_generate_json(self.provider_for_task(task), prompt)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "fast": self.fast_provider.to_dict(),
+            "quality": self.quality_provider.to_dict(),
+            "routing": dict(TASK_ROUTING),
+        }
+
+
+def resolve_smart_router(
+    *,
+    fast_provider: str | None = None,
+    quality_provider: str | None = None,
+) -> SmartRouter:
+    fast_name = fast_provider or os.getenv("BRAIN_OPS_LLM_FAST", "deepseek")
+    quality_name = quality_provider or os.getenv("BRAIN_OPS_LLM_QUALITY", "deepseek")
+    return SmartRouter(
+        fast_provider=resolve_provider(fast_name),
+        quality_provider=resolve_provider(quality_name),
+    )
+
+
 def _http_post(url: str, payload: dict, *, timeout: int = 60, headers: dict | None = None) -> str:
     data = json.dumps(payload).encode("utf-8")
     req_headers = {"Content-Type": "application/json"}
@@ -184,7 +277,10 @@ def _http_post(url: str, payload: dict, *, timeout: int = 60, headers: dict | No
 __all__ = [
     "KNOWN_PROVIDERS",
     "LLMProvider",
+    "SmartRouter",
+    "TASK_ROUTING",
     "llm_generate_json",
     "llm_generate_text",
     "resolve_provider",
+    "resolve_smart_router",
 ]
