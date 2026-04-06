@@ -222,7 +222,8 @@ def execute_compile_knowledge_workflow(
     load_vault,
     write_entities=None,
 ) -> KnowledgeCompileResult:
-    from brain_ops.storage.sqlite.entities import write_compiled_entities
+    from brain_ops.domains.knowledge.extraction_store import load_extraction_records
+    from brain_ops.storage.sqlite.entities import write_compiled_entities, write_extraction_intelligence
 
     vault = load_vault(config_path, dry_run=False)
     notes = _scan_vault_frontmatters(vault)
@@ -230,6 +231,16 @@ def execute_compile_knowledge_workflow(
     resolved_db = db_path or (Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db")
     writer = write_entities or write_compiled_entities
     total = writer(resolved_db, result)
+
+    # Populate facts, timeline, insights from extraction records
+    try:
+        extractions_dir = Path(vault.config.vault_path) / ".brain-ops" / "extractions"
+        records = load_extraction_records(extractions_dir)
+        if records:
+            write_extraction_intelligence(resolved_db, [r.to_dict() for r in records])
+    except Exception:
+        pass
+
     return KnowledgeCompileResult(
         compile_result=result,
         db_path=resolved_db,

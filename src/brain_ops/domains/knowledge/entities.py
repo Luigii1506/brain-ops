@@ -103,11 +103,21 @@ class EntityPlan:
 
 
 def validate_entity_type(entity_type: str) -> str:
+    from .object_model import SUBTYPES, LEGACY_TYPE_MAP
+
     normalized = entity_type.strip().lower()
-    if normalized not in ENTITY_TYPES:
-        allowed = ", ".join(sorted(ENTITY_TYPES))
-        raise ValueError(f"Unknown entity type '{entity_type}'. Expected one of: {allowed}.")
-    return normalized
+    # Accept legacy types
+    if normalized in ENTITY_TYPES:
+        return normalized
+    # Accept any known subtype
+    for _kind, subtypes in SUBTYPES.items():
+        if normalized in subtypes:
+            return normalized
+    # Accept legacy mappable types
+    if normalized in LEGACY_TYPE_MAP:
+        return normalized
+    allowed = ", ".join(sorted(ENTITY_TYPES))
+    raise ValueError(f"Unknown entity type '{entity_type}'. Expected one of: {allowed}.")
 
 
 def build_entity_frontmatter(
@@ -116,10 +126,16 @@ def build_entity_frontmatter(
     *,
     extra: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    from .object_model import resolve_object_kind
+
+    object_kind, subtype = resolve_object_kind(entity_type)
     frontmatter: dict[str, object] = {
         "type": entity_type,
+        "object_kind": object_kind,
+        "subtype": subtype,
         "name": name,
         "entity": True,
+        "status": "canonical",
     }
     schema = ENTITY_SCHEMAS.get(entity_type)
     if schema is not None:
@@ -132,11 +148,11 @@ def build_entity_frontmatter(
 
 
 def build_entity_body(entity_type: str, name: str) -> str:
-    schema = ENTITY_SCHEMAS.get(entity_type)
-    if schema is None:
-        return f"# {name}\n"
+    from .object_model import sections_for_subtype
+
+    sections = sections_for_subtype(entity_type)
     lines: list[str] = []
-    for section in schema.sections:
+    for section in sections:
         lines.append(f"## {section}")
         lines.append("")
     return "\n".join(lines)

@@ -13,7 +13,11 @@ class RegisteredEntity:
     entity_type: str
     aliases: list[str] = field(default_factory=list)
     source_count: int = 0
+    relation_count: int = 0
     confidence: str = "medium"
+    status: str = "mention"
+    object_kind: str | None = None
+    subtype: str | None = None
     domains: list[str] = field(default_factory=list)
     frequent_relations: list[str] = field(default_factory=list)
 
@@ -23,7 +27,11 @@ class RegisteredEntity:
             "entity_type": self.entity_type,
             "aliases": list(self.aliases),
             "source_count": self.source_count,
+            "relation_count": self.relation_count,
             "confidence": self.confidence,
+            "status": self.status,
+            "object_kind": self.object_kind,
+            "subtype": self.subtype,
             "domains": list(self.domains),
             "frequent_relations": list(self.frequent_relations),
         }
@@ -35,7 +43,11 @@ class RegisteredEntity:
             entity_type=str(data.get("entity_type", "concept")),
             aliases=list(data.get("aliases", [])),
             source_count=int(data.get("source_count", 0)),
+            relation_count=int(data.get("relation_count", 0)),
             confidence=str(data.get("confidence", "medium")),
+            status=str(data.get("status", "mention")),
+            object_kind=data.get("object_kind") if isinstance(data.get("object_kind"), str) else None,
+            subtype=data.get("subtype") if isinstance(data.get("subtype"), str) else None,
             domains=list(data.get("domains", [])),
             frequent_relations=list(data.get("frequent_relations", [])),
         )
@@ -141,11 +153,14 @@ def learn_from_ingest(
     source_domain: str | None = None,
 ) -> list[str]:
     """Update the registry with intelligence from an ingest operation. Returns new entity names."""
+    from .object_model import resolve_object_kind, should_promote_to_candidate, should_promote_to_canonical
+
     new_entities: list[str] = []
 
     for entity_data in entities_mentioned:
         name = str(entity_data.get("name", "")).strip()
         entity_type = str(entity_data.get("type", entity_data.get("entity_type", "concept")))
+        importance = str(entity_data.get("importance", "medium"))
         if not name:
             continue
 
@@ -153,18 +168,28 @@ def learn_from_ingest(
         existing = registry.get(resolved)
 
         if existing is None:
+            object_kind, subtype = resolve_object_kind(entity_type)
             entity = RegisteredEntity(
                 canonical_name=name,
                 entity_type=entity_type,
                 source_count=1,
                 confidence="low",
+                status="mention",
+                object_kind=object_kind,
+                subtype=subtype,
             )
+            if importance == "high":
+                entity.status = "candidate"
             if source_domain:
                 entity.domains.append(source_domain)
             registry.register(entity)
             new_entities.append(name)
         else:
             existing.source_count += 1
+            if existing.object_kind is None:
+                ok, st = resolve_object_kind(entity_type)
+                existing.object_kind = ok
+                existing.subtype = st
             registry.update_confidence(resolved)
             if source_domain and source_domain not in existing.domains:
                 existing.domains.append(source_domain)
@@ -175,6 +200,21 @@ def learn_from_ingest(
         if subject and obj:
             registry.add_frequent_relation(subject, obj)
             registry.add_frequent_relation(obj, subject)
+            sub_entity = registry.get(subject)
+            if sub_entity:
+                sub_entity.relation_count += 1
+            obj_entity = registry.get(obj)
+            if obj_entity:
+                obj_entity.relation_count += 1
+
+    # Apply promotion rules
+    for entity in registry.entities.values():
+        if entity.status == "mention":
+            if should_promote_to_candidate(entity.source_count, entity.relation_count, "medium"):
+                entity.status = "candidate"
+        if entity.status == "candidate":
+            if should_promote_to_canonical(entity.source_count, entity.relation_count, has_dedicated_note=False):
+                entity.status = "canonical"
 
     return new_entities
 

@@ -209,12 +209,15 @@ def _parse_entities(raw: list) -> list[EntityMention]:
 
 
 def _parse_relationships(raw: list) -> list[Relationship]:
+    from .object_model import normalize_predicate
+
     result = []
     for item in raw:
         if isinstance(item, dict):
+            raw_predicate = str(item.get("predicate", ""))
             result.append(Relationship(
                 subject=str(item.get("subject", "")),
-                predicate=str(item.get("predicate", "")),
+                predicate=normalize_predicate(raw_predicate),
                 object=str(item.get("object", "")),
                 confidence=str(item.get("confidence", "medium")),
             ))

@@ -115,6 +115,73 @@ def write_compiled_entities(db_path: Path, result: CompileResult) -> int:
         conn.close()
 
 
+def write_extraction_intelligence(
+    db_path: Path,
+    extractions: list[dict[str, object]],
+) -> int:
+    """Write facts, timeline, and insights from extraction records into SQLite."""
+    from brain_ops.domains.knowledge.object_model import normalize_predicate
+
+    initialize_entity_tables(db_path)
+    conn = sqlite3.connect(str(db_path))
+    total = 0
+    try:
+        cursor = conn.cursor()
+        for extraction in extractions:
+            raw = extraction.get("raw_llm_json", {})
+            if not isinstance(raw, dict):
+                continue
+            source_title = str(extraction.get("source_title", ""))
+
+            # Facts
+            for fact in raw.get("core_facts", []):
+                if fact:
+                    cursor.execute(
+                        "INSERT INTO entity_facts (entity_name, fact_text, source_id) VALUES (?, ?, ?)",
+                        (source_title, str(fact), source_title),
+                    )
+                    total += 1
+
+            # Timeline
+            for entry in raw.get("timeline", []):
+                if isinstance(entry, dict):
+                    cursor.execute(
+                        "INSERT INTO entity_timeline (entity_name, date, event_text, source_id) VALUES (?, ?, ?, ?)",
+                        (source_title, str(entry.get("date", "")), str(entry.get("event", "")), source_title),
+                    )
+                    total += 1
+
+            # Insights
+            for insight in raw.get("key_insights", []):
+                if insight:
+                    cursor.execute(
+                        "INSERT INTO entity_insights (entity_name, insight_text, source_id) VALUES (?, ?, ?)",
+                        (source_title, str(insight), source_title),
+                    )
+                    total += 1
+
+            # Relations with normalized predicates
+            for rel in raw.get("relationships", []):
+                if isinstance(rel, dict):
+                    raw_pred = str(rel.get("predicate", ""))
+                    cursor.execute(
+                        "INSERT INTO entity_relations (source_entity, target_entity, predicate, confidence, source_type) VALUES (?, ?, ?, ?, ?)",
+                        (
+                            str(rel.get("subject", "")),
+                            str(rel.get("object", "")),
+                            normalize_predicate(raw_pred),
+                            str(rel.get("confidence", "medium")),
+                            source_title,
+                        ),
+                    )
+                    total += 1
+
+        conn.commit()
+        return total
+    finally:
+        conn.close()
+
+
 def read_compiled_entities(db_path: Path) -> list[CompiledEntity]:
     if not db_path.exists():
         return []

@@ -109,9 +109,10 @@ class BuildEntityBodyTestCase(TestCase):
         self.assertIn("## Key Facts", body)
         self.assertIn("## Strategic Insights", body)
 
-    def test_unknown_type_returns_minimal_body(self) -> None:
+    def test_unknown_type_returns_default_sections(self) -> None:
         body = build_entity_body("unknown_type", "Test")
-        self.assertEqual(body, "# Test\n")
+        self.assertIn("## Identity", body)
+        self.assertIn("## Key Facts", body)
 
 
 class PlanEntityNoteTestCase(TestCase):
