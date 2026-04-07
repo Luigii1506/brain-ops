@@ -118,6 +118,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "entity-index",
                 "enrich-entity",
                 "entity-relations",
+                "generate-moc",
                 "ingest-source",
                 "list-extractions",
                 "query-knowledge",

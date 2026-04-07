@@ -208,6 +208,29 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("generate-moc")
+    def generate_moc_command(
+        topic: str,
+        seed: list[str] = typer.Option(None, "--seed", help="Seed entity names to build the MOC around."),
+        description: str | None = typer.Option(None, "--description", help="MOC description."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Auto-generate a Map of Content from the knowledge graph."""
+        try:
+            from brain_ops.application.knowledge import execute_generate_moc_workflow
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            path = execute_generate_moc_workflow(
+                topic=topic,
+                config_path=config_path,
+                seed_names=seed or None,
+                description=description,
+                load_vault=load_validated_vault,
+            )
+            console.print(f"Generated MOC at: {path}")
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("registry-lint")
     def registry_lint_command(
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),

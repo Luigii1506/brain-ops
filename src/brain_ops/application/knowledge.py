@@ -768,5 +768,28 @@ __all__ = [
     "execute_process_inbox_workflow",
     "execute_query_knowledge_workflow",
     "execute_search_knowledge_workflow",
+    "execute_generate_moc_workflow",
     "execute_weekly_review_workflow",
 ]
+
+
+def execute_generate_moc_workflow(
+    *,
+    topic: str,
+    config_path: Path | None,
+    seed_names: list[str] | None = None,
+    description: str | None = None,
+    output_path: Path | None = None,
+    load_vault,
+) -> Path:
+    from brain_ops.domains.knowledge.moc_generator import generate_moc, render_moc_markdown
+
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_full(vault)
+    moc = generate_moc(topic, notes, seed_names=seed_names, description=description)
+    markdown = render_moc_markdown(moc)
+
+    resolved_path = output_path or (vault.config.vault_path / vault.config.folders.maps / f"MOC - {topic}.md")
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(markdown, encoding="utf-8")
+    return resolved_path
