@@ -51,6 +51,9 @@ Rules for direct operations:
 - Write in the same language as the entity name (Spanish names → Spanish content).
 - Never leave Identity section empty.
 - Follow the evidence policy: tag source confidence based on source type.
+- **Cross-enrichment**: After writing/enriching any entity, check if the new content contains facts, relationships, or insights about OTHER existing entities. If so, update those related entity notes too. Only add high-confidence, non-redundant facts. Mark cross-enriched items with *(cross-enriched from [[Source Entity]])*.
+- Always update frontmatter `related` field with all entities mentioned.
+- Always run `brain compile-knowledge` after changes.
 
 Vault path: `/Users/luisencinas/Documents/Obsidian Vault`
 Config: `config/vault.yaml`

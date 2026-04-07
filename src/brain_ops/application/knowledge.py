@@ -598,6 +598,42 @@ def execute_enrich_entity_workflow(
     except Exception:
         pass
 
+    # Cross-enrichment: detect and apply knowledge to related entities
+    cross_enriched: list[str] = []
+    try:
+        from brain_ops.domains.knowledge.cross_enrichment import (
+            apply_cross_enrichment,
+            detect_cross_enrichment_candidates,
+            save_cross_enrichment_log,
+        )
+
+        all_notes = _scan_vault_full(vault)
+        for rel_path, fm, body in all_notes:
+            if fm.get("entity") is not True:
+                continue
+            related_name = fm.get("name")
+            if not isinstance(related_name, str) or related_name == entity_name:
+                continue
+
+            candidates = detect_cross_enrichment_candidates(
+                entity_name, updated_body, related_name, body,
+            )
+            if not candidates:
+                continue
+
+            new_body, applied = apply_cross_enrichment(body, candidates, auto_only=True)
+            if applied:
+                related_path = vault.config.vault_path / rel_path
+                full = dump_frontmatter(fm, new_body)
+                related_path.write_text(full, encoding="utf-8")
+                cross_enriched.append(related_name)
+
+            # Save log regardless of whether anything was applied
+            log_dir = Path(vault.config.vault_path) / ".brain-ops" / "cross_enrichment_logs"
+            save_cross_enrichment_log(log_dir, entity_name, candidates, applied)
+    except Exception:
+        pass
+
     return EnrichmentResult(
         entity_name=entity_name,
         updated_body=updated_body,
