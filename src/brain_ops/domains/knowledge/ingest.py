@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
@@ -71,29 +70,9 @@ class IngestPlan:
         }
 
 
-SOURCE_TYPE_HINTS = {
-    "wikipedia.org": "encyclopedia",
-    "youtube.com": "video_transcript",
-    "youtu.be": "video_transcript",
-    "arxiv.org": "research_paper",
-    "medium.com": "article",
-    "substack.com": "article",
-    "github.com": "documentation",
-}
-
-
 def classify_source_type(url: str | None, text: str) -> str:
-    if url:
-        domain = urlparse(url).netloc.lower()
-        for hint_domain, hint_type in SOURCE_TYPE_HINTS.items():
-            if hint_domain in domain:
-                return hint_type
-    lowered = text[:500].lower()
-    if "abstract" in lowered and "introduction" in lowered:
-        return "research_paper"
-    if any(kw in lowered for kw in ["chapter", "capítulo", "libro", "book"]):
-        return "book_chapter"
-    return "article"
+    from .source_strategy import classify_source
+    return classify_source(url, text)
 
 
 def fetch_url_content(url: str) -> tuple[str, str | None]:
@@ -178,8 +157,18 @@ def build_ingest_prompt(
     known_entities: list[str] | None = None,
     user_context: str | None = None,
 ) -> str:
-    truncated = text[:12000] if len(text) > 12000 else text
-    prompt = INGEST_EXTRACT_PROMPT.format(text=truncated, source_type=source_type)
+    from .source_strategy import get_source_type_prompt, strategy_for_source
+
+    strategy = strategy_for_source(source_type)
+    truncated = text[:strategy.max_context_chars] if len(text) > strategy.max_context_chars else text
+
+    # Build type-specific prompt
+    type_instructions = get_source_type_prompt(source_type)
+    prompt = f"{type_instructions}\n\n{INGEST_EXTRACT_PROMPT.format(text=truncated, source_type=source_type)}"
+
+    # Add strategy-specific instructions
+    if strategy.extra_instructions:
+        prompt = prompt.replace("Rules:", f"Additional instructions for this source type:\n{strategy.extra_instructions}\n\nRules:")
 
     context_parts: list[str] = []
     if known_entities:
