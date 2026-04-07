@@ -306,8 +306,11 @@ def execute_ingest_source_workflow(
     except Exception:
         pass
 
+    from brain_ops.domains.knowledge.evidence import confidence_for_source, lint_extraction, tag_evidence_strength
+
     used_llm = False
     raw_extraction: dict[str, object] | None = None
+    lint_issues: list[str] = []
     if use_llm and llm_generate_json_fn is not None:
         try:
             prompt = build_ingest_prompt(
@@ -318,12 +321,21 @@ def execute_ingest_source_workflow(
             )
             extraction = llm_generate_json_fn(prompt)
             raw_extraction = dict(extraction)
+
+            # Lint the extraction for quality
+            lint_result = lint_extraction(source_type, extraction)
+            lint_issues = lint_result.issues
+
             plan = parse_ingest_extraction(extraction)
             used_llm = True
         except Exception:
             plan = build_deterministic_ingest_plan(text, title=title, url=url)
     else:
         plan = build_deterministic_ingest_plan(text, title=title, url=url)
+
+    # Tag evidence strength
+    evidence_strength = tag_evidence_strength(source_type)
+    source_confidence = confidence_for_source(source_type)
 
     # Save full extraction JSON for replay and debugging
     if raw_extraction is not None:
@@ -346,7 +358,11 @@ def execute_ingest_source_workflow(
         "summary": plan.summary,
         "tldr": plan.tldr,
         "entities_mentioned": [e.name for e in plan.entities] if plan.entities else [],
+        "evidence_strength": evidence_strength,
+        "source_confidence": source_confidence,
     }
+    if lint_issues:
+        extra_fm["lint_issues"] = lint_issues
     if url:
         extra_fm["url"] = [url]
     if plan.personal_relevance:
