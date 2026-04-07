@@ -33,6 +33,28 @@ The user wants one system that can:
 4. Keep the project ready for OpenClaw + Ollama.
 5. Favor deterministic execution around AI behavior.
 
+## Direct knowledge operations (no API needed)
+
+When the user asks Claude Code to work on knowledge directly, Claude should act as the LLM itself — no need to call external APIs. This saves cost and is faster.
+
+Commands the user can give directly:
+
+- **"enriquece [entidad] con [URL]"** — Fetch URL, read current entity note, integrate new info following the enrichment rules (Identity never empty, Key Facts, Timeline, Relationships with [[wikilinks]], Strategic Insights), write updated note to Obsidian.
+- **"crea entidad [nombre] tipo [type]"** — Create entity note with proper frontmatter (object_kind, subtype, status:canonical) and subtype-specific sections, in `02 - Knowledge/`.
+- **"ingesta [URL]"** — Fetch URL, classify source type, extract structured knowledge (facts, timeline, entities, relationships, insights, contradictions), create source note in `01 - Sources/`.
+- **"pregunta: [question]"** — Search vault notes, read relevant ones, synthesize answer with [[wikilinks]] to entities.
+
+Rules for direct operations:
+- Use the entity schemas from `src/brain_ops/domains/knowledge/object_model.py` for sections.
+- Use canonical predicates from `object_model.py` for relationships.
+- Always use [[wikilinks]] for entities mentioned.
+- Write in the same language as the entity name (Spanish names → Spanish content).
+- Never leave Identity section empty.
+- Follow the evidence policy: tag source confidence based on source type.
+
+Vault path: `/Users/luisencinas/Documents/Obsidian Vault`
+Config: `config/vault.yaml`
+
 ## Preferred implementation stack
 
 - Python

@@ -337,6 +337,17 @@ def execute_ingest_source_workflow(
     evidence_strength = tag_evidence_strength(source_type)
     source_confidence = confidence_for_source(source_type)
 
+    # Save raw source content for replay
+    try:
+        raw_dir = Path(vault_for_context.config.vault_path) / ".brain-ops" / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime, timezone
+        slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in plan.source_title)[:60].strip().replace(" ", "-").lower()
+        raw_file = raw_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{slug}.txt"
+        raw_file.write_text(text or "", encoding="utf-8")
+    except Exception:
+        pass
+
     # Save full extraction JSON for replay and debugging
     if raw_extraction is not None:
         try:

@@ -19,6 +19,8 @@ from .knowledge import (
     present_normalize_frontmatter_command,
     present_process_inbox_command,
     present_query_knowledge_command,
+    present_registry_lint_command,
+    present_replay_extractions_command,
     present_search_knowledge_command,
     present_weekly_review_command,
 )
@@ -203,6 +205,28 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 llm_provider=llm_provider,
                 as_json=as_json,
             )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("registry-lint")
+    def registry_lint_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Run health checks on the entity registry."""
+        try:
+            present_registry_lint_command(console, config_path=config_path, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("list-extractions")
+    def list_extractions_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """List all saved LLM extraction records for replay and debugging."""
+        try:
+            present_replay_extractions_command(console, config_path=config_path, as_json=as_json)
         except BrainOpsError as error:
             handle_error(error)
 

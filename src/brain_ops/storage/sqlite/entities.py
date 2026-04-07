@@ -132,13 +132,22 @@ def write_extraction_intelligence(
             if not isinstance(raw, dict):
                 continue
             source_title = str(extraction.get("source_title", ""))
+            source_url = extraction.get("source_url")
+            source_id = str(source_url) if source_url else source_title
 
-            # Facts
+            # Facts — assign to main entity (first entity with high importance, or source_title)
+            main_entity = source_title
+            entities_raw = raw.get("entities", [])
+            for e in entities_raw:
+                if isinstance(e, dict) and e.get("importance") == "high":
+                    main_entity = str(e.get("name", source_title))
+                    break
+
             for fact in raw.get("core_facts", []):
                 if fact:
                     cursor.execute(
-                        "INSERT INTO entity_facts (entity_name, fact_text, source_id) VALUES (?, ?, ?)",
-                        (source_title, str(fact), source_title),
+                        "INSERT INTO entity_facts (entity_name, fact_text, source_id, confidence) VALUES (?, ?, ?, ?)",
+                        (main_entity, str(fact), source_id, "medium"),
                     )
                     total += 1
 
@@ -147,7 +156,7 @@ def write_extraction_intelligence(
                 if isinstance(entry, dict):
                     cursor.execute(
                         "INSERT INTO entity_timeline (entity_name, date, event_text, source_id) VALUES (?, ?, ?, ?)",
-                        (source_title, str(entry.get("date", "")), str(entry.get("event", "")), source_title),
+                        (main_entity, str(entry.get("date", "")), str(entry.get("event", "")), source_id),
                     )
                     total += 1
 
@@ -156,7 +165,7 @@ def write_extraction_intelligence(
                 if insight:
                     cursor.execute(
                         "INSERT INTO entity_insights (entity_name, insight_text, source_id) VALUES (?, ?, ?)",
-                        (source_title, str(insight), source_title),
+                        (main_entity, str(insight), source_id),
                     )
                     total += 1
 
@@ -171,7 +180,7 @@ def write_extraction_intelligence(
                             str(rel.get("object", "")),
                             normalize_predicate(raw_pred),
                             str(rel.get("confidence", "medium")),
-                            source_title,
+                            source_id,
                         ),
                     )
                     total += 1
@@ -251,11 +260,51 @@ def read_entity_connections(db_path: Path, name: str) -> list[str]:
         conn.close()
 
 
+def traverse_entity_graph(db_path: Path, start_name: str, max_depth: int = 2) -> dict[str, list[str]]:
+    """Traverse the entity graph from a starting entity up to max_depth hops."""
+    if not db_path.exists():
+        return {}
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.cursor()
+        visited: set[str] = set()
+        result: dict[str, list[str]] = {}
+        current_level = {start_name}
+
+        for depth in range(max_depth):
+            next_level: set[str] = set()
+            for entity in current_level:
+                if entity in visited:
+                    continue
+                visited.add(entity)
+                cursor.execute(
+                    """
+                    SELECT DISTINCT target_entity FROM entity_relations WHERE source_entity = ?
+                    UNION
+                    SELECT DISTINCT source_entity FROM entity_relations WHERE target_entity = ?
+                    """,
+                    (entity, entity),
+                )
+                connections = [row[0] for row in cursor.fetchall() if row[0] not in visited]
+                if connections:
+                    result[entity] = connections
+                    next_level.update(connections)
+            current_level = next_level
+
+        return result
+    except sqlite3.OperationalError:
+        return {}
+    finally:
+        conn.close()
+
+
 __all__ = [
     "ENTITY_SCHEMA_STATEMENTS",
     "initialize_entity_tables",
     "read_compiled_entities",
     "read_compiled_entity",
     "read_entity_connections",
+    "traverse_entity_graph",
     "write_compiled_entities",
+    "write_extraction_intelligence",
 ]

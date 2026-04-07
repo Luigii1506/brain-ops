@@ -362,12 +362,82 @@ def present_query_knowledge_command(
         console.print(f"Answer filed at: {result.filed_path}")
 
 
+def present_registry_lint_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    as_json: bool,
+) -> None:
+    from brain_ops.domains.knowledge.registry import load_entity_registry
+    from brain_ops.domains.knowledge.registry_lint import lint_registry
+
+    vault = load_validated_vault(config_path, dry_run=False)
+    registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+    registry = load_entity_registry(registry_path)
+    result = lint_registry(registry)
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+    console.print(f"Registry: {result.total_entities} entities ({result.canonical_count} canonical, {result.candidate_count} candidate, {result.mention_count} mention)")
+    if result.total_issues == 0:
+        console.print("No issues found.")
+        return
+    if result.low_confidence:
+        console.print(f"\nLow confidence (2+ sources but still low): {', '.join(result.low_confidence)}")
+    if result.no_relations:
+        console.print(f"\nNo relations: {', '.join(result.no_relations)}")
+    if result.high_source_not_canonical:
+        console.print(f"\nHigh source count but not canonical: {', '.join(result.high_source_not_canonical)}")
+    if result.missing_subtype:
+        console.print(f"\nMissing subtype: {', '.join(result.missing_subtype)}")
+    if result.promotable_to_candidate:
+        console.print(f"\nPromotable to candidate: {', '.join(result.promotable_to_candidate)}")
+    if result.promotable_to_canonical:
+        console.print(f"\nPromotable to canonical: {', '.join(result.promotable_to_canonical)}")
+
+
+def present_replay_extractions_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    as_json: bool,
+) -> None:
+    from brain_ops.domains.knowledge.extraction_store import load_extraction_records
+
+    vault = load_validated_vault(config_path, dry_run=False)
+    extractions_dir = Path(vault.config.vault_path) / ".brain-ops" / "extractions"
+    records = load_extraction_records(extractions_dir)
+    if as_json:
+        console.print_json(data=[r.to_dict() for r in records])
+        return
+    if not records:
+        console.print("No extraction records found.")
+        return
+    from rich.table import Table
+
+    table = Table(title=f"Extraction Records ({len(records)})")
+    table.add_column("Date")
+    table.add_column("Title")
+    table.add_column("Type")
+    table.add_column("URL")
+    for r in records:
+        table.add_row(
+            r.created_at[:19],
+            r.source_title[:50],
+            r.source_type,
+            str(r.source_url or "-")[:50],
+        )
+    console.print(table)
+
+
 __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
     "present_enrich_entity_command",
     "present_entity_index_command",
     "present_ingest_source_command",
+    "present_registry_lint_command",
+    "present_replay_extractions_command",
     "present_query_knowledge_command",
     "present_search_knowledge_command",
     "present_entity_relations_command",
