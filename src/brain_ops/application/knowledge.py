@@ -419,6 +419,50 @@ def execute_ingest_source_workflow(
             source_domain=plan.source_type,
         )
         save_entity_registry(registry_path, registry)
+
+        # Auto-create entity notes for candidates that don't have notes yet
+        from brain_ops.domains.knowledge.entities import build_entity_body, build_entity_frontmatter
+        from brain_ops.models import CreateNoteRequest
+        from brain_ops.services.note_service import create_note as create_note_fn
+
+        existing_notes = _scan_vault_frontmatters(vault)
+        existing_entity_names = {
+            fm.get("name") for _path, fm in existing_notes
+            if fm.get("entity") is True and isinstance(fm.get("name"), str)
+        }
+
+        auto_created: list[str] = []
+        for entity in registry.entities.values():
+            if entity.status in ("candidate", "canonical") and entity.canonical_name not in existing_entity_names:
+                if entity.source_count >= 2 or entity.relation_count >= 3:
+                    try:
+                        entity_type = entity.subtype or entity.entity_type or "concept"
+                        fm = build_entity_frontmatter(entity_type, entity.canonical_name)
+                        body = build_entity_body(entity_type, entity.canonical_name)
+                        create_note_fn(
+                            vault,
+                            CreateNoteRequest(
+                                title=entity.canonical_name,
+                                note_type=entity_type,
+                                tags=[],
+                                extra_frontmatter=fm,
+                                body_override=body,
+                            ),
+                        )
+                        auto_created.append(entity.canonical_name)
+                    except Exception:
+                        pass
+
+        if auto_created and event_sink is not None:
+            event_sink.publish(new_event(
+                name="entities.auto_created",
+                source="application.knowledge",
+                payload={
+                    "count": len(auto_created),
+                    "entities": auto_created,
+                    "workflow": "ingest-source",
+                },
+            ))
     except Exception:
         pass
 
@@ -538,6 +582,21 @@ def execute_enrich_entity_workflow(
     if existing_path and existing_frontmatter is not None:
         full_content = dump_frontmatter(existing_frontmatter, updated_body)
         existing_path.write_text(full_content, encoding="utf-8")
+
+    # Save enrichment diff
+    try:
+        from brain_ops.domains.knowledge.enrichment_diff import compute_enrichment_diff, save_enrichment_diff
+
+        diff = compute_enrichment_diff(
+            entity_name,
+            existing_body or "",
+            updated_body,
+            source_url=url,
+        )
+        diffs_dir = Path(vault.config.vault_path) / ".brain-ops" / "enrichment_diffs"
+        save_enrichment_diff(diffs_dir, diff)
+    except Exception:
+        pass
 
     return EnrichmentResult(
         entity_name=entity_name,

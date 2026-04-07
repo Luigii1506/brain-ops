@@ -53,6 +53,7 @@ ENTITY_SCHEMA_STATEMENTS = [
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         entity_name TEXT NOT NULL,
         insight_text TEXT NOT NULL,
+        insight_type TEXT DEFAULT 'insight',
         source_id TEXT
     )
     """,
@@ -143,11 +144,12 @@ def write_extraction_intelligence(
                     main_entity = str(e.get("name", source_title))
                     break
 
+            # Core facts — canonical, high confidence
             for fact in raw.get("core_facts", []):
                 if fact:
                     cursor.execute(
                         "INSERT INTO entity_facts (entity_name, fact_text, source_id, confidence) VALUES (?, ?, ?, ?)",
-                        (main_entity, str(fact), source_id, "medium"),
+                        (main_entity, str(fact), source_id, "high"),
                     )
                     total += 1
 
@@ -160,12 +162,30 @@ def write_extraction_intelligence(
                     )
                     total += 1
 
-            # Insights
+            # Key insights — interpretive, moderate confidence
             for insight in raw.get("key_insights", []):
                 if insight:
                     cursor.execute(
-                        "INSERT INTO entity_insights (entity_name, insight_text, source_id) VALUES (?, ?, ?)",
-                        (main_entity, str(insight), source_id),
+                        "INSERT INTO entity_insights (entity_name, insight_text, insight_type, source_id) VALUES (?, ?, ?, ?)",
+                        (main_entity, str(insight), "insight", source_id),
+                    )
+                    total += 1
+
+            # Strategic patterns — behavioral/analytical, moderate confidence
+            for pattern in raw.get("strategic_patterns", []):
+                if pattern:
+                    cursor.execute(
+                        "INSERT INTO entity_insights (entity_name, insight_text, insight_type, source_id) VALUES (?, ?, ?, ?)",
+                        (main_entity, str(pattern), "pattern", source_id),
+                    )
+                    total += 1
+
+            # Contradictions — disputed/uncertain, low confidence
+            for contradiction in raw.get("contradictions_or_uncertainties", []):
+                if contradiction:
+                    cursor.execute(
+                        "INSERT INTO entity_insights (entity_name, insight_text, insight_type, source_id) VALUES (?, ?, ?, ?)",
+                        (main_entity, str(contradiction), "contradiction", source_id),
                     )
                     total += 1
 
