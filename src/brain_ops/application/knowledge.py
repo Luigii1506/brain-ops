@@ -744,7 +744,7 @@ def execute_query_knowledge_workflow(
 
     # Query learning: log the query and detect knowledge gaps
     try:
-        from brain_ops.domains.knowledge.query_learning import build_query_record, save_query_log
+        from brain_ops.domains.knowledge.query_learning import build_query_record, save_query_log, update_gap_registry
 
         existing_entity_names = {
             fm.get("name") for _p, fm, _b in notes
@@ -758,7 +758,12 @@ def execute_query_knowledge_workflow(
         query_log_path = Path(vault.config.vault_path) / ".brain-ops" / "query_log.jsonl"
         save_query_log(query_log_path, record)
 
-        # Update registry importance for queried entities
+        # Update gap registry with missing entities
+        if record.entities_missing:
+            gap_registry_path = Path(vault.config.vault_path) / ".brain-ops" / "gap_registry.json"
+            update_gap_registry(gap_registry_path, record.entities_missing)
+
+        # Update registry query_count (NOT source_count) for queried entities
         from brain_ops.domains.knowledge.registry import load_entity_registry, save_entity_registry
 
         registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
@@ -766,8 +771,7 @@ def execute_query_knowledge_workflow(
         for entity_name in record.entities_found:
             entity = registry.get(entity_name)
             if entity is not None:
-                entity.source_count += 1
-                registry.update_confidence(entity_name)
+                entity.query_count = getattr(entity, "query_count", 0) + 1
         save_entity_registry(registry_path, registry)
     except Exception:
         pass

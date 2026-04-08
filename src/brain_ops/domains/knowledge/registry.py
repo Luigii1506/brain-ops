@@ -13,6 +13,7 @@ class RegisteredEntity:
     entity_type: str
     aliases: list[str] = field(default_factory=list)
     source_count: int = 0
+    query_count: int = 0
     relation_count: int = 0
     confidence: str = "medium"
     status: str = "mention"
@@ -27,6 +28,7 @@ class RegisteredEntity:
             "entity_type": self.entity_type,
             "aliases": list(self.aliases),
             "source_count": self.source_count,
+            "query_count": self.query_count,
             "relation_count": self.relation_count,
             "confidence": self.confidence,
             "status": self.status,
@@ -43,6 +45,7 @@ class RegisteredEntity:
             entity_type=str(data.get("entity_type", "concept")),
             aliases=list(data.get("aliases", [])),
             source_count=int(data.get("source_count", 0)),
+            query_count=int(data.get("query_count", 0)),
             relation_count=int(data.get("relation_count", 0)),
             confidence=str(data.get("confidence", "medium")),
             status=str(data.get("status", "mention")),
@@ -107,6 +110,20 @@ class EntityRegistry:
             entity.confidence = "high"
         elif entity.source_count >= 2:
             entity.confidence = "medium"
+
+    def compute_importance(self, name: str) -> float:
+        """Compute importance score separating evidence (sources) from interest (queries)."""
+        resolved = self.resolve(name)
+        entity = self.entities.get(resolved)
+        if entity is None:
+            return 0.0
+        return (
+            entity.source_count * 0.35 +
+            entity.query_count * 0.20 +
+            entity.relation_count * 0.20 +
+            (0.10 if entity.status == "canonical" else 0.05 if entity.status == "candidate" else 0.0) +
+            len(entity.frequent_relations) * 0.02
+        )
 
     def get(self, name: str) -> RegisteredEntity | None:
         resolved = self.resolve(name)

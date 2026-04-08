@@ -121,7 +121,75 @@ def get_recurring_gaps(log_path: Path, *, min_count: int = 2) -> list[tuple[str,
     )
 
 
+@dataclass(slots=True)
+class GapEntry:
+    entity_name: str
+    times_seen_in_queries: int = 0
+    times_seen_in_sources: int = 0
+    first_seen_at: str = ""
+    last_seen_at: str = ""
+    suggested_subtype: str | None = None
+    gap_score: float = 0.0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "entity_name": self.entity_name,
+            "times_seen_in_queries": self.times_seen_in_queries,
+            "times_seen_in_sources": self.times_seen_in_sources,
+            "first_seen_at": self.first_seen_at,
+            "last_seen_at": self.last_seen_at,
+            "suggested_subtype": self.suggested_subtype,
+            "gap_score": self.gap_score,
+        }
+
+
+def update_gap_registry(
+    gap_registry_path: Path,
+    missing_entities: list[str],
+) -> None:
+    """Update gap registry with newly detected missing entities."""
+    gaps: dict[str, GapEntry] = {}
+    if gap_registry_path.exists():
+        data = json.loads(gap_registry_path.read_text(encoding="utf-8"))
+        for name, entry in data.items():
+            gaps[name] = GapEntry(
+                entity_name=name,
+                times_seen_in_queries=int(entry.get("times_seen_in_queries", 0)),
+                times_seen_in_sources=int(entry.get("times_seen_in_sources", 0)),
+                first_seen_at=str(entry.get("first_seen_at", "")),
+                last_seen_at=str(entry.get("last_seen_at", "")),
+                suggested_subtype=entry.get("suggested_subtype"),
+                gap_score=float(entry.get("gap_score", 0)),
+            )
+
+    now = datetime.now(timezone.utc).isoformat()
+    for name in missing_entities:
+        if name in gaps:
+            gaps[name].times_seen_in_queries += 1
+            gaps[name].last_seen_at = now
+        else:
+            gaps[name] = GapEntry(
+                entity_name=name,
+                times_seen_in_queries=1,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+        # Recalculate gap score
+        g = gaps[name]
+        g.gap_score = g.times_seen_in_queries * 0.6 + g.times_seen_in_sources * 0.3
+
+    gap_registry_path.parent.mkdir(parents=True, exist_ok=True)
+    gap_registry_path.write_text(
+        json.dumps(
+            {name: entry.to_dict() for name, entry in gaps.items()},
+            indent=2, sort_keys=True, ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
+    )
+
+
 __all__ = [
+    "GapEntry",
     "QueryRecord",
     "build_query_record",
     "detect_knowledge_gaps",
@@ -130,4 +198,5 @@ __all__ = [
     "get_recurring_gaps",
     "load_query_log",
     "save_query_log",
+    "update_gap_registry",
 ]
