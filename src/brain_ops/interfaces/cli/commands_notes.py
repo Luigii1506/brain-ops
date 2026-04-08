@@ -208,6 +208,78 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("check-coverage")
+    def check_coverage_command(
+        name: str,
+        raw_file: Path | None = typer.Option(None, "--raw", help="Path to raw source file. If not provided, looks in .brain-ops/raw/"),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Check what content from the raw source is missing from the entity note."""
+        try:
+            from brain_ops.domains.knowledge.coverage_check import check_coverage
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+            from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
+
+            vault = load_validated_vault(config_path, dry_run=False)
+
+            # Find entity note
+            entity_body = None
+            entity_subtype = "person"
+            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+                _safe, rel, text = read_note_text(vault, note_path)
+                try:
+                    fm, body = split_frontmatter(text)
+                    if fm.get("entity") is True and fm.get("name") == name:
+                        entity_body = body
+                        entity_subtype = str(fm.get("subtype", fm.get("type", "person")))
+                        break
+                except Exception:
+                    pass
+
+            if entity_body is None:
+                console.print(f"Entity '{name}' not found.")
+                return
+
+            # Find raw source
+            raw_text = None
+            if raw_file and raw_file.exists():
+                raw_text = raw_file.read_text(encoding="utf-8")
+            else:
+                raw_dir = vault.config.vault_path / ".brain-ops" / "raw"
+                if raw_dir.exists():
+                    slug = name.lower().replace(" ", "-")
+                    for f in sorted(raw_dir.glob("*.txt"), reverse=True):
+                        if slug in f.name.lower():
+                            raw_text = f.read_text(encoding="utf-8")
+                            break
+
+            if raw_text is None:
+                console.print(f"No raw source found for '{name}'. Run post-process with --source-url first.")
+                return
+
+            report = check_coverage(name, entity_subtype, raw_text, entity_body)
+
+            if as_json:
+                console.print_json(data=report.to_dict())
+                return
+
+            console.print(f"\n[bold]Coverage: {name}[/bold]")
+            console.print(f"Raw headings: {report.raw_headings} | Covered: {report.covered_headings} | Coverage: {report.coverage_pct:.0f}%")
+            console.print(f"Needs second pass: {'Yes' if report.needs_second_pass else 'No'}")
+
+            if report.gaps:
+                console.print(f"\n[yellow]Gaps ({len(report.gaps)}):[/yellow]")
+                for gap in report.gaps:
+                    marker = "🔴" if gap.priority == "high" else "🟡" if gap.priority == "medium" else "⚪"
+                    console.print(f"  {marker} {gap.heading} ({gap.char_count} chars) — {gap.sample[:80]}...")
+            else:
+                console.print("\nNo significant gaps detected.")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("multi-enrich")
     def multi_enrich_command(
         name: str,
