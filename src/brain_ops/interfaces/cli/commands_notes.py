@@ -208,6 +208,178 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("post-process")
+    def post_process_command(
+        name: str,
+        source_url: str | None = typer.Option(None, "--source-url", help="URL used to enrich this entity."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Post-process a directly edited entity — emit event, create source note, log extraction."""
+        try:
+            import json as json_mod
+            from datetime import datetime, timezone
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.interfaces.cli.runtime import load_validated_vault, load_event_sink
+            from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            actions: list[str] = []
+
+            # Find the entity note
+            entity_fm = None
+            entity_body = None
+            entity_path = None
+            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+                _safe, rel, text = read_note_text(vault, note_path)
+                try:
+                    fm, body = split_frontmatter(text)
+                    if fm.get("entity") is True and fm.get("name") == name:
+                        entity_fm = fm
+                        entity_body = body
+                        entity_path = str(rel)
+                        break
+                except Exception:
+                    pass
+
+            if entity_fm is None:
+                console.print(f"Entity '{name}' not found in vault.")
+                return
+
+            now = datetime.now(timezone.utc)
+            vault_path = vault.config.vault_path
+
+            # 1. Emit event to event log
+            try:
+                event_sink = load_event_sink()
+                if event_sink is not None:
+                    from brain_ops.core.events import new_event
+                    event_sink.publish(new_event(
+                        name="entity.direct_edit",
+                        source="application.knowledge",
+                        payload={
+                            "entity_name": name,
+                            "source_url": source_url,
+                            "workflow": "post-process-direct-edit",
+                        },
+                    ))
+                    actions.append("event emitted")
+            except Exception:
+                pass
+
+            # 2. Create source note stub if URL provided
+            if source_url:
+                try:
+                    from urllib.parse import urlparse
+                    domain = urlparse(source_url).netloc.replace("www.", "").split(".")[0].title()
+                    source_title = f"{name} - {domain}"
+                    source_path = vault_path / "01 - Sources" / f"{source_title}.md"
+                    if not source_path.exists():
+                        source_content = f"""---
+type: source
+source_type: encyclopedia
+status: processed
+created: '{now.strftime("%Y-%m-%dT%H:%M:%S")}'
+updated: '{now.strftime("%Y-%m-%dT%H:%M:%S")}'
+tags: []
+url:
+  - {source_url}
+enriched_entities:
+  - {name}
+evidence_strength: strong
+source_confidence: 0.9
+entity: false
+---
+
+> Source used to enrich [[{name}]]
+
+## Source
+
+- URL: [{source_title}]({source_url})
+- Enriched: [[{name}]]
+
+## Related notes
+"""
+                        source_path.write_text(source_content, encoding="utf-8")
+                        actions.append(f"source note created: {source_title}")
+                except Exception:
+                    pass
+
+            # 3. Save extraction log entry
+            try:
+                from brain_ops.domains.knowledge.extraction_store import save_extraction_record
+                extractions_dir = vault_path / ".brain-ops" / "extractions"
+                # Build a pseudo-extraction from the note content
+                related = entity_fm.get("related", [])
+                save_extraction_record(
+                    extractions_dir,
+                    source_title=name,
+                    source_url=source_url,
+                    source_type="direct_edit",
+                    raw_llm_json={
+                        "title": name,
+                        "source_type": "direct_edit",
+                        "entities": [{"name": name, "type": entity_fm.get("type", ""), "importance": "high"}],
+                        "relationships": [
+                            {"subject": name, "predicate": "related_to", "object": str(r)}
+                            for r in (related if isinstance(related, list) else [])
+                        ],
+                    },
+                    prompt_version="direct_claude",
+                )
+                actions.append("extraction record saved")
+            except Exception:
+                pass
+
+            # 4. Run reconcile (registry sync + compile)
+            from brain_ops.domains.knowledge.registry import RegisteredEntity, load_entity_registry, save_entity_registry
+            from brain_ops.domains.knowledge.object_model import resolve_object_kind
+            from brain_ops.application.knowledge import execute_compile_knowledge_workflow
+
+            registry_path = vault_path / ".brain-ops" / "entity_registry.json"
+            registry = load_entity_registry(registry_path)
+            entity_type = str(entity_fm.get("type", "concept"))
+            existing = registry.get(name)
+            if existing is None:
+                ok, st = resolve_object_kind(entity_type)
+                entity = RegisteredEntity(
+                    canonical_name=name,
+                    entity_type=entity_type,
+                    status="canonical",
+                    object_kind=str(entity_fm.get("object_kind", ok)),
+                    subtype=str(entity_fm.get("subtype", st)),
+                    source_count=1,
+                )
+                related = entity_fm.get("related")
+                if isinstance(related, list):
+                    entity.relation_count = len(related)
+                    entity.frequent_relations = [str(r) for r in related if isinstance(r, str)][:20]
+                registry.register(entity)
+                actions.append("registered in entity registry (new)")
+            else:
+                existing.status = "canonical"
+                related = entity_fm.get("related")
+                if isinstance(related, list):
+                    existing.relation_count = len(related)
+                    existing.frequent_relations = [str(r) for r in related if isinstance(r, str)][:20]
+                actions.append("registry synced")
+            save_entity_registry(registry_path, registry)
+
+            # 5. Compile
+            execute_compile_knowledge_workflow(
+                config_path=config_path, db_path=None, load_vault=load_validated_vault,
+            )
+            actions.append("knowledge compiled")
+
+            result = {"entity": name, "actions": actions}
+            if as_json:
+                console.print_json(data=result)
+                return
+            console.print(f"Post-processed '{name}': {', '.join(actions)}")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("reconcile")
     def reconcile_command(
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),

@@ -123,6 +123,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "suggest-entities",
                 "ingest-source",
                 "list-extractions",
+                "post-process",
                 "query-knowledge",
                 "reconcile",
                 "registry-lint",

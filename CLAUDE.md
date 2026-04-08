@@ -57,8 +57,17 @@ brain enrich-entity "Name" --url "https://..." --llm-provider openai --config co
 # Ingest source (creates source note + updates registry + saves extraction JSON)
 brain ingest-source --url "https://..." --use-llm --config config/vault.yaml
 
-# Query (logs query, detects gaps, updates query_count)
+# Query WITHOUT LLM (logs query, detects gaps, updates query_count — $0)
+brain query-knowledge "question" --config config/vault.yaml
+
+# Query WITH LLM (same + synthesized answer — costs API)
 brain query-knowledge "question" --llm-provider openai --config config/vault.yaml
+
+# Post-process after Claude writes directly (emit event, source note, extraction log, registry, compile)
+brain post-process "Entity Name" --source-url "https://..." --config config/vault.yaml
+
+# Reconcile all direct edits at once (registry sync + compile only)
+brain reconcile --config config/vault.yaml
 
 # Audit
 brain audit-knowledge --config config/vault.yaml
@@ -72,16 +81,21 @@ brain suggest-entities --config config/vault.yaml
 This is allowed when the user says "enriquece X" or "crea entidad X" in conversation.
 Claude acts as the LLM directly (no API cost). But MUST follow these rules:
 
-**After writing any entity note directly:**
+**While writing any entity note directly:**
 1. Update frontmatter `related` field with all entities mentioned
 2. Use subtype-specific sections from `object_model.py`
 3. Use canonical predicates from `object_model.py` for relationships
 4. Always use [[wikilinks]] for entities mentioned
 5. Never leave Identity section empty
 6. Write in the same language as the entity name
-7. Create a source note in `01 - Sources/` if enriching from a URL
-8. Run `brain compile-knowledge --config config/vault.yaml` after changes
-9. Check if cross-enrichment is needed for related entities
+
+**After writing, run post-process to close the pipeline:**
+```bash
+brain post-process "Entity Name" --source-url "https://url-used" --config config/vault.yaml
+```
+This single command does everything: emits event, creates source note, saves extraction record, syncs registry, and compiles to SQLite.
+
+If multiple entities were edited, run `brain reconcile` instead (bulk sync without per-entity traceability).
 
 **What Claude CANNOT do when writing directly (only the pipeline does these):**
 - Save extraction JSON (no LLM extraction happened)
