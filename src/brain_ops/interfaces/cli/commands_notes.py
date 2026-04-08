@@ -208,6 +208,131 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("full-enrich")
+    def full_enrich_command(
+        name: str,
+        url: str = typer.Option(..., "--url", help="URL to download and fully process."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        llm_provider: str | None = typer.Option(None, "--llm-provider", help="LLM provider for enrichment."),
+        max_gap_passes: int = typer.Option(3, "--max-gap-passes", min=1, help="Max additional passes to fill gaps."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Full enrichment pipeline: multi-pass + coverage check + auto-fill gaps. Guarantees quality."""
+        try:
+            from datetime import datetime, timezone
+            from subprocess import run as subprocess_run
+            from brain_ops.domains.knowledge.ingest import fetch_url_content
+            from brain_ops.domains.knowledge.multi_pass import plan_multi_pass, render_pass_context
+            from brain_ops.domains.knowledge.coverage_check import check_coverage
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+            from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            vault_path = vault.config.vault_path
+            cfg = str(config_path or "config/vault.yaml")
+
+            # Step 1: Fetch and save raw
+            console.print(f"[bold]Step 1/4: Downloading source[/bold]")
+            raw_content, raw_title = fetch_url_content(url)
+            raw_dir = vault_path / ".brain-ops" / "raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
+            now = datetime.now(timezone.utc)
+            raw_file = raw_dir / f"{now.strftime('%Y%m%d-%H%M%S')}-{slug}-full.txt"
+            raw_file.write_text(raw_content, encoding="utf-8")
+            console.print(f"  Raw saved: {len(raw_content)} chars")
+
+            # Step 2: Multi-pass enrich
+            console.print(f"\n[bold]Step 2/4: Multi-pass enrichment[/bold]")
+            passes = plan_multi_pass(raw_content)
+            console.print(f"  Planned {len(passes)} passes")
+
+            for enrich_pass in passes:
+                context = render_pass_context(enrich_pass)
+                console.print(f"  Pass {enrich_pass.pass_number}/{len(passes)}: {enrich_pass.focus[:50]} ({enrich_pass.total_chars} chars)")
+                cmd = ["brain", "enrich-entity", name, "--info", context, "--config", cfg]
+                if llm_provider:
+                    cmd.extend(["--llm-provider", llm_provider])
+                result = subprocess_run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode == 0:
+                    console.print(f"    ✓ completed")
+                else:
+                    console.print(f"    ✗ failed: {result.stderr[:100]}")
+
+            # Step 3: Check coverage
+            console.print(f"\n[bold]Step 3/4: Coverage check[/bold]")
+            entity_body = None
+            entity_subtype = "person"
+            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+                _safe, rel, text = read_note_text(vault, note_path)
+                try:
+                    fm, body = split_frontmatter(text)
+                    if fm.get("entity") is True and fm.get("name") == name:
+                        entity_body = body
+                        entity_subtype = str(fm.get("subtype", fm.get("type", "person")))
+                        break
+                except Exception:
+                    pass
+
+            if entity_body is None:
+                console.print("  Entity note not found after enrichment.")
+                return
+
+            report = check_coverage(name, entity_subtype, raw_content, entity_body or "")
+            console.print(f"  Coverage: {report.coverage_pct:.0f}% ({report.covered_headings}/{report.raw_headings} sections)")
+
+            high_gaps = [g for g in report.gaps if g.priority == "high"]
+            medium_gaps = [g for g in report.gaps if g.priority == "medium" and g.char_count >= 500]
+            important_gaps = high_gaps + medium_gaps[:5]
+
+            if not important_gaps:
+                console.print("  No important gaps detected.")
+            else:
+                console.print(f"  Found {len(important_gaps)} important gaps")
+
+                # Step 4: Fill gaps
+                console.print(f"\n[bold]Step 4/4: Filling gaps[/bold]")
+                gap_passes = 0
+                for gap in important_gaps[:max_gap_passes]:
+                    gap_passes += 1
+                    console.print(f"  Gap pass {gap_passes}: {gap.heading[:50]} ({gap.char_count} chars)")
+
+                    # Find the chunk content for this gap from raw
+                    from brain_ops.domains.knowledge.chunking import chunk_by_headings
+                    raw_chunks = chunk_by_headings(raw_content)
+                    gap_content = None
+                    for chunk in raw_chunks:
+                        if chunk.heading == gap.heading:
+                            gap_content = chunk.text
+                            break
+
+                    if gap_content:
+                        cmd = ["brain", "enrich-entity", name, "--info", gap_content, "--config", cfg]
+                        if llm_provider:
+                            cmd.extend(["--llm-provider", llm_provider])
+                        result = subprocess_run(cmd, capture_output=True, text=True, timeout=120)
+                        if result.returncode == 0:
+                            console.print(f"    ✓ gap filled")
+                        else:
+                            console.print(f"    ✗ failed: {result.stderr[:100]}")
+
+            # Final: post-process
+            console.print(f"\n[bold]Post-processing[/bold]")
+            subprocess_run(["brain", "post-process", name, "--source-url", url, "--config", cfg],
+                         capture_output=True, text=True, timeout=60)
+            console.print(f"  ✓ post-processed")
+
+            # Summary
+            console.print(f"\n[bold]Full enrich complete:[/bold]")
+            console.print(f"  Entity: {name}")
+            console.print(f"  Source: {len(raw_content)} chars")
+            console.print(f"  Passes: {len(passes)} + {gap_passes if important_gaps else 0} gap fills")
+            console.print(f"  Raw saved, source note created, registry synced, compiled")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("check-coverage")
     def check_coverage_command(
         name: str,

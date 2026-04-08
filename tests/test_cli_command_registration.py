@@ -117,6 +117,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "check-coverage",
                 "compile-knowledge",
                 "entity-index",
+                "full-enrich",
                 "enrich-entity",
                 "audit-knowledge",
                 "entity-relations",
