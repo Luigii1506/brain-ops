@@ -154,6 +154,22 @@ This downloads the full source, saves it as raw, splits into chunks, and runs mu
 Vault path: `/Users/luisencinas/Documents/Obsidian Vault`
 Config: `config/vault.yaml`
 
+## Project operations — agent workflow rules
+
+**BEFORE starting work:**
+1. Run `brain session brain-ops --context-only --config config/vault.yaml`
+2. Read the output to understand: current state, next actions, blockers, recent decisions
+3. This is your working context — do NOT ask the user to re-explain the project
+
+**AFTER completing significant work:**
+1. Log what you did: `brain project-log brain-ops "resumen de lo que hiciste" --config config/vault.yaml`
+2. For decisions, prefix with "decisión:": `brain project-log brain-ops "decisión: usar X por Y" --config config/vault.yaml`
+3. For bugs found, prefix with "bug:": `brain project-log brain-ops "bug: descripción" --config config/vault.yaml`
+4. For next steps, prefix with "next:": `brain project-log brain-ops "next: lo que sigue" --config config/vault.yaml`
+
+**AFTER git commits:**
+The commit message is already in git history. Only log to project-log if the change is architecturally significant or involves a decision.
+
 ## Preferred implementation stack
 
 - Python
