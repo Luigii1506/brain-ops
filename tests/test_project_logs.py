@@ -494,7 +494,7 @@ class ProjectLogVaultWriteTestCase(TestCase):
             encoding="utf-8",
         )
         (self.vault_project_dir / "Decisions.md").write_text(
-            "# Decisions\n",
+            "# Decisiones\n\nRegistro de decisiones.\n\n---\n\n## 001. Decisión existente\n\n**Fecha:** 2026-04-01\n**Decisión:** Usar SQLite\n",
             encoding="utf-8",
         )
         (self.vault_project_dir / "Debugging.md").write_text(
@@ -507,7 +507,8 @@ class ProjectLogVaultWriteTestCase(TestCase):
     def tearDown(self) -> None:
         self._tmpdir.cleanup()
 
-    def test_project_log_writes_to_changelog(self) -> None:
+    def test_project_log_does_not_write_to_changelog(self) -> None:
+        """Changelog is no longer auto-populated (redundant with Sessions)."""
         execute_project_log_workflow(
             project_name="brain-ops",
             text="added audit feature",
@@ -515,27 +516,24 @@ class ProjectLogVaultWriteTestCase(TestCase):
             load_database_path=lambda: self.db_path,
             vault_project_dir=self.vault_project_dir,
         )
-        # Changelog now redirects to monthly file inside Changelog/ folder
-        from datetime import date
-
-        month_str = date.today().strftime("%Y-%m")
-        monthly_path = self.vault_project_dir / "Changelog" / f"{month_str}.md"
-        self.assertTrue(monthly_path.exists(), "Monthly changelog should be created")
-        content = monthly_path.read_text(encoding="utf-8")
-        self.assertIn("[update] added audit feature", content)
-        self.assertIn("<!-- AUTO:START -->", content)
-        self.assertIn("<!-- AUTO:END -->", content)
+        # Changelog/ folder should NOT be created by project-log
+        changelog_dir = self.vault_project_dir / "Changelog"
+        self.assertFalse(changelog_dir.exists())
 
     def test_project_log_decision_writes_to_decisions(self) -> None:
         execute_project_log_workflow(
             project_name="brain-ops",
-            text="decision: use Pydantic v2",
+            text="decisión: use Pydantic v2",
             load_registry_path=lambda: self.registry_path,
             load_database_path=lambda: self.db_path,
             vault_project_dir=self.vault_project_dir,
         )
         content = (self.vault_project_dir / "Decisions.md").read_text(encoding="utf-8")
         self.assertIn("use Pydantic v2", content)
+        # Newest decision should appear BEFORE the existing one
+        new_pos = content.find("use Pydantic v2")
+        old_pos = content.find("Decisión existente")
+        self.assertGreater(old_pos, new_pos, "Newest decision should be above older ones")
 
     def test_project_log_bug_writes_to_debugging(self) -> None:
         execute_project_log_workflow(

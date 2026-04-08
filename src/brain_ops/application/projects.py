@@ -304,26 +304,32 @@ def _write_vault_log(
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H:%M")
 
-    # Append to Changelog.md (within AUTO markers)
-    changelog_path = vault_project_dir / "Changelog.md"
-    if changelog_path.is_file():
-        _append_to_changelog(changelog_path, date_str, entry_type, text)
+    # Changelog: NO auto-populate (redundante con Sessions).
+    # Se genera como resumen curado via `brain refresh-project`.
 
-    # Append to Decisions.md for decision entries (ADR-lite format)
+    # Prepend to Decisions.md for decision entries (ADR-lite, newest first)
     if entry_type == "decision":
         decisions_path = vault_project_dir / "Decisions.md"
         if decisions_path.is_file():
-            # Count existing decisions to get next number
             content = decisions_path.read_text(encoding="utf-8")
             existing = re.findall(r"^##+ \d+\.", content, re.MULTILINE)
             next_num = len(existing) + 1
-            _append_line_to_file(
-                decisions_path,
+            new_entry = (
                 f"\n---\n\n## {next_num:03d}. {text}\n\n"
                 f"**Fecha:** {date_str}\n"
                 f"**Contexto:** (pendiente de documentar)\n"
-                f"**Decisión:** {text}\n\n",
+                f"**Decisión:** {text}\n\n"
             )
+            # Insert after the intro paragraph (first ---)
+            first_separator = content.find("\n---\n")
+            if first_separator >= 0:
+                insert_pos = first_separator
+                decisions_path.write_text(
+                    content[:insert_pos] + new_entry + content[insert_pos:],
+                    encoding="utf-8",
+                )
+            else:
+                _append_line_to_file(decisions_path, new_entry)
 
     # Append to Debugging.md for bug entries (structured format)
     if entry_type == "bug":
