@@ -348,13 +348,16 @@ def _append_to_changelog(path: Path, date_str: str, entry_type: str, text: str) 
     If path points to a generic Changelog.md, redirects to a monthly file
     (e.g. Changelog 2026-04.md) in the same directory.
     """
-    # Redirect to monthly file
+    # Redirect to monthly file inside Changelog/ folder
     if path.name == "Changelog.md":
         month_str = date_str[:7]  # "2026-04"
-        monthly_path = path.parent / f"Changelog {month_str}.md"
+        changelog_dir = path.parent / "Changelog"
+        changelog_dir.mkdir(parents=True, exist_ok=True)
+        monthly_path = changelog_dir / f"{month_str}.md"
         if not monthly_path.exists():
+            project_name = path.parent.name
             monthly_path.write_text(
-                f"---\ntype: changelog\nproject: brain-ops\nperiod: {month_str}\n---\n\n"
+                f"---\ntype: changelog\nproject: {project_name}\nperiod: {month_str}\n---\n\n"
                 f"# Changelog {month_str}\n\n<!-- AUTO:START -->\n<!-- AUTO:END -->\n",
                 encoding="utf-8",
             )
@@ -590,7 +593,7 @@ def execute_audit_project_workflow(
         ("CLI Reference.md", 5),
         ("Workflows.md", 5),
         ("Debugging.md", 5),
-        ("Changelog.md", 5),
+        ("Changelog.md", 5),  # Also accepts Changelog/ folder
     ]
 
     # Check for project root note
@@ -607,11 +610,16 @@ def execute_audit_project_workflow(
     if vault_project_dir is not None:
         for filename, penalty in expected_files:
             file_path = vault_project_dir / filename
+            # Changelog.md can be a file OR a Changelog/ folder
+            if filename == "Changelog.md" and not file_path.is_file():
+                changelog_dir = vault_project_dir / "Changelog"
+                if changelog_dir.is_dir() and any(changelog_dir.iterdir()):
+                    continue  # Changelog/ folder with files is fine
             if not file_path.is_file():
-                issues.append(f"Missing {filename}")
+                issues.append(f"Falta {filename}")
                 score -= penalty
             elif file_path.stat().st_size == 0:
-                issues.append(f"{filename} is empty")
+                issues.append(f"{filename} está vacío")
                 score -= penalty
 
         # Check for recent session notes
