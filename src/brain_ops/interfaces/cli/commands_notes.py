@@ -241,6 +241,14 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
             now = datetime.now(timezone.utc)
             raw_file = raw_dir / f"{now.strftime('%Y%m%d-%H%M%S')}-{slug}-full.txt"
             raw_file.write_text(raw_content, encoding="utf-8")
+            # Update _index.json
+            import json
+            index_path = raw_dir / "_index.json"
+            index_data: dict[str, str] = {}
+            if index_path.exists():
+                index_data = json.loads(index_path.read_text(encoding="utf-8"))
+            index_data[name] = str(raw_file)
+            index_path.write_text(json.dumps(index_data, indent=2, ensure_ascii=False), encoding="utf-8")
             console.print(f"  Raw saved: {len(raw_content)} chars")
 
             # Step 2: Multi-pass enrich
@@ -374,11 +382,33 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
             else:
                 raw_dir = vault.config.vault_path / ".brain-ops" / "raw"
                 if raw_dir.exists():
-                    slug = name.lower().replace(" ", "-")
-                    for f in sorted(raw_dir.glob("*.txt"), reverse=True):
-                        if slug in f.name.lower():
-                            raw_text = f.read_text(encoding="utf-8")
-                            break
+                    # Priority 1: check _index.json for exact mapping
+                    import json
+                    index_path = raw_dir / "_index.json"
+                    if index_path.exists():
+                        index_data = json.loads(index_path.read_text(encoding="utf-8"))
+                        if name in index_data:
+                            mapped_path = Path(index_data[name])
+                            if mapped_path.exists():
+                                raw_text = mapped_path.read_text(encoding="utf-8")
+
+                    # Priority 2: slug-based fallback
+                    if raw_text is None:
+                        import unicodedata
+                        def _strip_accents(s: str) -> str:
+                            return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+                        slug = _strip_accents(name.lower()).replace(" ", "-").replace("(", "").replace(")", "")
+                        slug_parts = slug.split("-")
+                        slug_short = "-".join(slug_parts[:3]) if len(slug_parts) > 3 else slug
+                        for f in sorted(raw_dir.glob("*.txt"), reverse=True):
+                            fname = _strip_accents(f.name.lower())
+                            if slug in fname or slug_short in fname:
+                                raw_text = f.read_text(encoding="utf-8")
+                                break
+                            fname_core = fname.split("-", 1)[-1].rsplit(".", 1)[0] if "-" in fname else fname
+                            if fname_core and len(fname_core) >= 4 and fname_core in slug:
+                                raw_text = f.read_text(encoding="utf-8")
+                                break
 
             if raw_text is None:
                 console.print(f"No raw source found for '{name}'. Run post-process with --source-url first.")
@@ -430,6 +460,14 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
             slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
             raw_file = raw_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{slug}-full.txt"
             raw_file.write_text(raw_content, encoding="utf-8")
+            # Update _index.json
+            import json
+            index_path = raw_dir / "_index.json"
+            index_data: dict[str, str] = {}
+            if index_path.exists():
+                index_data = json.loads(index_path.read_text(encoding="utf-8"))
+            index_data[name] = str(raw_file)
+            index_path.write_text(json.dumps(index_data, indent=2, ensure_ascii=False), encoding="utf-8")
             console.print(f"Raw source saved: {len(raw_content)} chars")
 
             # Plan passes
@@ -514,6 +552,13 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                     slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
                     raw_file = raw_dir / f"{now.strftime('%Y%m%d-%H%M%S')}-{slug}.txt"
                     raw_file.write_text(raw_content, encoding="utf-8")
+                    # Update _index.json
+                    index_path = raw_dir / "_index.json"
+                    idx: dict[str, str] = {}
+                    if index_path.exists():
+                        idx = json_mod.loads(index_path.read_text(encoding="utf-8"))
+                    idx[name] = str(raw_file)
+                    index_path.write_text(json_mod.dumps(idx, indent=2, ensure_ascii=False), encoding="utf-8")
                     actions.append(f"raw source saved ({len(raw_content)} chars)")
                 except Exception:
                     pass

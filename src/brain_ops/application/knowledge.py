@@ -345,6 +345,14 @@ def execute_ingest_source_workflow(
         slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in plan.source_title)[:60].strip().replace(" ", "-").lower()
         raw_file = raw_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{slug}.txt"
         raw_file.write_text(text or "", encoding="utf-8")
+        # Update _index.json with source title mapping
+        import json as _json
+        index_path = raw_dir / "_index.json"
+        idx: dict[str, str] = {}
+        if index_path.exists():
+            idx = _json.loads(index_path.read_text(encoding="utf-8"))
+        idx[plan.source_title] = str(raw_file)
+        index_path.write_text(_json.dumps(idx, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
 
