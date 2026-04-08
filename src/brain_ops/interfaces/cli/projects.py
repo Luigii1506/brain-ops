@@ -10,6 +10,7 @@ from rich.table import Table
 
 from brain_ops.application.projects import (
     ProjectAuditResult,
+    ProjectRefreshResult,
     ProjectSessionResult,
     execute_audit_project_workflow,
     execute_generate_all_claude_md_workflow,
@@ -17,6 +18,7 @@ from brain_ops.application.projects import (
     execute_list_projects_workflow,
     execute_project_context_workflow,
     execute_project_log_workflow,
+    execute_refresh_project_workflow,
     execute_register_project_workflow,
     execute_session_workflow,
     execute_update_project_context_workflow,
@@ -477,6 +479,40 @@ def present_audit_project_command(
     console.print()
 
 
+def present_refresh_project_command(
+    console: Console,
+    *,
+    project_name: str,
+    config_path,
+    as_json: bool,
+) -> None:
+    result = execute_refresh_project_workflow(
+        project_name=project_name,
+        load_registry_path=lambda: load_project_registry_path(),
+        load_database_path=lambda: load_database_path(config_path),
+        config_path=config_path,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+
+    console.print()
+    console.rule(f"Refresh: {result.project_name}", style="bold cyan")
+    console.print()
+
+    if result.refreshed:
+        console.print("[bold]Actualizados:[/bold]")
+        for item in result.refreshed:
+            console.print(f"  [green]\u2713[/green] {item}")
+
+    if result.skipped:
+        console.print("[bold]Sin cambios:[/bold]")
+        for item in result.skipped:
+            console.print(f"  [dim]- {item}[/dim]")
+
+    console.print()
+
+
 __all__ = [
     "build_project_context_table",
     "build_project_list_table",
@@ -487,6 +523,7 @@ __all__ = [
     "present_list_projects_command",
     "present_project_context_command",
     "present_project_log_command",
+    "present_refresh_project_command",
     "present_register_project_command",
     "present_session_command",
     "present_update_project_context_command",

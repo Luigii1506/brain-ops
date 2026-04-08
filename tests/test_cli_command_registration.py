@@ -165,6 +165,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "session",
                 "project-log",
                 "audit-project",
+                "refresh-project",
             },
         )
 

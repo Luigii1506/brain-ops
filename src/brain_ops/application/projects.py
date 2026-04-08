@@ -686,6 +686,230 @@ def execute_audit_project_workflow(
     )
 
 
+# ============================================================================
+# REFRESH PROJECT — regenerate auto-derivable sections
+# ============================================================================
+
+@dataclass(slots=True, frozen=True)
+class ProjectRefreshResult:
+    project_name: str
+    refreshed: tuple[str, ...]
+    skipped: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "project_name": self.project_name,
+            "refreshed": list(self.refreshed),
+            "skipped": list(self.skipped),
+        }
+
+
+def _refresh_auto_block(file_path: Path, new_content: str) -> bool:
+    """Replace content between AUTO:START/END markers. Returns True if changed."""
+    if not file_path.is_file():
+        return False
+    content = file_path.read_text(encoding="utf-8")
+    start_marker = "<!-- AUTO:START -->"
+    end_marker = "<!-- AUTO:END -->"
+    if start_marker not in content or end_marker not in content:
+        return False
+    start_idx = content.index(start_marker) + len(start_marker)
+    end_idx = content.index(end_marker)
+    new_full = content[:start_idx] + "\n" + new_content.strip() + "\n" + content[end_idx:]
+    if new_full == content:
+        return False
+    file_path.write_text(new_full, encoding="utf-8")
+    return True
+
+
+def _generate_cli_reference(project_path: str | None) -> str:
+    """Generate CLI reference from brain --help."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["brain", "--help"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _generate_context_pack_content(
+    project_name: str,
+    load_registry_path,
+    load_database_path,
+    config_path=None,
+) -> str:
+    """Generate context pack content using the session workflow."""
+    try:
+        result = execute_session_workflow(
+            project_name=project_name,
+            load_registry_path=load_registry_path,
+            load_database_path=load_database_path,
+            config_path=config_path,
+        )
+        # Build a compact context pack — reuse the same function from CLI
+        project = result.project
+        lines: list[str] = []
+        lines.append(f"Proyecto: {project.name}")
+        if project.description:
+            lines.append(f"Descripción: {project.description}")
+        if project.stack:
+            lines.append(f"Stack: {', '.join(project.stack)}")
+        if project.context.phase:
+            lines.append(f"Fase: {project.context.phase}")
+        if project.context.pending:
+            lines.append("Próximas acciones:")
+            for p in project.context.pending[:5]:
+                lines.append(f"  - {p}")
+        if project.commands:
+            lines.append("Comandos:")
+            for label, cmd in project.commands.items():
+                lines.append(f"  {label}: {cmd}")
+        if project.context.decisions:
+            lines.append("Decisiones recientes:")
+            for d in project.context.decisions[-3:]:
+                lines.append(f"  - {d}")
+        if result.recent_logs:
+            lines.append("Actividad reciente:")
+            for log in result.recent_logs[:5]:
+                date_part = log["logged_at"][:10] if log.get("logged_at") else "?"
+                lines.append(f"  [{date_part}] {log['entry_type']}: {log['entry_text'][:80]}")
+        if result.vault_status:
+            lines.append(f"Estado: {result.vault_status[:500]}")
+        if project.context.notes:
+            lines.append(f"Notas: {project.context.notes}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+def _count_tests(project_path: str | None) -> int | None:
+    """Count passing tests."""
+    if not project_path:
+        return None
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/", "-q", "--co"],
+            capture_output=True, text=True, timeout=30,
+            cwd=project_path,
+        )
+        if result.returncode == 0:
+            # Count lines that look like test items
+            lines = [l for l in result.stdout.strip().splitlines() if "::" in l]
+            return len(lines)
+    except Exception:
+        pass
+    return None
+
+
+def execute_refresh_project_workflow(
+    *,
+    project_name: str,
+    load_registry_path,
+    load_database_path,
+    config_path=None,
+) -> ProjectRefreshResult:
+    """Refresh auto-derivable sections of project docs without destroying manual content."""
+    registry_path = load_registry_path()
+    registry = load_project_registry(registry_path)
+    project = registry.get(project_name.strip())
+    if project is None:
+        raise ConfigError(f"Proyecto '{project_name}' no encontrado en el registry.")
+
+    vault_project_dir = _resolve_vault_project_dir(config_path, project.name)
+    if vault_project_dir is None:
+        return ProjectRefreshResult(
+            project_name=project.name,
+            refreshed=(),
+            skipped=("vault folder not found",),
+        )
+
+    refreshed: list[str] = []
+    skipped: list[str] = []
+
+    # 1. Refresh Context Pack
+    context_pack_dir = vault_project_dir / "Context Packs"
+    context_pack_dir.mkdir(parents=True, exist_ok=True)
+    pack_path = context_pack_dir / f"{project.name} Context Pack.md"
+    try:
+        pack_content = _generate_context_pack_content(
+            project_name=project.name,
+            load_registry_path=load_registry_path,
+            load_database_path=load_database_path,
+            config_path=config_path,
+        )
+        if pack_content:
+            if pack_path.exists():
+                if _refresh_auto_block(pack_path, pack_content):
+                    refreshed.append("Context Pack (auto-block)")
+                else:
+                    skipped.append("Context Pack (sin cambios)")
+            else:
+                from datetime import date
+                pack_path.write_text(
+                    f"---\ntype: context_pack\nproject: {project.name}\n"
+                    f"actualizado: {date.today().isoformat()}\n---\n\n"
+                    f"# {project.name} — Context Pack\n\n"
+                    f"<!-- AUTO:START -->\n{pack_content}\n<!-- AUTO:END -->\n",
+                    encoding="utf-8",
+                )
+                refreshed.append("Context Pack (creado)")
+        else:
+            skipped.append("Context Pack (no se pudo generar)")
+    except Exception:
+        skipped.append("Context Pack (error)")
+
+    # 2. Refresh Brain-Ops.md auto sections (test count, entity count)
+    root_note = None
+    for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
+        p = vault_project_dir / candidate
+        if p.is_file():
+            root_note = p
+            break
+    if root_note:
+        test_count = _count_tests(project.path)
+        if test_count is not None:
+            content = root_note.read_text(encoding="utf-8")
+            import re
+            # Update test count in any format like "**NNN tests**"
+            new_content = re.sub(
+                r"\*\*\d+ tests?\*\*",
+                f"**{test_count} tests**",
+                content,
+            )
+            if new_content != content:
+                root_note.write_text(new_content, encoding="utf-8")
+                refreshed.append(f"Brain-Ops.md (tests: {test_count})")
+            else:
+                skipped.append("Brain-Ops.md (sin cambios)")
+        else:
+            skipped.append("Brain-Ops.md (no se pudo contar tests)")
+    else:
+        skipped.append("Brain-Ops.md (no encontrado)")
+
+    # 3. Refresh CLI Reference auto block if it has AUTO markers
+    cli_ref = vault_project_dir / "CLI Reference.md"
+    if cli_ref.is_file():
+        cli_help = _generate_cli_reference(project.path)
+        if cli_help and _refresh_auto_block(cli_ref, f"```\n{cli_help}\n```"):
+            refreshed.append("CLI Reference.md (auto-block)")
+        else:
+            skipped.append("CLI Reference.md (sin marcadores AUTO o sin cambios)")
+    else:
+        skipped.append("CLI Reference.md (no encontrado)")
+
+    return ProjectRefreshResult(
+        project_name=project.name,
+        refreshed=tuple(refreshed),
+        skipped=tuple(skipped),
+    )
+
+
 __all__ = [
     "ProjectAuditResult",
     "ProjectClaudeMdResult",
