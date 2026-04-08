@@ -9,6 +9,10 @@ from brain_ops.domains.knowledge.object_model import (
     OBJECT_KINDS,
     SUBTYPES,
     SUBTYPE_SECTIONS,
+    SUBTYPE_WRITING_GUIDES,
+    ROLE_WRITING_HINTS,
+    detect_role,
+    get_writing_guide,
     normalize_predicate,
     resolve_object_kind,
     sections_for_subtype,
@@ -214,6 +218,116 @@ class ExtractionStoreTestCase(TestCase):
     def test_load_from_empty_dir_returns_empty(self) -> None:
         records = load_extraction_records(Path("/tmp/nonexistent_12345"))
         self.assertEqual(records, [])
+
+
+class RoleDetectionTestCase(TestCase):
+    def test_detect_military_leader(self) -> None:
+        self.assertEqual(detect_role("person", "Rey de Macedonia, Faraón de Egipto"), "military_leader")
+
+    def test_detect_philosopher(self) -> None:
+        self.assertEqual(detect_role("person", "filósofo griego"), "philosopher")
+
+    def test_detect_scientist(self) -> None:
+        self.assertEqual(detect_role("person", "físico y matemático"), "scientist")
+
+    def test_detect_author(self) -> None:
+        self.assertEqual(detect_role("person", "poeta y dramaturgo"), "author")
+
+    def test_detect_political_leader(self) -> None:
+        self.assertEqual(detect_role("person", "cónsul y dictador de Roma"), "military_leader")
+
+    def test_non_person_returns_none(self) -> None:
+        self.assertIsNone(detect_role("deity", "dios del comercio"))
+
+    def test_no_occupation_returns_none(self) -> None:
+        self.assertIsNone(detect_role("person", None))
+
+    def test_get_writing_guide_person(self) -> None:
+        guide, hints = get_writing_guide("person", "conquistador")
+        self.assertIn("Timeline", guide)
+        self.assertIn("Campañas", hints)
+
+    def test_get_writing_guide_deity(self) -> None:
+        guide, hints = get_writing_guide("deity")
+        self.assertIn("Mythology", guide)
+        self.assertEqual(hints, "")
+
+    def test_get_writing_guide_unknown_subtype(self) -> None:
+        guide, hints = get_writing_guide("unknown_subtype")
+        self.assertEqual(guide, "")
+        self.assertEqual(hints, "")
+
+
+class WritingGuideCoverageTestCase(TestCase):
+    def test_key_subtypes_have_guides(self) -> None:
+        important = ["person", "battle", "war", "empire", "civilization", "book",
+                      "deity", "emotion", "discipline", "celestial_body", "city"]
+        for subtype in important:
+            self.assertIn(subtype, SUBTYPE_WRITING_GUIDES, f"Missing guide for {subtype}")
+
+    def test_all_roles_have_hints(self) -> None:
+        roles = ["military_leader", "philosopher", "scientist", "political_leader", "author"]
+        for role in roles:
+            self.assertIn(role, ROLE_WRITING_HINTS, f"Missing hints for {role}")
+
+
+class EnrichmentPromptTestCase(TestCase):
+    def test_generate_prompt_includes_sections(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import build_generate_prompt
+        prompt = build_generate_prompt("Test", "person", ("Identity", "Timeline", "Impact"))
+        self.assertIn("## Identity", prompt)
+        self.assertIn("## Timeline", prompt)
+        self.assertIn("## Impact", prompt)
+
+    def test_generate_prompt_includes_writing_guide(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import build_generate_prompt
+        prompt = build_generate_prompt("Test", "person", ("Identity",), writing_guide="Include campaigns")
+        self.assertIn("Include campaigns", prompt)
+
+    def test_generate_prompt_includes_role_hints(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import build_generate_prompt
+        prompt = build_generate_prompt("Test", "person", ("Identity",), role_hints="Add battles")
+        self.assertIn("Add battles", prompt)
+
+    def test_enrich_prompt_includes_subtype(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import build_enrich_prompt
+        prompt = build_enrich_prompt("content", "new info", subtype="battle")
+        self.assertIn("battle", prompt)
+
+    def test_enrich_prompt_includes_guide(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import build_enrich_prompt
+        prompt = build_enrich_prompt("content", "info", writing_guide="Include terrain")
+        self.assertIn("Include terrain", prompt)
+
+
+class DeduplicateTestCase(TestCase):
+    def test_removes_duplicate_across_sections(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import deduplicate_note_content
+        body = (
+            "## Key Facts\n"
+            "- Nació en 356 a.C. en Pela, Macedonia\n"
+            "- Murió en 323 a.C.\n\n"
+            "## Timeline\n"
+            "- Nació en 356 a.C. en Pela, Macedonia\n"
+            "- **331 a.C.** — Gaugamela\n"
+        )
+        result = deduplicate_note_content(body)
+        # Should appear once in Key Facts, removed from Timeline
+        self.assertEqual(result.count("Nació en 356"), 1)
+        self.assertIn("Gaugamela", result)
+
+    def test_preserves_short_lines(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import deduplicate_note_content
+        body = "## Section A\n- short\n\n## Section B\n- short\n"
+        result = deduplicate_note_content(body)
+        self.assertEqual(result.count("short"), 2)
+
+    def test_preserves_headings(self) -> None:
+        from brain_ops.domains.knowledge.enrichment_llm import deduplicate_note_content
+        body = "## Identity\nContent here.\n\n## Key Facts\n- Fact 1\n"
+        result = deduplicate_note_content(body)
+        self.assertIn("## Identity", result)
+        self.assertIn("## Key Facts", result)
 
 
 if __name__ == "__main__":

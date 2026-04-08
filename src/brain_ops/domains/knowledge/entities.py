@@ -147,6 +147,18 @@ def build_entity_frontmatter(
     return frontmatter
 
 
+SECTION_HINTS: dict[str, str] = {
+    "Identity": "<!-- 1-3 sentences: who/what this is, when they lived/existed, why they matter -->",
+    "Key Facts": "<!-- At least 5 specific facts with dates, names, places -->",
+    "Timeline": "<!-- Chronological events with specific dates: **date** — event -->",
+    "Impact": "<!-- Concrete legacy: what changed because of this entity -->",
+    "Relationships": "<!-- [[Entity]] — relationship type format -->",
+    "Strategic Insights": "<!-- Non-obvious patterns, lessons, strategic behaviors -->",
+    "Contradictions & Uncertainties": "<!-- Disputed facts, uncertain dates, conflicting sources -->",
+    "Related notes": "",
+}
+
+
 def build_entity_body(entity_type: str, name: str) -> str:
     from .object_model import sections_for_subtype
 
@@ -154,6 +166,9 @@ def build_entity_body(entity_type: str, name: str) -> str:
     lines: list[str] = []
     for section in sections:
         lines.append(f"## {section}")
+        hint = SECTION_HINTS.get(section, "")
+        if hint:
+            lines.append(hint)
         lines.append("")
     return "\n".join(lines)
 

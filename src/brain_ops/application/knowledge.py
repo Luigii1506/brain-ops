@@ -554,18 +554,28 @@ def execute_enrich_entity_workflow(
     )
 
     # Smart chunking: prioritize context by subtype
-    subtype = existing_frontmatter.get("subtype", existing_frontmatter.get("type", "person"))
+    subtype = str(existing_frontmatter.get("subtype", existing_frontmatter.get("type", "person")))
     if new_info:
         new_info = build_prioritized_context(new_info, subtype, max_chars=8000)
 
+    # Resolve writing guides for subtype-aware prompts
+    from brain_ops.domains.knowledge.object_model import get_writing_guide, sections_for_subtype
+    occupation = str(existing_frontmatter.get("occupation", "") or "")
+    writing_guide, role_hints = get_writing_guide(subtype, occupation)
+
     if body_is_empty_template and auto_generate:
         entity_type = existing_frontmatter.get("type", "topic")
-        schema = ENTITY_SCHEMAS.get(entity_type)
-        sections = schema.sections if schema else ("Overview",)
-        prompt = build_generate_prompt(entity_name, entity_type, sections)
+        sections = sections_for_subtype(subtype)
+        prompt = build_generate_prompt(
+            entity_name, entity_type, sections,
+            writing_guide=writing_guide, role_hints=role_hints,
+        )
         updated_body = llm_generate_text_fn(prompt)
     elif new_info:
-        prompt = build_enrich_prompt(existing_body or "", new_info)
+        prompt = build_enrich_prompt(
+            existing_body or "", new_info,
+            subtype=subtype, writing_guide=writing_guide, role_hints=role_hints,
+        )
         updated_body = llm_generate_text_fn(prompt)
     else:
         return EnrichmentResult(
@@ -586,6 +596,10 @@ def execute_enrich_entity_workflow(
             sections_repaired.append(section_name)
         except Exception:
             pass
+
+    # Post-enrichment dedup: remove duplicate sentences across sections
+    from brain_ops.domains.knowledge.enrichment_llm import deduplicate_note_content
+    updated_body = deduplicate_note_content(updated_body)
 
     if existing_path and existing_frontmatter is not None:
         full_content = dump_frontmatter(existing_frontmatter, updated_body)

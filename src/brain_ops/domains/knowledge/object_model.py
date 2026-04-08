@@ -313,6 +313,172 @@ def resolve_object_kind(legacy_type: str) -> tuple[str, str]:
     return ("entity", legacy_type)
 
 
+# ============================================================================
+# SUBTYPE WRITING GUIDES — instructions for LLM about what to prioritize
+# ============================================================================
+
+SUBTYPE_WRITING_GUIDES: dict[str, str] = {
+    "person": (
+        "In Timeline, organize by life phases (early life, rise, peak, decline/death) with specific dates. "
+        "In Key Facts, include at least 8 specific facts with dates, names, and places. "
+        "In Relationships, use [[Entity]] — role format and include ALL entities mentioned. "
+        "Death section should be narrative with circumstances, theories if debated, and consequences. "
+        "In Impact, include concrete legacy: what changed because of this person, with numbers/scale. "
+        "In Contradictions, note disputed facts, uncertain dates, conflicting sources."
+    ),
+    "battle": (
+        "In Context, explain the strategic situation leading to the battle. "
+        "In Participants, list both sides with commanders, army sizes, and composition. "
+        "In Timeline, give phase-by-phase tactical development. "
+        "Include terrain, weather, and logistical factors. "
+        "In Outcome, go beyond who won — explain casualties, prisoners, territorial changes. "
+        "In Significance, explain how this battle changed the course of the war or history."
+    ),
+    "war": (
+        "In Causes, distinguish proximate causes from structural ones. "
+        "In Timeline, cover key battles and turning points with dates. "
+        "In Major Battles, give tactical summaries for each. "
+        "In Consequences, cover political, territorial, economic, and cultural effects."
+    ),
+    "empire": (
+        "In Timeline, cover founding, expansion phases, zenith, and decline with specific dates. "
+        "In Territory, describe maximum extent with geography. "
+        "In Key Rulers, name the most important rulers with their contributions. "
+        "In Achievements, cover administration, infrastructure, culture, and innovation. "
+        "In Decline, analyze structural causes, not just final events."
+    ),
+    "civilization": (
+        "Cover government structure, economic system, religion, art, science, and military. "
+        "In Timeline, mark major periods and turning points. "
+        "In Achievements, include specific innovations with dates and context. "
+        "In Decline, analyze multiple causal factors."
+    ),
+    "book": (
+        "In Summary, give the argument structure, not just the topic. "
+        "In Core Ideas, explain the key philosophical/intellectual contributions. "
+        "In Themes, connect to broader intellectual traditions. "
+        "In Influence, name specific works, thinkers, or movements influenced by this book."
+    ),
+    "deity": (
+        "In Mythology, narrate specific myths with sources (Ovid, Homer, etc.). "
+        "In Symbolism, list attributes, animals, plants, and iconographic elements. "
+        "In Worship, describe cult practices, temples, festivals, and priesthood. "
+        "Include syncretism: identification with deities from other cultures."
+    ),
+    "emotion": (
+        "In Definition, provide not just a dictionary definition but how it relates to adjacent concepts. "
+        "Include multiple interpretive frameworks: philosophical, psychological, biological, cultural. "
+        "In Psychological Perspectives, name specific theories and researchers. "
+        "In Philosophical Perspectives, trace from ancient (Greek types) through modern thinkers."
+    ),
+    "discipline": (
+        "In Definition, trace etymology and evolution from ancient to modern formulation. "
+        "Organize subfields as a structured taxonomy (classical vs modern branches). "
+        "Include a timeline of key paradigm shifts with specific dates. "
+        "Name key figures per era with their specific contributions."
+    ),
+    "celestial_body": (
+        "In Physical Characteristics, include exact measurements (radius, mass, density, temperature). "
+        "In Orbit, include period, eccentricity, inclination. "
+        "In Exploration, name specific missions with dates and discoveries. "
+        "In Atmosphere & Composition, describe layers and chemical makeup."
+    ),
+    "city": (
+        "In History, cover founding, major periods, and modern era. "
+        "In Landmarks, name the most important with construction dates. "
+        "Include demographics, cultural significance, and economic role."
+    ),
+    "country": (
+        "Cover geography, political system, economy, culture, and demographics. "
+        "In History, focus on formation, major conflicts, and modern development."
+    ),
+    "institution": (
+        "In Founded, include date, founders, and original purpose. "
+        "In Mission, explain what it does and why it matters. "
+        "In Impact, include concrete accomplishments with dates."
+    ),
+}
+
+# ============================================================================
+# ROLE DETECTION — sub-subtype guidance for persons
+# ============================================================================
+
+ROLE_WRITING_HINTS: dict[str, str] = {
+    "military_leader": (
+        "IMPORTANT: Include a '## Campañas militares' section with phases organized chronologically. "
+        "Each phase should name battles, troop numbers, and tactical innovations. "
+        "Include a paragraph on logistics and scale (distances, duration, army size, empire extent). "
+        "Major sieges deserve their own subsection with engineering details."
+    ),
+    "philosopher": (
+        "IMPORTANT: Include a '## Obras' section organized by discipline (Logic, Metaphysics, Ethics, "
+        "Politics, etc.). For each work, explain the key arguments and lasting influence. "
+        "Include student-teacher lineages and school founding."
+    ),
+    "scientist": (
+        "IMPORTANT: Include a '## Descubrimientos y obras' section with discoveries listed by date "
+        "and methodology. Note paradigm shifts and the chain of influence. "
+        "Include experimental methods and instruments used."
+    ),
+    "political_leader": (
+        "IMPORTANT: Include a section on political ascent — alliances, elections, key legislation. "
+        "Cover power dynamics, rivalries, and succession. "
+        "Distinguish between domestic and foreign policy achievements."
+    ),
+    "author": (
+        "IMPORTANT: Include a '## Obras principales' section with works listed by date, genre, "
+        "and significance. Include literary movement affiliation and critical reception. "
+        "Note influence on later writers and adaptations."
+    ),
+}
+
+_ROLE_KEYWORDS: dict[str, list[str]] = {
+    "military_leader": [
+        "rey", "reina", "emperor", "emperador", "emperatriz", "conquistador",
+        "general", "king", "queen", "conqueror", "commander", "comandante",
+        "warrior", "guerrero", "pharaoh", "faraón", "hegemon", "hegemón",
+        "dictador", "dictator", "caudillo", "mariscal", "marshal",
+    ],
+    "philosopher": [
+        "filósofo", "philosopher", "pensador", "thinker", "sofista", "sophist",
+    ],
+    "scientist": [
+        "científico", "scientist", "inventor", "matemático", "mathematician",
+        "physicist", "físico", "astrónomo", "astronomer", "biólogo", "biologist",
+        "químico", "chemist", "naturalista", "naturalist",
+    ],
+    "political_leader": [
+        "presidente", "president", "primer ministro", "prime minister",
+        "chancellor", "canciller", "senador", "senator", "cónsul", "consul",
+        "político", "statesman", "legislador", "legislator",
+    ],
+    "author": [
+        "escritor", "writer", "poeta", "poet", "novelista", "novelist",
+        "dramaturgo", "playwright", "ensayista", "essayist", "cronista",
+        "historiador", "historian",
+    ],
+}
+
+
+def detect_role(subtype: str, occupation: str | None = None) -> str | None:
+    """Detect a person's role from occupation metadata. Returns role key or None."""
+    if subtype != "person" or not occupation:
+        return None
+    occ_lower = occupation.lower()
+    for role, keywords in _ROLE_KEYWORDS.items():
+        if any(kw in occ_lower for kw in keywords):
+            return role
+    return None
+
+
+def get_writing_guide(subtype: str, occupation: str | None = None) -> tuple[str, str]:
+    """Return (subtype_guide, role_hints) for prompt injection."""
+    guide = SUBTYPE_WRITING_GUIDES.get(subtype, "")
+    role = detect_role(subtype, occupation)
+    hints = ROLE_WRITING_HINTS.get(role, "") if role else ""
+    return guide, hints
+
+
 __all__ = [
     "CANONICAL_PREDICATES",
     "DisambiguationCandidate",
@@ -320,9 +486,13 @@ __all__ = [
     "LEGACY_TYPE_MAP",
     "OBJECT_KINDS",
     "PREDICATE_NORMALIZATION",
+    "ROLE_WRITING_HINTS",
     "SUBTYPES",
     "SUBTYPE_SECTIONS",
+    "SUBTYPE_WRITING_GUIDES",
     "build_disambiguated_name",
+    "detect_role",
+    "get_writing_guide",
     "needs_disambiguation",
     "normalize_predicate",
     "resolve_object_kind",
