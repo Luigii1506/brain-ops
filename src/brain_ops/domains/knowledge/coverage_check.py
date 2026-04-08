@@ -159,9 +159,10 @@ def check_coverage(
         total_significant += 1
 
         # Check if this section's content is represented in the note
-        key_phrases = _extract_key_phrases(chunk.text)
-        matches = sum(1 for phrase in key_phrases if phrase in note_lower)
-        coverage_ratio = matches / max(len(key_phrases), 1)
+        # Match by key concepts: proper nouns, dates, places — not exact phrases
+        key_concepts = _extract_key_concepts(chunk.text)
+        matches = sum(1 for concept in key_concepts if concept in note_lower)
+        coverage_ratio = matches / max(len(key_concepts), 1)
 
         if coverage_ratio >= 0.3:
             covered += 1
@@ -192,19 +193,37 @@ def check_coverage(
     )
 
 
-def _extract_key_phrases(text: str, max_phrases: int = 10) -> list[str]:
-    """Extract key phrases from text for coverage matching."""
-    sentences = re.split(r"[.!?]\s+", text[:2000])
-    phrases: list[str] = []
-    for sentence in sentences:
-        words = sentence.lower().split()
-        if len(words) >= 4:
-            phrase = " ".join(words[1:4])
-            if len(phrase) >= 10:
-                phrases.append(phrase)
-        if len(phrases) >= max_phrases:
-            break
-    return phrases
+def _extract_key_concepts(text: str, max_concepts: int = 20) -> list[str]:
+    """Extract key concepts for coverage matching: proper nouns, dates, places, unique terms."""
+    concepts: list[str] = []
+    text_slice = text[:3000]
+
+    # Extract dates (years like 356 a.C., 331 a.C.)
+    dates = re.findall(r"\d{3,4}\s*a\.\s*[cC]\.?", text_slice)
+    concepts.extend(d.lower().replace(" ", "") for d in dates[:5])
+
+    # Extract proper nouns (capitalized words that aren't sentence starters)
+    words = text_slice.split()
+    for i, word in enumerate(words):
+        clean = re.sub(r"[^\wáéíóúñü]", "", word)
+        if (len(clean) >= 4 and clean[0].isupper() and
+            i > 0 and not words[i-1].endswith(".") and
+            clean.lower() not in {"esta", "este", "esto", "pero", "como", "para", "desde", "hasta", "según", "también", "artículo", "artículos", "principales"}):
+            concepts.append(clean.lower())
+            if len(concepts) >= max_concepts:
+                break
+
+    # Extract wikilink-like references (text between [[ ]])
+    wikilinks = re.findall(r"\[\[([^\]]+)\]\]", text_slice)
+    for link in wikilinks[:5]:
+        concepts.append(link.lower().strip())
+
+    # Extract unique multi-word terms (2 consecutive capitalized words)
+    bigrams = re.findall(r"([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)", text_slice)
+    for bg in bigrams[:5]:
+        concepts.append(bg.lower())
+
+    return list(set(concepts))[:max_concepts]
 
 
 __all__ = [
