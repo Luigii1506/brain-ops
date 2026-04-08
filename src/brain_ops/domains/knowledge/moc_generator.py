@@ -361,7 +361,36 @@ def extract_timeline(notes: list[tuple[str, dict[str, object], str]]) -> list[tu
 # MOC RENDERING
 # ============================================================================
 
-def render_moc_markdown(moc: GeneratedMOC) -> str:
+AUTO_START = "<!-- AUTO:START -->"
+AUTO_END = "<!-- AUTO:END -->"
+
+
+def preserve_manual_sections(existing_content: str, new_content: str) -> str:
+    """Merge auto-generated content while preserving manual edits outside AUTO markers."""
+    if AUTO_START not in existing_content:
+        return new_content
+
+    # Extract manual sections (before first AUTO:START and after last AUTO:END)
+    first_auto = existing_content.find(AUTO_START)
+    last_auto_end = existing_content.rfind(AUTO_END)
+
+    manual_before = existing_content[:first_auto].rstrip() if first_auto > 0 else ""
+    manual_after = existing_content[last_auto_end + len(AUTO_END):].lstrip() if last_auto_end > 0 else ""
+
+    # Wrap new content in AUTO markers
+    auto_block = f"{AUTO_START}\n{new_content}\n{AUTO_END}"
+
+    parts: list[str] = []
+    if manual_before:
+        parts.append(manual_before)
+    parts.append(auto_block)
+    if manual_after:
+        parts.append(manual_after)
+
+    return "\n\n".join(parts)
+
+
+def render_moc_markdown(moc: GeneratedMOC, *, wrap_auto: bool = True) -> str:
     """Render a GeneratedMOC as markdown."""
     lines: list[str] = [
         "---",
@@ -379,6 +408,10 @@ def render_moc_markdown(moc: GeneratedMOC) -> str:
         "---",
         "",
     ]
+
+    if wrap_auto:
+        lines.append(AUTO_START)
+        lines.append("")
 
     # Timeline
     if moc.timeline_entries:
@@ -447,6 +480,10 @@ def render_moc_markdown(moc: GeneratedMOC) -> str:
             lines.append(f"- {q}")
         lines.append("")
 
+    if wrap_auto:
+        lines.append(AUTO_END)
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -498,5 +535,6 @@ __all__ = [
     "Route",
     "build_graph_from_vault",
     "generate_moc",
+    "preserve_manual_sections",
     "render_moc_markdown",
 ]

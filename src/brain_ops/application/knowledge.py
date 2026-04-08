@@ -768,9 +768,39 @@ __all__ = [
     "execute_process_inbox_workflow",
     "execute_query_knowledge_workflow",
     "execute_search_knowledge_workflow",
+    "execute_audit_knowledge_workflow",
     "execute_generate_moc_workflow",
     "execute_weekly_review_workflow",
 ]
+
+
+def execute_audit_knowledge_workflow(
+    *,
+    config_path: Path | None,
+    load_vault,
+) -> dict[str, object]:
+    from brain_ops.domains.knowledge.knowledge_audit import audit_knowledge
+    from brain_ops.domains.knowledge.registry import load_entity_registry
+
+    vault = load_vault(config_path, dry_run=False)
+    notes = _scan_vault_full(vault)
+    source_notes = [
+        (str(rel), fm)
+        for rel, fm, _body in notes
+        if fm.get("type") == "source"
+    ]
+    entity_notes = [
+        (str(rel), fm, body)
+        for rel, fm, body in notes
+        if fm.get("entity") is True
+    ]
+
+    registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+    registry = load_entity_registry(registry_path)
+    registry_data = {name: entity.to_dict() for name, entity in registry.entities.items()}
+
+    result = audit_knowledge(entity_notes, source_notes, registry_data)
+    return result.to_dict()
 
 
 def execute_generate_moc_workflow(
@@ -782,14 +812,22 @@ def execute_generate_moc_workflow(
     output_path: Path | None = None,
     load_vault,
 ) -> Path:
-    from brain_ops.domains.knowledge.moc_generator import generate_moc, render_moc_markdown
+    from brain_ops.domains.knowledge.moc_generator import generate_moc, preserve_manual_sections, render_moc_markdown
 
     vault = load_vault(config_path, dry_run=False)
     notes = _scan_vault_full(vault)
     moc = generate_moc(topic, notes, seed_names=seed_names, description=description)
-    markdown = render_moc_markdown(moc)
+    new_markdown = render_moc_markdown(moc)
 
     resolved_path = output_path or (vault.config.vault_path / vault.config.folders.maps / f"MOC - {topic}.md")
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
-    resolved_path.write_text(markdown, encoding="utf-8")
+
+    # Preserve manual edits if file already exists
+    if resolved_path.exists():
+        existing = resolved_path.read_text(encoding="utf-8")
+        final_markdown = preserve_manual_sections(existing, new_markdown)
+    else:
+        final_markdown = new_markdown
+
+    resolved_path.write_text(final_markdown, encoding="utf-8")
     return resolved_path

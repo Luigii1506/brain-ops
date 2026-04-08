@@ -208,6 +208,97 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("suggest-entities")
+    def suggest_entities_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        max_results: int = typer.Option(10, "--max", min=1, help="Max suggestions."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Suggest next entities to create based on registry intelligence."""
+        try:
+            from brain_ops.domains.knowledge.registry import load_entity_registry
+            from brain_ops.domains.knowledge.suggestions import suggest_next_entities
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+            registry = load_entity_registry(registry_path)
+            registry_data = {name: entity.to_dict() for name, entity in registry.entities.items()}
+
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
+            existing_names: set[str] = set()
+            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+                _safe, rel, text = read_note_text(vault, note_path)
+                try:
+                    fm, _body = split_frontmatter(text)
+                    if fm.get("entity") is True and isinstance(fm.get("name"), str):
+                        existing_names.add(fm["name"].strip())
+                except Exception:
+                    pass
+
+            suggestions = suggest_next_entities(registry_data, existing_names, max_suggestions=max_results)
+            if as_json:
+                console.print_json(data=[s.to_dict() for s in suggestions])
+                return
+            if not suggestions:
+                console.print("No entity suggestions. Your knowledge base is well-covered!")
+                return
+            from rich.table import Table
+            table = Table(title="Suggested Next Entities")
+            table.add_column("Name")
+            table.add_column("Score")
+            table.add_column("Sources")
+            table.add_column("Relations")
+            table.add_column("Reason")
+            for s in suggestions:
+                table.add_row(s.name, f"{s.score:.1f}", str(s.source_count), str(s.relation_count), s.reason)
+            console.print(table)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("audit-knowledge")
+    def audit_knowledge_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Run comprehensive health check on the knowledge base."""
+        try:
+            from brain_ops.application.knowledge import execute_audit_knowledge_workflow
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            result = execute_audit_knowledge_workflow(
+                config_path=config_path,
+                load_vault=load_validated_vault,
+            )
+            if as_json:
+                console.print_json(data=result)
+                return
+
+            console.print(f"\n[bold]Knowledge Audit[/bold]")
+            console.print(f"Entities: {result['total_entities']} | Sources: {result['total_sources']} | Relations: {result['total_relations']}")
+            console.print()
+
+            issues = 0
+            for key in ["empty_identity", "empty_key_facts", "empty_timeline", "empty_relationships",
+                        "no_source_coverage", "missing_object_kind", "missing_subtype",
+                        "old_model_sections", "missing_related_frontmatter", "orphan_entities"]:
+                items = result.get(key, [])
+                if items:
+                    label = key.replace("_", " ").title()
+                    console.print(f"[yellow]⚠ {label}:[/yellow] {', '.join(items)}")
+                    issues += len(items)
+
+            if result.get("unmaterialized_candidates"):
+                console.print(f"\n[cyan]💡 Candidates to materialize:[/cyan] {', '.join(result['unmaterialized_candidates'])}")
+            if result.get("entities_needing_enrichment"):
+                console.print(f"[cyan]💡 Need enrichment:[/cyan] {', '.join(result['entities_needing_enrichment'])}")
+
+            console.print(f"\nTotal issues: {issues} | Suggestions: {len(result.get('unmaterialized_candidates', [])) + len(result.get('entities_needing_enrichment', []))}")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("generate-moc")
     def generate_moc_command(
         topic: str,
