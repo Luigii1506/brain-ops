@@ -211,11 +211,14 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
     @app.command("suggest-entities")
     def suggest_entities_command(
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
-        max_results: int = typer.Option(10, "--max", min=1, help="Max suggestions."),
+        max_results: int = typer.Option(15, "--max", min=1, help="Max suggestions."),
+        action_filter: str | None = typer.Option(None, "--action", help="Filter by action: create, enrich, split."),
         as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
     ) -> None:
-        """Suggest next entities to create based on registry intelligence."""
+        """Suggest next entities to create, enrich, or split — combining all signals."""
         try:
+            import json as json_mod
+            from brain_ops.application.knowledge import execute_audit_knowledge_workflow
             from brain_ops.domains.knowledge.registry import load_entity_registry
             from brain_ops.domains.knowledge.suggestions import suggest_next_entities
             from brain_ops.interfaces.cli.runtime import load_validated_vault
@@ -225,6 +228,7 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
             registry = load_entity_registry(registry_path)
             registry_data = {name: entity.to_dict() for name, entity in registry.entities.items()}
 
+            # Load existing entity names
             from brain_ops.frontmatter import split_frontmatter
             from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
             existing_names: set[str] = set()
@@ -237,23 +241,48 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 except Exception:
                     pass
 
-            suggestions = suggest_next_entities(registry_data, existing_names, max_suggestions=max_results)
+            # Load gap registry
+            gap_data = None
+            gap_path = Path(vault.config.vault_path) / ".brain-ops" / "gap_registry.json"
+            if gap_path.exists():
+                gap_data = json_mod.loads(gap_path.read_text(encoding="utf-8"))
+
+            # Run audit for quality signals
+            audit_data = execute_audit_knowledge_workflow(config_path=config_path, load_vault=load_validated_vault)
+
+            suggestions = suggest_next_entities(
+                registry_data, existing_names,
+                gap_registry=gap_data,
+                audit_data=audit_data,
+                max_suggestions=max_results,
+            )
+
+            if action_filter:
+                suggestions = [s for s in suggestions if s.action == action_filter]
+
             if as_json:
                 console.print_json(data=[s.to_dict() for s in suggestions])
                 return
             if not suggestions:
-                console.print("No entity suggestions. Your knowledge base is well-covered!")
+                console.print("No suggestions. Your knowledge base is well-covered!")
                 return
+
+            # Group by action
             from rich.table import Table
-            table = Table(title="Suggested Next Entities")
-            table.add_column("Name")
-            table.add_column("Score")
-            table.add_column("Sources")
-            table.add_column("Relations")
-            table.add_column("Reason")
-            for s in suggestions:
-                table.add_row(s.name, f"{s.score:.1f}", str(s.source_count), str(s.relation_count), s.reason)
-            console.print(table)
+            for action_type in ["create", "enrich", "split"]:
+                group = [s for s in suggestions if s.action == action_type]
+                if not group:
+                    continue
+                table = Table(title=f"{action_type.upper()}")
+                table.add_column("#")
+                table.add_column("Name")
+                table.add_column("Score")
+                table.add_column("Reasons")
+                for i, s in enumerate(group, 1):
+                    table.add_row(str(i), s.canonical_name, f"{s.score:.1f}", "; ".join(s.reasons[:3]))
+                console.print(table)
+                console.print()
+
         except BrainOpsError as error:
             handle_error(error)
 
