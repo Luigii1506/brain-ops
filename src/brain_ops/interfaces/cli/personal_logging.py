@@ -18,7 +18,8 @@ from brain_ops.application import (
 )
 from brain_ops.interfaces.cli.presenters import print_rendered_with_operations
 from brain_ops.interfaces.cli.runtime import load_database_path, load_event_sink, load_runtime_config
-from brain_ops.models import HandleInputResult
+from brain_ops.interfaces.conversation.routing_input import split_multi_intent
+from brain_ops.models import HandleInputResult, HandleInputSubResult
 from brain_ops.reporting_personal import (
     render_body_metrics_log,
     render_daily_log,
@@ -340,21 +341,104 @@ def present_daily_log_command(
     print_rendered_with_operations(console, result.operations, render_daily_log(result))
 
 
+def _log_capture_routing(config_path: Path | None, result: HandleInputResult) -> None:
+    """Persist the routing decision to the capture_routing_log table."""
+    try:
+        db_path = load_database_path(config_path)
+        from brain_ops.storage.sqlite.capture_log import insert_capture_log
+
+        decision = result.decision
+        insert_capture_log(
+            db_path,
+            input_text=result.input_text,
+            command=decision.command,
+            domain=decision.domain,
+            confidence=decision.confidence,
+            reason=decision.reason,
+            routing_source=decision.routing_source,
+            executed=result.executed,
+            source="cli",
+        )
+    except Exception:
+        # Routing log is best-effort; never break the capture flow.
+        pass
+
+
 def run_capture_command(
     *,
     config_path: Path | None,
     text: str,
     dry_run: bool,
 ) -> HandleInputResult:
-    return execute_handle_input_workflow(
-        config_path=config_path,
-        text=text,
-        dry_run=dry_run,
-        use_llm=None,
-        session_id=None,
-        load_config=load_runtime_config,
-        event_sink=load_event_sink(),
+    segments = split_multi_intent(text)
+
+    if len(segments) <= 1:
+        # Single intent — existing path
+        result = execute_handle_input_workflow(
+            config_path=config_path,
+            text=text,
+            dry_run=dry_run,
+            use_llm=None,
+            session_id=None,
+            load_config=load_runtime_config,
+            event_sink=load_event_sink(),
+        )
+        _log_capture_routing(config_path, result)
+        return result
+
+    # Multi-intent: run each segment independently and aggregate
+    sub_results: list[HandleInputSubResult] = []
+    all_operations = []
+    first_result: HandleInputResult | None = None
+
+    for seg in segments:
+        seg_result = execute_handle_input_workflow(
+            config_path=config_path,
+            text=seg,
+            dry_run=dry_run,
+            use_llm=None,
+            session_id=None,
+            load_config=load_runtime_config,
+            event_sink=load_event_sink(),
+        )
+        _log_capture_routing(config_path, seg_result)
+
+        if first_result is None:
+            first_result = seg_result
+
+        sub_results.append(
+            HandleInputSubResult(
+                input_text=seg,
+                intent=seg_result.intent,
+                intent_version=seg_result.intent_version,
+                executed=seg_result.executed,
+                executed_command=seg_result.executed_command,
+                target_domain=seg_result.target_domain,
+                routing_source=seg_result.routing_source,
+                confidence=seg_result.confidence,
+                extracted_fields=seg_result.extracted_fields,
+                normalized_fields=seg_result.normalized_fields,
+                reason=seg_result.reason,
+            )
+        )
+        all_operations.extend(seg_result.operations)
+
+    assert first_result is not None
+    return HandleInputResult(
+        input_text=text,
+        decision=first_result.decision,
+        intent=first_result.intent,
+        intent_version=first_result.intent_version,
+        executed=all(sr.executed for sr in sub_results),
+        operations=all_operations,
+        executed_command="multi-capture",
+        target_domain="multi",
+        routing_source="heuristic",
+        confidence=min(sr.confidence for sr in sub_results if sr.confidence is not None) if sub_results else None,
+        sub_results=sub_results,
+        reason=f"Multi-intent capture: {len(sub_results)} segments processed.",
     )
+    # Future: post-capture insights (detected reflection + meal, etc.)
 
 
 # ---------------------------------------------------------------------------
@@ -517,6 +601,8 @@ def render_capture_result(result: HandleInputResult, *, dry_run: bool = False) -
     lines.append(f"  Stored in: {storage}")
     if result.confidence is not None:
         lines.append(f"  Confidence: {result.confidence:.2f}")
+    if result.decision and result.decision.reason:
+        lines.append(f"  Reason: {result.decision.reason}")
     if result.assistant_message:
         lines.append(f"  Message: {result.assistant_message}")
     if result.needs_follow_up and result.follow_up:

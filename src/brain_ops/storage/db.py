@@ -201,6 +201,20 @@ SCHEMA_STATEMENTS = [
         source TEXT NOT NULL DEFAULT 'cli'
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS capture_routing_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+        input_text TEXT NOT NULL,
+        command TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        reason TEXT NOT NULL,
+        routing_source TEXT NOT NULL DEFAULT 'heuristic',
+        executed INTEGER NOT NULL DEFAULT 1,
+        source TEXT NOT NULL DEFAULT 'cli'
+    )
+    """,
 ]
 
 

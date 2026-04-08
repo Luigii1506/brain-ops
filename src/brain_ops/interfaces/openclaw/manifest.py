@@ -122,7 +122,7 @@ OPENCLAW_MANIFEST = {
         {
             "name": "capture",
             "command": 'brain capture "<text>"',
-            "purpose": "Create a note in the vault from natural language.",
+            "purpose": "Capture personal data (meals, workouts, expenses, habits, journal) from natural language.",
         },
         {
             "name": "improve_note",
