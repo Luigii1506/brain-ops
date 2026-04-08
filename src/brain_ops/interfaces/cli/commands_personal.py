@@ -15,14 +15,17 @@ from .personal import (
     present_budget_status_command,
     present_daily_habits_command,
     present_daily_macros_command,
+    present_daily_review_command,
     present_daily_status_command,
     present_diet_status_command,
     present_habit_status_command,
     present_macro_status_command,
     present_spending_summary_command,
+    present_weekly_review_personal_command,
     present_workout_status_command,
 )
 from .personal_logging import (
+    present_capture_unified_command,
     present_daily_log_command,
     present_habit_checkin_command,
     present_log_body_metrics_command,
@@ -42,6 +45,25 @@ from .personal_management import (
 
 
 def register_personal_commands(app: typer.Typer, console: Console, handle_error) -> None:
+    @app.command("capture")
+    def capture_command(
+        text: str,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without storing anything."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Capture natural-language personal data (meals, workouts, expenses, habits, journal, etc.)."""
+        try:
+            present_capture_unified_command(
+                console,
+                config_path=config_path,
+                text=text,
+                dry_run=dry_run,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("log-meal")
     def log_meal_command(
         meal_text: str,
@@ -492,6 +514,30 @@ def register_personal_commands(app: typer.Typer, console: Console, handle_error)
         """Show a compact cross-domain state snapshot for the day."""
         try:
             present_daily_status_command(console, config_path=config_path, date=date, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("daily-review")
+    def daily_review_command(
+        date: str | None = typer.Option(None, "--date", help="Date in YYYY-MM-DD format. Defaults to today."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Show a scored daily review with highlights, gaps, and suggestions."""
+        try:
+            present_daily_review_command(console, config_path=config_path, date=date, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("week-review")
+    def week_review_command(
+        date: str | None = typer.Option(None, "--date", help="End date in YYYY-MM-DD format. Defaults to today."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Show a weekly personal review with trends across 7 days of data."""
+        try:
+            present_weekly_review_personal_command(console, config_path=config_path, date=date, as_json=as_json)
         except BrainOpsError as error:
             handle_error(error)
 

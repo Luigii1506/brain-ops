@@ -488,3 +488,147 @@ def render_daily_status(summary: DailyStatusSummary) -> str:
         lines.append("- None")
     lines.append("")
     return "\n".join(lines)
+
+
+def render_daily_review(review: "DailyReview") -> str:  # noqa: F821
+    s = review.summary
+    lines: list[str] = []
+
+    lines.append(f"=== Daily Review: {review.date} ===")
+    lines.append("")
+
+    # Macros line
+    cal_str = f"{s.calories_actual:.0f}"
+    if s.calories_target:
+        cal_str += f" / {s.calories_target:.0f} cal ({review.calories_pct}%)"
+    else:
+        cal_str += " cal"
+    protein_str = f"P: {s.protein_g_actual:.0f}"
+    if s.protein_g_target:
+        protein_str += f"/{s.protein_g_target:.0f}g"
+    else:
+        protein_str += "g"
+    carbs_str = f"C: {s.carbs_g_actual:.0f}"
+    if s.carbs_g_target:
+        carbs_str += f"/{s.carbs_g_target:.0f}g"
+    else:
+        carbs_str += "g"
+    fat_str = f"F: {s.fat_g_actual:.0f}"
+    if s.fat_g_target:
+        fat_str += f"/{s.fat_g_target:.0f}g"
+    else:
+        fat_str += "g"
+    lines.append(f"  Macros: {cal_str} | {protein_str} | {carbs_str} | {fat_str}")
+
+    # Workout line
+    if s.workouts_logged > 0:
+        lines.append(f"  Workout: {s.workouts_logged} session(s), {s.total_workout_sets} sets")
+    else:
+        lines.append("  Workout: none")
+
+    # Spending line
+    lines.append(f"  Spending: ${s.expenses_total:,.0f} {s.expense_currency}")
+
+    # Habits line
+    total_habits = len(s.habits_completed) + len(s.habit_pending)
+    if total_habits > 0:
+        pending_str = ""
+        if s.habit_pending:
+            pending_str = " (" + ", ".join(f"{h} -" for h in s.habit_pending) + ")"
+        lines.append(f"  Habits: {len(s.habits_completed)}/{total_habits} done{pending_str}")
+    else:
+        lines.append("  Habits: no targets set")
+
+    # Body line
+    body_parts = []
+    if s.body_weight_kg is not None:
+        body_parts.append(f"{s.body_weight_kg} kg")
+    if s.body_fat_pct is not None:
+        body_parts.append(f"{s.body_fat_pct}% BF")
+    if s.waist_cm is not None:
+        body_parts.append(f"{s.waist_cm} cm waist")
+    if body_parts:
+        lines.append(f"  Body: {' | '.join(body_parts)}")
+
+    # Highlights
+    if review.highlights:
+        lines.append("")
+        lines.append("Highlights:")
+        for h in review.highlights:
+            lines.append(f"  - {h}")
+
+    # Gaps
+    if review.gaps:
+        lines.append("")
+        lines.append("Gaps:")
+        for g in review.gaps:
+            lines.append(f"  - {g}")
+
+    # Suggestions
+    if review.suggestions:
+        lines.append("")
+        lines.append("Suggestions:")
+        for sug in review.suggestions:
+            lines.append(f"  - {sug}")
+
+    lines.append("")
+    lines.append(f"Score: {review.score}/10")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_weekly_review_personal(review: "WeeklyReview") -> str:  # noqa: F821
+    lines: list[str] = []
+
+    # Header
+    lines.append(f"=== Weekly Review: {review.start_date} to {review.end_date} ===")
+    lines.append("")
+
+    # Avg macros
+    cal_str = f"{review.avg_calories:.0f}"
+    if review.calories_target:
+        cal_str += f"/{review.calories_target:.0f} cal ({review.avg_calories_pct}%)"
+    else:
+        cal_str += " cal"
+    prot_str = f"P: {review.avg_protein:.0f}"
+    if review.protein_target:
+        prot_str += f"/{review.protein_target:.0f}g"
+    else:
+        prot_str += "g"
+    carbs_str = f"C: {review.avg_carbs:.0f}"
+    if review.carbs_target:
+        carbs_str += f"/{review.carbs_target:.0f}g"
+    else:
+        carbs_str += "g"
+    lines.append(f"  Avg Macros: {cal_str} | {prot_str} | {carbs_str}")
+
+    # Workouts
+    lines.append(f"  Workouts: {review.workout_days}/7 days trained ({review.total_sets} total sets)")
+
+    # Spending
+    lines.append(f"  Total Spent: ${review.total_spending:,.0f} {review.spending_currency}")
+
+    # Habits
+    lines.append(f"  Habits: {review.habit_completion_pct}% completion rate")
+    for habit, (done, total) in sorted(review.habit_completion.items()):
+        lines.append(f"    {habit}: {done}/{total}")
+
+    # Body
+    if review.weight_start is not None and review.weight_end is not None:
+        change_str = ""
+        if review.weight_change is not None:
+            sign = "+" if review.weight_change > 0 else ""
+            change_str = f" ({sign}{review.weight_change:.1f})"
+        lines.append(f"  Weight: {review.weight_start:.1f} -> {review.weight_end:.1f} kg{change_str}")
+
+    # Trends
+    if review.trends:
+        lines.append("")
+        lines.append("Trends:")
+        for t in review.trends:
+            lines.append(f"  - {t}")
+
+    lines.append("")
+    lines.append(f"Score: {review.score}/10")
+    lines.append("")
+    return "\n".join(lines)

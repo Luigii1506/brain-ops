@@ -100,6 +100,9 @@ class CliCommandRegistrationTestCase(TestCase):
                 "budget-status",
                 "daily-log",
                 "daily-status",
+                "daily-review",
+                "week-review",
+                "capture",
             },
         )
 
@@ -135,7 +138,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "weekly-review",
                 "audit-vault",
                 "normalize-frontmatter",
-                "capture",
+                "capture-note",
                 "improve-note",
                 "research-note",
                 "link-suggestions",
@@ -159,6 +162,8 @@ class CliCommandRegistrationTestCase(TestCase):
                 "update-project-context",
                 "generate-claude-md",
                 "generate-all-claude-md",
+                "session",
+                "project-log",
             },
         )
 
@@ -798,7 +803,7 @@ class CliCommandRegistrationTestCase(TestCase):
             },
         )
 
-    def test_capture_command_routes_brain_ops_error_to_handler(self) -> None:
+    def test_capture_note_command_routes_brain_ops_error_to_handler(self) -> None:
         app = typer.Typer()
         error = BrainOpsError("boom")
 
@@ -807,7 +812,7 @@ class CliCommandRegistrationTestCase(TestCase):
             side_effect=error,
         ):
             register_note_and_knowledge_commands(app, self.console, self.handle_error)
-            result = self.runner.invoke(app, ["capture", "texto libre"])
+            result = self.runner.invoke(app, ["capture-note", "texto libre"])
 
         self.assertEqual(result.exit_code, 0)
         self.handle_error.assert_called_once_with(error)

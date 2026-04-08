@@ -49,6 +49,11 @@ from brain_ops.storage.sqlite.life_ops import (
     insert_supplement_log,
 )
 from brain_ops.storage.sqlite.nutrition import fetch_daily_macro_rows, insert_meal_log
+from brain_ops.storage.sqlite.project_logs import (
+    fetch_project_logs,
+    fetch_recent_project_logs,
+    insert_project_log,
+)
 
 __all__ = [
     "fetch_active_diet_plan_rows",
@@ -73,6 +78,8 @@ __all__ = [
     "fetch_daily_macro_rows",
     "fetch_expense_category_totals",
     "fetch_expense_summary_header",
+    "fetch_project_logs",
+    "fetch_recent_project_logs",
     "fetch_follow_up_payload",
     "fetch_habit_target_status_rows",
     "fetch_macro_status_rows",
@@ -85,6 +92,7 @@ __all__ = [
     "insert_daily_log",
     "insert_expense",
     "insert_meal_log",
+    "insert_project_log",
     "insert_supplement_log",
     "insert_workout_log",
     "replace_budget_target",

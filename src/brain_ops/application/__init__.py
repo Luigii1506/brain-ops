@@ -81,6 +81,7 @@ from .personal import (
     execute_daily_habits_workflow,
     execute_daily_log_workflow,
     execute_daily_macros_workflow,
+    execute_daily_review_workflow,
     execute_daily_status_workflow,
     execute_diet_status_workflow,
     execute_habit_checkin_workflow,
@@ -97,6 +98,7 @@ from .personal import (
     execute_set_macro_targets_workflow,
     execute_spending_summary_workflow,
     execute_update_diet_meal_workflow,
+    execute_weekly_review_personal_workflow,
     execute_workout_status_workflow,
 )
 from .projects import (
@@ -160,6 +162,7 @@ __all__ = [
     "execute_daily_log_workflow",
     "execute_daily_macros_workflow",
     "execute_daily_summary_workflow",
+    "execute_daily_review_workflow",
     "execute_daily_status_workflow",
     "execute_diet_status_workflow",
     "execute_entity_index_workflow",
@@ -215,6 +218,7 @@ __all__ = [
     "execute_init_workflow",
     "execute_openclaw_manifest_workflow",
     "execute_update_diet_meal_workflow",
+    "execute_weekly_review_personal_workflow",
     "execute_weekly_review_workflow",
     "execute_workout_status_workflow",
     "publish_result_events",

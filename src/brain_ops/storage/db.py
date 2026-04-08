@@ -191,6 +191,16 @@ SCHEMA_STATEMENTS = [
         updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS project_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        logged_at TEXT NOT NULL DEFAULT (datetime('now')),
+        project_name TEXT NOT NULL,
+        entry_type TEXT NOT NULL DEFAULT 'update',
+        entry_text TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'cli'
+    )
+    """,
 ]
 
 

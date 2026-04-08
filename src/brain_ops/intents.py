@@ -173,7 +173,7 @@ class DailyStatusIntent(QueryIntent):
 class CaptureNoteIntent(BaseIntent):
     intent: Literal["capture_note"] = "capture_note"
     domain: str = "knowledge"
-    command: str = "capture"
+    command: str = "capture-note"
     force_type: str
     text: str
 

@@ -117,6 +117,7 @@ from .personal_management import (
     run_update_diet_meal_command,
 )
 from .personal_logging import (
+    present_capture_unified_command,
     present_daily_log_command,
     present_habit_checkin_command,
     present_log_body_metrics_command,
@@ -124,6 +125,8 @@ from .personal_logging import (
     present_log_meal_command,
     present_log_supplement_command,
     present_log_workout_command,
+    render_capture_result,
+    run_capture_command as run_capture_unified_command,
     run_daily_log_command,
     run_habit_checkin_command,
     run_log_body_metrics_command,
@@ -194,6 +197,7 @@ __all__ = [
     "present_apply_link_suggestions_command",
     "present_audit_vault_command",
     "present_capture_command",
+    "present_capture_unified_command",
     "present_active_diet_command",
     "present_body_metrics_status_command",
     "present_budget_status_command",
@@ -254,6 +258,8 @@ __all__ = [
     "run_body_metrics_status_command",
     "run_budget_status_command",
     "run_capture_command",
+    "run_capture_unified_command",
+    "render_capture_result",
     "run_create_diet_plan_command",
     "run_create_entity_command",
     "run_create_note_command",

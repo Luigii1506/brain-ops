@@ -14,7 +14,9 @@ from .projects import (
     present_generate_claude_md_command,
     present_list_projects_command,
     present_project_context_command,
+    present_project_log_command,
     present_register_project_command,
+    present_session_command,
     present_update_project_context_command,
 )
 
@@ -120,6 +122,44 @@ def register_project_commands(app: typer.Typer, console: Console, handle_error) 
         """Generate CLAUDE.md files for all registered projects."""
         try:
             present_generate_all_claude_md_command(console, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("project-log")
+    def project_log_command(
+        project_name: str,
+        text: str,
+        config: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Log a project update, decision, bug, next action, or idea."""
+        try:
+            present_project_log_command(
+                console,
+                project_name=project_name,
+                text=text,
+                config_path=config,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("session")
+    def session_command(
+        project_name: str,
+        config: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+        context_only: bool = typer.Option(False, "--context-only", help="Print only the context pack text."),
+    ) -> None:
+        """Show full project context for starting a work session."""
+        try:
+            present_session_command(
+                console,
+                project_name=project_name,
+                config_path=config,
+                as_json=as_json,
+                context_only=context_only,
+            )
         except BrainOpsError as error:
             handle_error(error)
 

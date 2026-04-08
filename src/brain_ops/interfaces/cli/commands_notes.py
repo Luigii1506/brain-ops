@@ -1056,8 +1056,8 @@ entity: false
         except BrainOpsError as error:
             handle_error(error)
 
-    @app.command("capture")
-    def capture_command(
+    @app.command("capture-note")
+    def capture_note_command(
         text: str,
         title: str | None = typer.Option(None, "--title", help="Optional explicit note title."),
         note_type: str | None = typer.Option(None, "--type", help="Optional explicit type override."),

@@ -9,6 +9,10 @@ from brain_ops.core.events import EventSink
 from brain_ops.services.body_metrics_service import body_metrics_status, log_body_metrics
 from brain_ops.services.daily_log_service import log_daily_event
 from brain_ops.services.daily_status_service import daily_status
+from brain_ops.services.personal_review_service import (
+    daily_review as _daily_review_svc,
+    weekly_review as _weekly_review_svc,
+)
 from brain_ops.services.diet_service import (
     active_diet,
     create_diet_plan,
@@ -79,6 +83,14 @@ def execute_budget_status_workflow(*, config_path: Path | None, period: str, dat
 
 def execute_daily_status_workflow(*, config_path: Path | None, date: str | None, load_database_path):
     return daily_status(load_database_path(config_path), date_text=date)
+
+
+def execute_daily_review_workflow(*, config_path: Path | None, date: str | None, load_database_path):
+    return _daily_review_svc(load_database_path(config_path), date_text=date)
+
+
+def execute_weekly_review_personal_workflow(*, config_path: Path | None, date: str | None, load_database_path):
+    return _weekly_review_svc(load_database_path(config_path), date_text=date)
 
 
 def execute_log_meal_workflow(
@@ -359,6 +371,7 @@ __all__ = [
     "execute_daily_habits_workflow",
     "execute_daily_log_workflow",
     "execute_daily_macros_workflow",
+    "execute_daily_review_workflow",
     "execute_daily_status_workflow",
     "execute_diet_status_workflow",
     "execute_habit_checkin_workflow",
@@ -375,5 +388,6 @@ __all__ = [
     "execute_set_macro_targets_workflow",
     "execute_spending_summary_workflow",
     "execute_update_diet_meal_workflow",
+    "execute_weekly_review_personal_workflow",
     "execute_workout_status_workflow",
 ]
