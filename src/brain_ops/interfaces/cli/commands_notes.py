@@ -208,6 +208,64 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("multi-enrich")
+    def multi_enrich_command(
+        name: str,
+        url: str = typer.Option(..., "--url", help="URL to download and process in multiple passes."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        llm_provider: str | None = typer.Option(None, "--llm-provider", help="LLM provider for each pass."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Enrich an entity from a URL in multiple passes to cover the full source."""
+        try:
+            from brain_ops.domains.knowledge.ingest import fetch_url_content
+            from brain_ops.domains.knowledge.multi_pass import plan_multi_pass, render_pass_context
+
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+            vault = load_validated_vault(config_path, dry_run=False)
+            vault_path = vault.config.vault_path
+
+            # Fetch and save raw
+            raw_content, raw_title = fetch_url_content(url)
+            from datetime import datetime, timezone
+            raw_dir = vault_path / ".brain-ops" / "raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
+            raw_file = raw_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{slug}-full.txt"
+            raw_file.write_text(raw_content, encoding="utf-8")
+            console.print(f"Raw source saved: {len(raw_content)} chars")
+
+            # Plan passes
+            passes = plan_multi_pass(raw_content)
+            console.print(f"Planned {len(passes)} enrichment passes")
+
+            if as_json:
+                console.print_json(data={"raw_chars": len(raw_content), "passes": [p.to_dict() for p in passes]})
+                return
+
+            # Execute each pass
+            for enrich_pass in passes:
+                context = render_pass_context(enrich_pass)
+                console.print(f"\nPass {enrich_pass.pass_number}/{len(passes)}: {enrich_pass.focus} ({enrich_pass.total_chars} chars)")
+
+                from subprocess import run as subprocess_run
+                cmd_parts = ["brain", "enrich-entity", name, "--info", context]
+                if config_path:
+                    cmd_parts.extend(["--config", str(config_path)])
+                else:
+                    cmd_parts.extend(["--config", "config/vault.yaml"])
+                if llm_provider:
+                    cmd_parts.extend(["--llm-provider", llm_provider])
+                result = subprocess_run(cmd_parts, capture_output=True, text=True, timeout=120)
+                if result.returncode == 0:
+                    console.print(f"  Pass {enrich_pass.pass_number} completed")
+                else:
+                    console.print(f"  Pass {enrich_pass.pass_number} failed: {result.stderr[:200]}")
+
+            console.print(f"\nMulti-enrich complete: {len(passes)} passes on '{name}'")
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("post-process")
     def post_process_command(
         name: str,
@@ -248,6 +306,20 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
 
             now = datetime.now(timezone.utc)
             vault_path = vault.config.vault_path
+
+            # 0. Save raw source content if URL provided
+            if source_url:
+                try:
+                    from brain_ops.domains.knowledge.ingest import fetch_url_content
+                    raw_content, raw_title = fetch_url_content(source_url)
+                    raw_dir = vault_path / ".brain-ops" / "raw"
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
+                    raw_file = raw_dir / f"{now.strftime('%Y%m%d-%H%M%S')}-{slug}.txt"
+                    raw_file.write_text(raw_content, encoding="utf-8")
+                    actions.append(f"raw source saved ({len(raw_content)} chars)")
+                except Exception:
+                    pass
 
             # 1. Emit event to event log
             try:

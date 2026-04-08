@@ -97,6 +97,14 @@ This single command does everything: emits event, creates source note, saves ext
 
 If multiple entities were edited, run `brain reconcile` instead (bulk sync without per-entity traceability).
 
+**For long sources (Wikipedia, long articles):** Use multi-pass to avoid truncation:
+```bash
+brain multi-enrich "Entity Name" --url "https://..." --llm-provider openai --config config/vault.yaml
+```
+This downloads the full source, saves it as raw, splits into chunks, and runs multiple enrich passes so nothing is lost.
+
+**Raw source persistence:** Post-process with `--source-url` automatically downloads and saves the full raw source to `.brain-ops/raw/`. This enables future re-processing and audit.
+
 **What Claude CANNOT do when writing directly (only the pipeline does these):**
 - Save extraction JSON (no LLM extraction happened)
 - Emit events to event log
