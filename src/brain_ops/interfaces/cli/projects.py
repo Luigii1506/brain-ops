@@ -337,56 +337,80 @@ def _render_session(console: Console, result: ProjectSessionResult) -> None:
     console.print(context_text)
 
 
+MAX_CONTEXT_PACK_CHARS = 3000
+
+
 def _build_context_pack(result: ProjectSessionResult) -> str:
+    """Build a dense, focused context pack for agents. Prioritizes state > actions > history."""
     project = result.project
-    lines: list[str] = []
-    lines.append(f"Project: {project.name}")
+    sections: list[str] = []
+
+    # TIER 1 — Identity (always included, very compact)
+    header = f"Project: {project.name}"
     if project.description:
-        lines.append(f"Description: {project.description}")
+        header += f" — {project.description}"
     if project.stack:
-        lines.append(f"Stack: {', '.join(project.stack)}")
+        header += f"\nStack: {', '.join(project.stack)}"
+    sections.append(header)
+
+    # TIER 2 — Active state (highest priority)
     if project.context.phase:
-        lines.append(f"Phase: {project.context.phase}")
-    if project.commands:
-        lines.append("Commands:")
-        for label, cmd in project.commands.items():
-            lines.append(f"  {label}: {cmd}")
-    if project.context.pending:
-        lines.append("Pending:")
-        for item in project.context.pending:
-            lines.append(f"  - {item}")
-    if project.context.decisions:
-        lines.append("Decisions:")
-        for item in project.context.decisions:
-            lines.append(f"  - {item}")
-    if project.context.notes:
-        lines.append(f"Notes: {project.context.notes}")
-
-    if result.recent_logs:
-        lines.append("Recent logs:")
-        for log in result.recent_logs[:10]:
-            date_part = log["logged_at"][:10] if log["logged_at"] else "?"
-            lines.append(f"  [{date_part}] {log['entry_type']}: {log['entry_text']}")
-
-    if result.recent_commits:
-        lines.append("Recent commits:")
-        for commit_line in result.recent_commits[:5]:
-            lines.append(f"  {commit_line}")
+        sections.append(f"Phase: {project.context.phase}")
 
     if result.vault_status:
-        lines.append(f"Vault status: {result.vault_status}")
-    if result.vault_decisions:
-        lines.append("Vault decisions:")
-        for d in result.vault_decisions:
-            lines.append(f"  - {d}")
-    if result.vault_bugs:
-        lines.append("Vault bugs:")
-        for b in result.vault_bugs:
-            lines.append(f"  - {b}")
-    if result.vault_path:
-        lines.append(f"Vault project path: {result.vault_path}")
+        sections.append(f"Status: {result.vault_status[:500]}")
 
-    return "\n".join(lines)
+    if project.context.pending:
+        top_pending = project.context.pending[:5]
+        sections.append("Next actions:\n" + "\n".join(f"  - {p}" for p in top_pending))
+
+    # TIER 3 — Active bugs/blockers
+    bugs_from_logs = [log for log in (result.recent_logs or []) if log.get("entry_type") in ("bug", "blocker")]
+    vault_bugs = list(result.vault_bugs or [])
+    all_bugs = vault_bugs[:3] + [b["entry_text"] for b in bugs_from_logs[:3]]
+    if all_bugs:
+        seen = set()
+        unique_bugs = [b for b in all_bugs if b not in seen and not seen.add(b)]  # type: ignore[func-returns-value]
+        sections.append("Bugs/blockers:\n" + "\n".join(f"  - {b}" for b in unique_bugs[:5]))
+
+    # TIER 4 — Commands (compact)
+    if project.commands:
+        cmd_lines = [f"  {label}: {cmd}" for label, cmd in project.commands.items()]
+        sections.append("Commands:\n" + "\n".join(cmd_lines))
+
+    # TIER 5 — Recent decisions (last 3 only)
+    decisions = list(result.vault_decisions or []) or list(project.context.decisions or [])
+    if decisions:
+        sections.append("Recent decisions:\n" + "\n".join(f"  - {d}" for d in decisions[-3:]))
+
+    # TIER 6 — Recent activity (last 5 logs, compact)
+    budget_remaining = MAX_CONTEXT_PACK_CHARS - sum(len(s) for s in sections)
+    if result.recent_logs and budget_remaining > 200:
+        log_lines = []
+        for log in result.recent_logs[:5]:
+            date_part = log["logged_at"][:10] if log.get("logged_at") else "?"
+            line = f"  [{date_part}] {log['entry_type']}: {log['entry_text'][:80]}"
+            log_lines.append(line)
+        sections.append("Recent activity:\n" + "\n".join(log_lines))
+
+    # TIER 7 — Recent commits (last 3, only if budget allows)
+    budget_remaining = MAX_CONTEXT_PACK_CHARS - sum(len(s) for s in sections)
+    if result.recent_commits and budget_remaining > 150:
+        sections.append("Recent commits:\n" + "\n".join(f"  {c}" for c in result.recent_commits[:3]))
+
+    # Notes (only if budget allows)
+    budget_remaining = MAX_CONTEXT_PACK_CHARS - sum(len(s) for s in sections)
+    if project.context.notes and budget_remaining > 100:
+        note_text = project.context.notes[:budget_remaining - 20]
+        sections.append(f"Notes: {note_text}")
+
+    pack = "\n\n".join(sections)
+
+    # Hard limit
+    if len(pack) > MAX_CONTEXT_PACK_CHARS:
+        pack = pack[:MAX_CONTEXT_PACK_CHARS - 3] + "..."
+
+    return pack
 
 
 def present_session_command(
