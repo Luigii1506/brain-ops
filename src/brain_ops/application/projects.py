@@ -332,24 +332,23 @@ def _write_vault_log(
     if sessions_dir.is_dir():
         session_file = sessions_dir / f"Sesión {date_str}.md"
         entry_line = f"- **{time_str}** [{entry_type}] {text}\n"
+        heading = f"# Sesión {date_str}\n\n"
         if not session_file.exists():
-            session_file.write_text(
-                f"# Sesión {date_str}\n\n{entry_line}",
-                encoding="utf-8",
-            )
+            session_file.write_text(heading + entry_line, encoding="utf-8")
         else:
             content = session_file.read_text(encoding="utf-8")
-            # Insert after the heading block (# Sesión ... + blank line)
-            # Find the first blank line after heading, insert after it
-            heading_end = content.find("\n\n")
-            if heading_end >= 0:
-                insert_pos = heading_end + 2
-                session_file.write_text(
-                    content[:insert_pos] + entry_line + content[insert_pos:],
-                    encoding="utf-8",
-                )
+            # Find the first bullet line — insert before it
+            lines = content.splitlines(keepends=True)
+            insert_idx = 0
+            for i, line in enumerate(lines):
+                if line.startswith("- **"):
+                    insert_idx = i
+                    break
             else:
-                session_file.write_text(content + "\n" + entry_line, encoding="utf-8")
+                # No bullets found — insert after heading
+                insert_idx = len(lines)
+            lines.insert(insert_idx, entry_line)
+            session_file.write_text("".join(lines), encoding="utf-8")
 
 
 def _append_to_changelog(path: Path, date_str: str, entry_type: str, text: str) -> None:
