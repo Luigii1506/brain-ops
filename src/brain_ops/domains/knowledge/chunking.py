@@ -13,14 +13,45 @@ class ContentChunk:
     char_count: int
 
 
+_WIKI_NOISE_WORDS = {
+    "editar", "predecesor", "sucesor", "otros títulos", "información personal",
+    "nombre completo", "nacimiento", "fallecimiento", "religión", "familia",
+    "dinastía", "padre", "madre", "consorte", "hijos", "información profesional",
+    "lealtad", "unidad", "conflictos", "isbn", "véase", "véanse", "artículo principal",
+    "notas", "referencias", "bibliografía", "enlaces externos", "este artículo",
+    "pdf", "texto griego", "texto francés", "texto inglés",
+}
+
+
+def _is_wiki_section_header(line: str, next_line: str | None) -> bool:
+    """Detect Wikipedia-style section headers in plain text."""
+    stripped = line.strip()
+    if not stripped or len(stripped) > 60 or len(stripped) < 5:
+        return False
+    # Skip noise
+    if stripped.lower() in _WIKI_NOISE_WORDS:
+        return False
+    # Skip lines that look like references, ISBNs, dates, or metadata
+    if re.match(r"^(ISBN|ISSN|\d{4}|↑|​|\[|Wikipedia:|Texto )", stripped):
+        return False
+    # Wikipedia: section name followed by "editar" on next line
+    if next_line and next_line.strip().lower() == "editar":
+        return True
+    return False
+
+
 def chunk_by_headings(text: str) -> list[ContentChunk]:
-    """Split text into chunks by markdown headings or HTML-like section breaks."""
+    """Split text into chunks by markdown headings, Wikipedia sections, or paragraphs."""
     lines = text.splitlines()
     chunks: list[ContentChunk] = []
     current_heading = "Introduction"
     current_lines: list[str] = []
+    found_headings = 0
 
-    for line in lines:
+    for i, line in enumerate(lines):
+        next_line = lines[i + 1] if i + 1 < len(lines) else None
+
+        # Markdown heading
         heading_match = re.match(r"^#{1,3}\s+(.+)", line)
         if heading_match:
             if current_lines:
@@ -29,33 +60,106 @@ def chunk_by_headings(text: str) -> list[ContentChunk]:
                     chunks.append(ContentChunk(heading=current_heading, text=body, char_count=len(body)))
             current_heading = heading_match.group(1).strip()
             current_lines = []
-        else:
-            current_lines.append(line)
+            found_headings += 1
+            continue
+
+        # Wikipedia-style section header
+        if found_headings == 0 and _is_wiki_section_header(line, next_line):
+            # Only use wiki detection if no markdown headings found
+            if len(current_lines) > 5:  # Require some content before treating as new section
+                body = "\n".join(current_lines).strip()
+                if body and len(body) > 100:
+                    chunks.append(ContentChunk(heading=current_heading, text=body, char_count=len(body)))
+                current_heading = line.strip()
+                current_lines = []
+                continue
+
+        # Skip "editar" lines (Wikipedia artifact)
+        if line.strip().lower() == "editar":
+            continue
+
+        current_lines.append(line)
 
     if current_lines:
         body = "\n".join(current_lines).strip()
         if body:
             chunks.append(ContentChunk(heading=current_heading, text=body, char_count=len(body)))
 
-    # If no headings found, split into paragraphs
+    # If still just 1 big chunk, try splitting by paragraphs or fixed size
     if len(chunks) <= 1 and len(text) > 2000:
-        return _chunk_by_paragraphs(text)
+        para_chunks = _chunk_by_paragraphs(text)
+        if len(para_chunks) > 1:
+            return para_chunks
+        # Last resort: split by fixed character count
+        return _chunk_by_size(text, chunk_size=3000)
 
     return chunks
 
 
 def _chunk_by_paragraphs(text: str) -> list[ContentChunk]:
-    """Fallback: split by double newlines for unstructured text."""
+    """Fallback: split by double newlines into meaningful blocks."""
     paragraphs = re.split(r"\n\n+", text.strip())
     chunks: list[ContentChunk] = []
-    for i, para in enumerate(paragraphs):
+    current_block: list[str] = []
+    current_chars = 0
+    block_num = 0
+
+    for para in paragraphs:
         para = para.strip()
-        if para and len(para) > 50:
-            chunks.append(ContentChunk(
-                heading=f"Section {i + 1}",
-                text=para,
-                char_count=len(para),
-            ))
+        if not para or len(para) < 30:
+            continue
+
+        current_block.append(para)
+        current_chars += len(para)
+
+        # Group paragraphs into ~2000 char blocks
+        if current_chars >= 2000:
+            block_num += 1
+            block_text = "\n\n".join(current_block)
+            # Use first significant words as heading
+            first_words = " ".join(block_text.split()[:8])
+            heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
+            chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
+            current_block = []
+            current_chars = 0
+
+    if current_block:
+        block_num += 1
+        block_text = "\n\n".join(current_block)
+        first_words = " ".join(block_text.split()[:8])
+        heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
+        chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
+
+    return chunks
+
+
+def _chunk_by_size(text: str, chunk_size: int = 3000) -> list[ContentChunk]:
+    """Last resort: split text into fixed-size chunks, breaking at line boundaries."""
+    lines = text.splitlines()
+    chunks: list[ContentChunk] = []
+    current_lines: list[str] = []
+    current_chars = 0
+    block_num = 0
+
+    for line in lines:
+        current_lines.append(line)
+        current_chars += len(line)
+
+        if current_chars >= chunk_size:
+            block_num += 1
+            block_text = "\n".join(current_lines)
+            first_words = " ".join(block_text.split()[:8])
+            heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
+            chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
+            current_lines = []
+            current_chars = 0
+
+    if current_lines:
+        block_num += 1
+        block_text = "\n".join(current_lines)
+        first_words = " ".join(block_text.split()[:8])
+        heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
+        chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
     return chunks
 
 
