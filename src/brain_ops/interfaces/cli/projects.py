@@ -9,7 +9,9 @@ from rich.console import Console
 from rich.table import Table
 
 from brain_ops.application.projects import (
+    ProjectAuditResult,
     ProjectSessionResult,
+    execute_audit_project_workflow,
     execute_generate_all_claude_md_workflow,
     execute_generate_claude_md_workflow,
     execute_list_projects_workflow,
@@ -18,6 +20,7 @@ from brain_ops.application.projects import (
     execute_register_project_workflow,
     execute_session_workflow,
     execute_update_project_context_workflow,
+    _resolve_vault_project_dir,
 )
 from brain_ops.domains.projects import Project
 from brain_ops.interfaces.cli.runtime import load_database_path
@@ -196,16 +199,20 @@ def present_project_log_command(
     config_path,
     as_json: bool,
 ) -> None:
+    vault_project_dir = _resolve_vault_project_dir(config_path, project_name.strip())
     result = execute_project_log_workflow(
         project_name=project_name,
         text=text,
         load_registry_path=lambda: load_project_registry_path(),
         load_database_path=lambda: load_database_path(config_path),
+        vault_project_dir=vault_project_dir,
     )
     if as_json:
         console.print_json(data=result.to_dict())
         return
     stored = "SQLite + registry updated" if result.registry_updated else "SQLite"
+    if vault_project_dir is not None:
+        stored += " + vault"
     console.print(f"[green]\\u2713[/green] Logged: {result.entry_type}")
     console.print(f"  Project: {result.project_name}")
     console.print(f"  Entry: \"{result.entry_text}\"")
@@ -288,11 +295,28 @@ def _render_session(console: Console, result: ProjectSessionResult) -> None:
                 console.print(f"  [yellow]\\u2022[/yellow] {log['entry_text']}")
             console.print()
 
+    # Vault project docs
+    if result.vault_status or result.vault_decisions or result.vault_bugs:
+        console.print("[bold]From Project Docs:[/bold]")
+        if result.vault_status:
+            console.print(f"  [bold]Status:[/bold] {result.vault_status}")
+        if result.vault_decisions:
+            console.print("  [bold]Recent Decisions:[/bold]")
+            for d in result.vault_decisions:
+                console.print(f"    [blue]\\u2022[/blue] {d}")
+        if result.vault_bugs:
+            console.print("  [bold]Known Bugs:[/bold]")
+            for b in result.vault_bugs:
+                console.print(f"    [red]\\u2022[/red] {b}")
+        console.print()
+
     # Key files
     console.print("[bold]Key Files:[/bold]")
     console.print(f"  {project.path}/CLAUDE.md")
     console.print(f"  {project.path}/src/")
     console.print(f"  {project.path}/tests/")
+    if result.vault_path:
+        console.print(f"  {result.vault_path}/")
     console.print()
 
     # Notes
@@ -349,6 +373,19 @@ def _build_context_pack(result: ProjectSessionResult) -> str:
         for commit_line in result.recent_commits[:5]:
             lines.append(f"  {commit_line}")
 
+    if result.vault_status:
+        lines.append(f"Vault status: {result.vault_status}")
+    if result.vault_decisions:
+        lines.append("Vault decisions:")
+        for d in result.vault_decisions:
+            lines.append(f"  - {d}")
+    if result.vault_bugs:
+        lines.append("Vault bugs:")
+        for b in result.vault_bugs:
+            lines.append(f"  - {b}")
+    if result.vault_path:
+        lines.append(f"Vault project path: {result.vault_path}")
+
     return "\n".join(lines)
 
 
@@ -364,6 +401,7 @@ def present_session_command(
         project_name=project_name,
         load_registry_path=lambda: load_project_registry_path(),
         load_database_path=lambda: load_database_path(config_path),
+        config_path=config_path,
     )
     if as_json:
         console.print_json(data=result.to_dict())
@@ -374,10 +412,52 @@ def present_session_command(
     _render_session(console, result)
 
 
+def present_audit_project_command(
+    console: Console,
+    *,
+    project_name: str,
+    config_path,
+    as_json: bool,
+) -> None:
+    result = execute_audit_project_workflow(
+        project_name=project_name,
+        load_registry_path=lambda: load_project_registry_path(),
+        load_database_path=lambda: load_database_path(config_path),
+        config_path=config_path,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+
+    from rich.panel import Panel
+
+    if result.score >= 80:
+        style = "green"
+    elif result.score >= 50:
+        style = "yellow"
+    else:
+        style = "red"
+
+    console.print()
+    console.rule(f"Audit: {result.project_name}", style="bold cyan")
+    console.print()
+    console.print(f"[bold]Score:[/bold] [{style}]{result.score}/100[/{style}]")
+    console.print()
+
+    if result.issues:
+        console.print("[bold]Issues:[/bold]")
+        for issue in result.issues:
+            console.print(f"  [red]\\u2022[/red] {issue}")
+    else:
+        console.print("[green]No issues found.[/green]")
+    console.print()
+
+
 __all__ = [
     "build_project_context_table",
     "build_project_list_table",
     "load_project_registry_path",
+    "present_audit_project_command",
     "present_generate_all_claude_md_command",
     "present_generate_claude_md_command",
     "present_list_projects_command",

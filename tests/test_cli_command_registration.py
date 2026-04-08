@@ -164,6 +164,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "generate-all-claude-md",
                 "session",
                 "project-log",
+                "audit-project",
             },
         )
 

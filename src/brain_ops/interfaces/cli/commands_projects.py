@@ -10,6 +10,7 @@ from rich.console import Console
 from brain_ops.errors import BrainOpsError
 
 from .projects import (
+    present_audit_project_command,
     present_generate_all_claude_md_command,
     present_generate_claude_md_command,
     present_list_projects_command,
@@ -159,6 +160,23 @@ def register_project_commands(app: typer.Typer, console: Console, handle_error) 
                 config_path=config,
                 as_json=as_json,
                 context_only=context_only,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("audit-project")
+    def audit_project_command(
+        name: str,
+        config: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Audit project documentation and operational health."""
+        try:
+            present_audit_project_command(
+                console,
+                project_name=name,
+                config_path=config,
+                as_json=as_json,
             )
         except BrainOpsError as error:
             handle_error(error)
