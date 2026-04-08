@@ -11,181 +11,240 @@ class ContentChunk:
     heading: str
     text: str
     char_count: int
+    position: int = 0
+    priority: str = "medium"
 
 
-_WIKI_NOISE_WORDS = {
+MAX_CHUNK_SIZE = 2500
+
+
+# ============================================================================
+# HEADING DETECTION
+# ============================================================================
+
+_WIKI_NOISE = {
     "editar", "predecesor", "sucesor", "otros títulos", "información personal",
     "nombre completo", "nacimiento", "fallecimiento", "religión", "familia",
     "dinastía", "padre", "madre", "consorte", "hijos", "información profesional",
-    "lealtad", "unidad", "conflictos", "isbn", "véase", "véanse", "artículo principal",
-    "notas", "referencias", "bibliografía", "enlaces externos", "este artículo",
-    "pdf", "texto griego", "texto francés", "texto inglés",
+    "lealtad", "unidad", "conflictos", "isbn", "véase", "véanse", "notas",
+    "referencias", "bibliografía", "enlaces externos", "este artículo",
+    "categorías", "editar datos en wikidata",
 }
 
 
-def _is_wiki_section_header(line: str, next_line: str | None) -> bool:
-    """Detect Wikipedia-style section headers in plain text."""
+def _clean_heading(line: str) -> str:
+    return re.sub(r"\s*\[editar\]\s*", "", line).strip()
+
+
+def _is_heading(line: str) -> bool:
+    """Detect section headings in markdown or Wikipedia plain text."""
     stripped = line.strip()
-    if not stripped or len(stripped) > 60 or len(stripped) < 5:
+
+    if len(stripped) < 5 or len(stripped) > 120:
         return False
+
     # Skip noise
-    if stripped.lower() in _WIKI_NOISE_WORDS:
+    if stripped.lower() in _WIKI_NOISE:
         return False
-    # Skip lines that look like references, ISBNs, dates, or metadata
-    if re.match(r"^(ISBN|ISSN|\d{4}|↑|​|\[|Wikipedia:|Texto )", stripped):
+
+    # Skip references, ISBNs, metadata
+    if re.match(r"^(ISBN|ISSN|\d{4}|↑|​|\[|Wikipedia:|Texto |PDF)", stripped):
         return False
-    # Wikipedia: section name followed by "editar" on next line
-    if next_line and next_line.strip().lower() == "editar":
+
+    # Markdown heading
+    if re.match(r"^#{1,3}\s+", stripped):
         return True
+
+    # Wikipedia heading: capitalized, no period, few commas, may have [editar]
+    if (stripped[0].isupper() and
+        not stripped.endswith(".") and
+        not stripped.endswith(",") and
+        stripped.count(",") <= 2 and
+        len(stripped.split()) <= 8 and
+        not re.match(r"^\d", stripped) and
+        not re.match(r"^[\[\(]", stripped)):
+        # Has [editar] suffix — strong signal
+        if "[editar]" in stripped:
+            return True
     return False
 
 
+# ============================================================================
+# MAIN CHUNKING
+# ============================================================================
+
 def chunk_by_headings(text: str) -> list[ContentChunk]:
-    """Split text into chunks by markdown headings, Wikipedia sections, or paragraphs."""
+    """Smart chunk: detect headings → group content → split large chunks → sentence fallback."""
     lines = text.splitlines()
-    chunks: list[ContentChunk] = []
+
+    # Pass 1: detect headings and group content
+    raw_chunks: list[tuple[str, list[str]]] = []
     current_heading = "Introduction"
     current_lines: list[str] = []
-    found_headings = 0
 
-    for i, line in enumerate(lines):
-        next_line = lines[i + 1] if i + 1 < len(lines) else None
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
 
         # Markdown heading
-        heading_match = re.match(r"^#{1,3}\s+(.+)", line)
-        if heading_match:
+        md_match = re.match(r"^#{1,3}\s+(.+)", stripped)
+        if md_match:
             if current_lines:
-                body = "\n".join(current_lines).strip()
-                if body:
-                    chunks.append(ContentChunk(heading=current_heading, text=body, char_count=len(body)))
-            current_heading = heading_match.group(1).strip()
+                raw_chunks.append((current_heading, list(current_lines)))
+            current_heading = md_match.group(1).strip()
             current_lines = []
-            found_headings += 1
+            i += 1
             continue
 
-        # Wikipedia-style section header
-        if found_headings == 0 and _is_wiki_section_header(line, next_line):
-            # Only use wiki detection if no markdown headings found
-            if len(current_lines) > 5:  # Require some content before treating as new section
-                body = "\n".join(current_lines).strip()
-                if body and len(body) > 100:
-                    chunks.append(ContentChunk(heading=current_heading, text=body, char_count=len(body)))
-                current_heading = line.strip()
-                current_lines = []
-                continue
-
-        # Skip "editar" lines (Wikipedia artifact)
-        if line.strip().lower() == "editar":
+        # Wikipedia heading pattern: "Heading\n[\neditar\n]"
+        if (i + 2 < len(lines) and
+            lines[i + 1].strip() == "[" and
+            lines[i + 2].strip().lower() == "editar" and
+            len(stripped) >= 3 and len(stripped) <= 120 and
+            stripped[0].isupper() and
+            stripped.lower() not in _WIKI_NOISE):
+            if current_lines and len(current_lines) > 2:
+                raw_chunks.append((current_heading, list(current_lines)))
+            current_heading = _clean_heading(stripped)
+            current_lines = []
+            # Skip the "[", "editar", "]" lines
+            i += 4 if (i + 3 < len(lines) and lines[i + 3].strip() == "]") else i + 3
             continue
 
-        current_lines.append(line)
+        # Skip standalone noise
+        if stripped.lower() in {"editar", "[", "]"}:
+            i += 1
+            continue
+
+        current_lines.append(lines[i])
+        i += 1
 
     if current_lines:
-        body = "\n".join(current_lines).strip()
-        if body:
-            chunks.append(ContentChunk(heading=current_heading, text=body, char_count=len(body)))
+        raw_chunks.append((current_heading, list(current_lines)))
 
-    # If still just 1 big chunk, try splitting by paragraphs or fixed size
-    if len(chunks) <= 1 and len(text) > 2000:
-        para_chunks = _chunk_by_paragraphs(text)
-        if len(para_chunks) > 1:
-            return para_chunks
-        # Last resort: split by fixed character count
-        return _chunk_by_size(text, chunk_size=3000)
-
-    return chunks
-
-
-def _chunk_by_paragraphs(text: str) -> list[ContentChunk]:
-    """Fallback: split by double newlines into meaningful blocks."""
-    paragraphs = re.split(r"\n\n+", text.strip())
+    # Pass 2: build chunks and split large ones
     chunks: list[ContentChunk] = []
-    current_block: list[str] = []
-    current_chars = 0
-    block_num = 0
+    position = 0
 
-    for para in paragraphs:
-        para = para.strip()
-        if not para or len(para) < 30:
+    for heading, lines_list in raw_chunks:
+        content = "\n".join(lines_list).strip()
+        if not content or len(content) < 50:
             continue
 
-        current_block.append(para)
-        current_chars += len(para)
+        if len(content) <= MAX_CHUNK_SIZE:
+            position += 1
+            chunks.append(ContentChunk(
+                heading=heading,
+                text=content,
+                char_count=len(content),
+                position=position,
+            ))
+        else:
+            # Split large chunks by sentences
+            sub_chunks = _split_by_sentences(content, heading, max_size=MAX_CHUNK_SIZE)
+            for sc in sub_chunks:
+                position += 1
+                chunks.append(ContentChunk(
+                    heading=sc[0],
+                    text=sc[1],
+                    char_count=len(sc[1]),
+                    position=position,
+                ))
 
-        # Group paragraphs into ~2000 char blocks
-        if current_chars >= 2000:
-            block_num += 1
-            block_text = "\n\n".join(current_block)
-            # Use first significant words as heading
-            first_words = " ".join(block_text.split()[:8])
-            heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
-            chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
-            current_block = []
-            current_chars = 0
-
-    if current_block:
-        block_num += 1
-        block_text = "\n\n".join(current_block)
-        first_words = " ".join(block_text.split()[:8])
-        heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
-        chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
+    # If we got nothing useful, last resort: fixed-size blocks
+    if len(chunks) <= 1 and len(text) > 3000:
+        return _chunk_by_fixed_size(text, chunk_size=MAX_CHUNK_SIZE)
 
     return chunks
 
 
-def _chunk_by_size(text: str, chunk_size: int = 3000) -> list[ContentChunk]:
-    """Last resort: split text into fixed-size chunks, breaking at line boundaries."""
-    lines = text.splitlines()
+def _split_by_sentences(text: str, heading: str, max_size: int = 2500) -> list[tuple[str, str]]:
+    """Split text by sentence boundaries, keeping chunks under max_size."""
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    result: list[tuple[str, str]] = []
+    buffer: list[str] = []
+    part = 0
+
+    for sentence in sentences:
+        buffer.append(sentence)
+        if len(" ".join(buffer)) > max_size:
+            part += 1
+            label = f"{heading} (part {part})" if part > 1 else heading
+            result.append((label, " ".join(buffer)))
+            buffer = []
+
+    if buffer:
+        part += 1
+        label = f"{heading} (part {part})" if part > 1 else heading
+        result.append((label, " ".join(buffer)))
+
+    return result
+
+
+def _chunk_by_fixed_size(text: str, chunk_size: int = 2500) -> list[ContentChunk]:
+    """Last resort: split by sentences into fixed-size blocks."""
+    sentences = re.split(r"(?<=[.!?])\s+", text)
     chunks: list[ContentChunk] = []
-    current_lines: list[str] = []
-    current_chars = 0
+    buffer: list[str] = []
     block_num = 0
 
-    for line in lines:
-        current_lines.append(line)
-        current_chars += len(line)
-
-        if current_chars >= chunk_size:
+    for sentence in sentences:
+        buffer.append(sentence)
+        if len(" ".join(buffer)) > chunk_size:
             block_num += 1
-            block_text = "\n".join(current_lines)
-            first_words = " ".join(block_text.split()[:8])
-            heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
-            chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
-            current_lines = []
-            current_chars = 0
+            block_text = " ".join(buffer)
+            first_words = " ".join(block_text.split()[:8])[:60]
+            chunks.append(ContentChunk(
+                heading=first_words or f"Block {block_num}",
+                text=block_text,
+                char_count=len(block_text),
+                position=block_num,
+            ))
+            buffer = []
 
-    if current_lines:
+    if buffer:
         block_num += 1
-        block_text = "\n".join(current_lines)
-        first_words = " ".join(block_text.split()[:8])
-        heading = first_words[:60] if len(first_words) > 10 else f"Block {block_num}"
-        chunks.append(ContentChunk(heading=heading, text=block_text, char_count=len(block_text)))
+        block_text = " ".join(buffer)
+        first_words = " ".join(block_text.split()[:8])[:60]
+        chunks.append(ContentChunk(
+            heading=first_words or f"Block {block_num}",
+            text=block_text,
+            char_count=len(block_text),
+            position=block_num,
+        ))
+
     return chunks
 
 
-# Priority keywords by subtype — chunks with these keywords rank higher
+# ============================================================================
+# SUBTYPE PRIORITY RANKING
+# ============================================================================
+
 SUBTYPE_PRIORITY_KEYWORDS: dict[str, list[str]] = {
     "person": ["nacimiento", "birth", "muerte", "death", "reinado", "reign",
                "legado", "legacy", "campañas", "campaigns", "juventud", "youth",
                "ascenso", "rise", "biografía", "biography", "carrera", "career",
-               "infancia", "childhood", "educación", "education"],
+               "infancia", "childhood", "educación", "education", "conquista"],
     "war": ["causas", "causes", "batallas", "battles", "resultado", "outcome",
-            "consecuencias", "consequences", "participantes", "participants",
-            "antecedentes", "background"],
+            "consecuencias", "consequences", "participantes", "participants"],
     "place": ["geografía", "geography", "historia", "history", "gobierno",
-              "government", "cultura", "culture", "población", "population",
-              "economía", "economy"],
+              "government", "cultura", "culture", "población", "population"],
     "book": ["resumen", "summary", "temas", "themes", "autor", "author",
-             "argumento", "plot", "personajes", "characters", "influencia", "influence"],
+             "argumento", "plot", "personajes", "characters", "influencia"],
     "emotion": ["definición", "definition", "psicología", "psychology",
                 "filosofía", "philosophy", "manifestaciones", "expressions"],
     "discipline": ["definición", "definition", "historia", "history",
-                   "ramas", "branches", "métodos", "methods", "aplicaciones", "applications"],
+                   "ramas", "branches", "métodos", "methods", "aplicaciones"],
     "celestial_body": ["órbita", "orbit", "composición", "composition",
-                       "atmósfera", "atmosphere", "exploración", "exploration",
-                       "características", "characteristics"],
-    "deity": ["mitología", "mythology", "culto", "worship", "atributos", "attributes",
+                       "atmósfera", "atmosphere", "exploración", "exploration"],
+    "deity": ["mitología", "mythology", "culto", "worship", "atributos",
               "simbolismo", "symbolism"],
+    "empire": ["fundación", "founding", "caída", "fall", "expansión",
+               "territorio", "gobierno", "economía"],
+    "battle": ["antecedentes", "desarrollo", "consecuencias", "fuerzas",
+               "estrategia", "resultado"],
+    "civilization": ["gobierno", "cultura", "religión", "economía", "arte",
+                     "ciencia", "filosofía"],
 }
 
 
@@ -200,17 +259,15 @@ def rank_chunks_for_subtype(
 
     def score(chunk: ContentChunk) -> int:
         heading_lower = chunk.heading.lower()
-        text_lower = chunk.text[:200].lower()
+        text_lower = chunk.text[:300].lower()
         s = 0
         for kw in keywords:
             if kw in heading_lower:
                 s += 10
             if kw in text_lower:
                 s += 3
-        # Introduction always gets a boost
-        if chunk.heading.lower() in ("introduction", "introducción", "section 1"):
-            s += 15
-        # Longer chunks slightly preferred (more content)
+        if chunk.position <= 2:
+            s += 8
         if chunk.char_count > 500:
             s += 2
         return s
@@ -221,10 +278,14 @@ def rank_chunks_for_subtype(
     total_chars = 0
     for chunk in scored:
         if total_chars + chunk.char_count > max_chars:
-            # Take partial if it's the first one
             if not selected:
-                truncated = chunk.text[:max_chars]
-                selected.append(ContentChunk(heading=chunk.heading, text=truncated, char_count=len(truncated)))
+                truncated_text = chunk.text[:max_chars]
+                selected.append(ContentChunk(
+                    heading=chunk.heading,
+                    text=truncated_text,
+                    char_count=len(truncated_text),
+                    position=chunk.position,
+                ))
             break
         selected.append(chunk)
         total_chars += chunk.char_count
