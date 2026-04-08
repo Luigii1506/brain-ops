@@ -343,23 +343,37 @@ def _write_vault_log(
 
 
 def _append_to_changelog(path: Path, date_str: str, entry_type: str, text: str) -> None:
-    """Append entry within <!-- AUTO:START/END --> markers, or at the end."""
-    content = path.read_text(encoding="utf-8")
+    """Insert entry at TOP of <!-- AUTO:START/END --> block (most recent first).
+
+    If path points to a generic Changelog.md, redirects to a monthly file
+    (e.g. Changelog 2026-04.md) in the same directory.
+    """
+    # Redirect to monthly file
+    if path.name == "Changelog.md":
+        month_str = date_str[:7]  # "2026-04"
+        monthly_path = path.parent / f"Changelog {month_str}.md"
+        if not monthly_path.exists():
+            monthly_path.write_text(
+                f"---\ntype: changelog\nproject: brain-ops\nperiod: {month_str}\n---\n\n"
+                f"# Changelog {month_str}\n\n<!-- AUTO:START -->\n<!-- AUTO:END -->\n",
+                encoding="utf-8",
+            )
+        path = monthly_path
+
     entry_line = f"- **{date_str}** [{entry_type}] {text}"
 
-    auto_end_marker = "<!-- AUTO:END -->"
-    if auto_end_marker in content:
+    content = path.read_text(encoding="utf-8")
+    auto_start_marker = "<!-- AUTO:START -->"
+    if auto_start_marker in content:
+        # Insert right AFTER AUTO:START (newest first)
         content = content.replace(
-            auto_end_marker,
-            f"{entry_line}\n{auto_end_marker}",
+            auto_start_marker,
+            f"{auto_start_marker}\n{entry_line}",
         )
         path.write_text(content, encoding="utf-8")
     else:
-        auto_start = "<!-- AUTO:START -->"
         with open(path, "a", encoding="utf-8") as f:
-            if auto_start not in content:
-                f.write(f"\n{auto_start}\n")
-            f.write(f"{entry_line}\n")
+            f.write(f"\n{auto_start_marker}\n{entry_line}\n<!-- AUTO:END -->\n")
 
 
 def _append_line_to_file(path: Path, line: str) -> None:

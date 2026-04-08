@@ -515,7 +515,13 @@ class ProjectLogVaultWriteTestCase(TestCase):
             load_database_path=lambda: self.db_path,
             vault_project_dir=self.vault_project_dir,
         )
-        content = (self.vault_project_dir / "Changelog.md").read_text(encoding="utf-8")
+        # Changelog now redirects to monthly file
+        from datetime import date
+
+        month_str = date.today().strftime("%Y-%m")
+        monthly_path = self.vault_project_dir / f"Changelog {month_str}.md"
+        self.assertTrue(monthly_path.exists(), "Monthly changelog should be created")
+        content = monthly_path.read_text(encoding="utf-8")
         self.assertIn("[update] added audit feature", content)
         self.assertIn("<!-- AUTO:START -->", content)
         self.assertIn("<!-- AUTO:END -->", content)
