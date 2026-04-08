@@ -124,6 +124,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "ingest-source",
                 "list-extractions",
                 "query-knowledge",
+                "reconcile",
                 "registry-lint",
                 "search-knowledge",
                 "process-inbox",

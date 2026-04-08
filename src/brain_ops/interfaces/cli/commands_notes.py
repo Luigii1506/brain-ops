@@ -208,6 +208,97 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("reconcile")
+    def reconcile_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Reconcile direct edits — sync registry, compile, and detect issues after manual changes."""
+        try:
+            from brain_ops.application.knowledge import execute_compile_knowledge_workflow
+            from brain_ops.domains.knowledge.registry import RegisteredEntity, load_entity_registry, save_entity_registry
+            from brain_ops.domains.knowledge.object_model import resolve_object_kind
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+            from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+            registry = load_entity_registry(registry_path)
+
+            # Scan vault and sync registry
+            synced = 0
+            created = 0
+            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+                _safe, rel, text = read_note_text(vault, note_path)
+                try:
+                    fm, body = split_frontmatter(text)
+                except Exception:
+                    continue
+                if fm.get("entity") is not True:
+                    continue
+                name = fm.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                name = name.strip()
+
+                existing = registry.get(name)
+                entity_type = str(fm.get("type", "concept"))
+                object_kind = fm.get("object_kind")
+                subtype = fm.get("subtype")
+
+                if existing is None:
+                    ok, st = resolve_object_kind(entity_type)
+                    entity = RegisteredEntity(
+                        canonical_name=name,
+                        entity_type=entity_type,
+                        status="canonical",
+                        object_kind=str(object_kind) if object_kind else ok,
+                        subtype=str(subtype) if subtype else st,
+                        source_count=1,
+                    )
+                    # Count relations from frontmatter
+                    related = fm.get("related")
+                    if isinstance(related, list):
+                        entity.relation_count = len(related)
+                        entity.frequent_relations = [str(r) for r in related if isinstance(r, str)][:20]
+                    registry.register(entity)
+                    created += 1
+                else:
+                    # Sync status and relations
+                    if existing.status == "mention":
+                        existing.status = "canonical"
+                    if not existing.object_kind and object_kind:
+                        existing.object_kind = str(object_kind)
+                    if not existing.subtype and subtype:
+                        existing.subtype = str(subtype)
+                    related = fm.get("related")
+                    if isinstance(related, list):
+                        existing.relation_count = len(related)
+                        existing.frequent_relations = [str(r) for r in related if isinstance(r, str)][:20]
+                    synced += 1
+
+            save_entity_registry(registry_path, registry)
+
+            # Compile knowledge
+            execute_compile_knowledge_workflow(
+                config_path=config_path, db_path=None, load_vault=load_validated_vault,
+            )
+
+            result = {
+                "registry_synced": synced,
+                "registry_created": created,
+                "total_registry": len(registry.entities),
+            }
+
+            if as_json:
+                console.print_json(data=result)
+                return
+            console.print(f"Reconciled: {synced} synced, {created} new in registry. Total: {len(registry.entities)} entities.")
+            console.print("Knowledge compiled to SQLite.")
+        except BrainOpsError as error:
+            handle_error(error)
+
     @app.command("suggest-entities")
     def suggest_entities_command(
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),

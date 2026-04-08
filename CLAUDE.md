@@ -33,29 +33,68 @@ The user wants one system that can:
 4. Keep the project ready for OpenClaw + Ollama.
 5. Favor deterministic execution around AI behavior.
 
-## Direct knowledge operations (no API needed)
+## Knowledge operations — workflow rules
 
-When the user asks Claude Code to work on knowledge directly, Claude should act as the LLM itself — no need to call external APIs. This saves cost and is faster.
+Claude Code acts as both LLM and system operator. The key rule is:
 
-Commands the user can give directly:
+**ALWAYS prefer official commands over direct file editing.**
 
-- **"enriquece [entidad] con [URL]"** — Fetch URL, read current entity note, integrate new info following the enrichment rules (Identity never empty, Key Facts, Timeline, Relationships with [[wikilinks]], Strategic Insights), write updated note to Obsidian.
-- **"crea entidad [nombre] tipo [type]"** — Create entity note with proper frontmatter (object_kind, subtype, status:canonical) and subtype-specific sections, in `02 - Knowledge/`.
-- **"ingesta [URL]"** — Fetch URL, classify source type, extract structured knowledge (facts, timeline, entities, relationships, insights, contradictions), create source note in `01 - Sources/`.
-- **"pregunta: [question]"** — Search vault notes, read relevant ones, synthesize answer with [[wikilinks]] to entities.
+### Priority order for every operation:
 
-Rules for direct operations:
-- Use the entity schemas from `src/brain_ops/domains/knowledge/object_model.py` for sections.
-- Use canonical predicates from `object_model.py` for relationships.
-- Always use [[wikilinks]] for entities mentioned.
-- Write in the same language as the entity name (Spanish names → Spanish content).
-- Never leave Identity section empty.
-- Follow the evidence policy: tag source confidence based on source type.
-- **Cross-enrichment**: After writing/enriching any entity, check if the new content contains facts, relationships, or insights about OTHER existing entities. If so, update those related entity notes too. Only add high-confidence, non-redundant facts. Mark cross-enriched items with *(cross-enriched from [[Source Entity]])*.
-- Always update frontmatter `related` field with all entities mentioned.
-- Always run `brain compile-knowledge` after changes.
-- **Source notes**: When enriching from a URL, also create a source note in `01 - Sources/` with the URL, source_type, confidence, and which entity was enriched. Format: `{Entity Name} - {Source Domain}.md`
-- **Query learning**: When answering questions, the system logs queries and detects knowledge gaps automatically. Entities mentioned in answers get importance boost in the registry.
+1. **USE OFFICIAL COMMAND** if one exists (`brain create-entity`, `brain enrich-entity`, etc.)
+2. **Write directly + run post-processing** only if no command exists for the task
+3. **NEVER just edit a note and walk away** — always run reconciliation after direct edits
+
+### When using official commands (preferred):
+
+```bash
+# Create entity (uses correct frontmatter, subtype sections, compiles)
+brain create-entity "Name" --type person --config config/vault.yaml
+
+# Enrich from URL (uses source strategy, chunking, extraction, cross-enrichment)
+brain enrich-entity "Name" --url "https://..." --llm-provider openai --config config/vault.yaml
+
+# Ingest source (creates source note + updates registry + saves extraction JSON)
+brain ingest-source --url "https://..." --use-llm --config config/vault.yaml
+
+# Query (logs query, detects gaps, updates query_count)
+brain query-knowledge "question" --llm-provider openai --config config/vault.yaml
+
+# Audit
+brain audit-knowledge --config config/vault.yaml
+
+# Suggestions
+brain suggest-entities --config config/vault.yaml
+```
+
+### When Claude writes directly (as the LLM):
+
+This is allowed when the user says "enriquece X" or "crea entidad X" in conversation.
+Claude acts as the LLM directly (no API cost). But MUST follow these rules:
+
+**After writing any entity note directly:**
+1. Update frontmatter `related` field with all entities mentioned
+2. Use subtype-specific sections from `object_model.py`
+3. Use canonical predicates from `object_model.py` for relationships
+4. Always use [[wikilinks]] for entities mentioned
+5. Never leave Identity section empty
+6. Write in the same language as the entity name
+7. Create a source note in `01 - Sources/` if enriching from a URL
+8. Run `brain compile-knowledge --config config/vault.yaml` after changes
+9. Check if cross-enrichment is needed for related entities
+
+**What Claude CANNOT do when writing directly (only the pipeline does these):**
+- Save extraction JSON (no LLM extraction happened)
+- Emit events to event log
+- Update entity_registry.json automatically (must be done manually or via reconcile)
+- Normalize predicates programmatically
+- Trigger auto-entity creation
+
+### Signals — never mix these:
+- `source_count` = evidence from ingested sources (only API pipeline increments this)
+- `query_count` = user interest from questions asked (only query-knowledge increments this)
+- `relation_count` = graph connections
+- `gap_count` = entities missing from query answers
 
 Vault path: `/Users/luisencinas/Documents/Obsidian Vault`
 Config: `config/vault.yaml`
