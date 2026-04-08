@@ -439,7 +439,7 @@ class SessionWithVaultTestCase(TestCase):
             encoding="utf-8",
         )
         (self.vault_project_dir / "Debugging.md").write_text(
-            "# Debugging\n\n- Config path not resolving on Windows\n",
+            "# Debugging\n\n## Config path not resolving on Windows\n\n- Symptom: path fails\n- Fix: use absolute path\n",
             encoding="utf-8",
         )
 

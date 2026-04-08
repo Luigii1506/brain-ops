@@ -397,30 +397,44 @@ def _read_vault_project_data(
         root_note = vault_project_dir / candidate
         if root_note.is_file():
             content = root_note.read_text(encoding="utf-8")[:4000]
-            status = _extract_section(content, "Current status")
-            if status:
-                vault_status = status
-            next_actions = _extract_section(content, "Next actions")
+            # Try multiple heading names for current state
+            for heading in ("Current Focus", "Current status", "In Progress"):
+                status = _extract_section(content, heading)
+                if status:
+                    vault_status = status
+                    break
+            next_actions = _extract_section(content, "Next Actions")
+            if not next_actions:
+                next_actions = _extract_section(content, "Next actions")
             if next_actions and not vault_status:
                 vault_status = next_actions
             elif next_actions:
                 vault_status = f"{vault_status}\n\nNext actions:\n{next_actions}"
+            # Extract blockers
+            blockers = _extract_section(content, "Blockers")
+            if blockers:
+                vault_status = f"{vault_status}\n\nBlockers:\n{blockers}" if vault_status else blockers
             break
 
-    # Read Decisions.md (last 1000 chars or last 5 items)
+    # Read Decisions.md — extract ADR titles (lines starting with "### ")
     decisions_path = vault_project_dir / "Decisions.md"
     if decisions_path.is_file():
         content = decisions_path.read_text(encoding="utf-8")
-        # Extract bullet items
-        items = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)
-        vault_decisions = items[-5:] if items else []
+        # Prefer ADR titles (### headings) over bullets
+        adrs = re.findall(r"^###\s+(.+)$", content, re.MULTILINE)
+        if adrs:
+            vault_decisions = adrs[-5:]
+        else:
+            items = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)
+            vault_decisions = items[-5:] if items else []
 
-    # Read Debugging.md for known bugs
+    # Read Debugging.md — extract problem titles (## headings), not all bullets
     debugging_path = vault_project_dir / "Debugging.md"
     if debugging_path.is_file():
         content = debugging_path.read_text(encoding="utf-8")
-        items = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)
-        vault_bugs = items
+        # Extract section headings as bug summaries — they're the problem titles
+        headings = re.findall(r"^##\s+(?!General)(.+)$", content, re.MULTILINE)
+        vault_bugs = headings[:5] if headings else []
 
     return vault_status, vault_decisions, vault_bugs
 
