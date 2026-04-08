@@ -300,7 +300,7 @@ def _write_vault_log(
     if vault_project_dir is None or not vault_project_dir.is_dir():
         return
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now()  # local time, not UTC
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H:%M")
 
@@ -327,19 +327,29 @@ def _write_vault_log(
                 f"\n- **{date_str}** — {text}\n",
             )
 
-    # Create/append to session note
+    # Create/prepend to session note (newest entry first)
     sessions_dir = vault_project_dir / "Sessions"
     if sessions_dir.is_dir():
-        session_file = sessions_dir / f"Session {date_str}.md"
+        session_file = sessions_dir / f"Sesión {date_str}.md"
+        entry_line = f"- **{time_str}** [{entry_type}] {text}\n"
         if not session_file.exists():
             session_file.write_text(
-                f"# Session {date_str}\n\n",
+                f"# Sesión {date_str}\n\n{entry_line}",
                 encoding="utf-8",
             )
-        _append_line_to_file(
-            session_file,
-            f"- **{time_str}** [{entry_type}] {text}\n",
-        )
+        else:
+            content = session_file.read_text(encoding="utf-8")
+            # Insert after the heading block (# Sesión ... + blank line)
+            # Find the first blank line after heading, insert after it
+            heading_end = content.find("\n\n")
+            if heading_end >= 0:
+                insert_pos = heading_end + 2
+                session_file.write_text(
+                    content[:insert_pos] + entry_line + content[insert_pos:],
+                    encoding="utf-8",
+                )
+            else:
+                session_file.write_text(content + "\n" + entry_line, encoding="utf-8")
 
 
 def _append_to_changelog(path: Path, date_str: str, entry_type: str, text: str) -> None:
@@ -629,9 +639,10 @@ def execute_audit_project_workflow(
 
             cutoff = datetime.now(tz=timezone.utc) - timedelta(days=7)
             has_recent_session = False
-            for session_file in sessions_dir.glob("Session *.md"):
+            # Support both "Session" and "Sesión" naming
+            for session_file in list(sessions_dir.glob("Session *.md")) + list(sessions_dir.glob("Sesión *.md")):
                 # Extract date from filename
-                match = re.search(r"Session (\d{4}-\d{2}-\d{2})", session_file.name)
+                match = re.search(r"(?:Session|Sesión) (\d{4}-\d{2}-\d{2})", session_file.name)
                 if match:
                     try:
                         file_date = datetime.strptime(match.group(1), "%Y-%m-%d").replace(

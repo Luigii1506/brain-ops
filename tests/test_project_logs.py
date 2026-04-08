@@ -349,8 +349,8 @@ class AuditProjectTestCase(TestCase):
         sessions_dir = self.vault_project_dir / "Sessions"
         sessions_dir.mkdir()
         today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-        (sessions_dir / f"Session {today}.md").write_text(
-            f"# Session {today}\n- **10:00** [update] Started work\n",
+        (sessions_dir / f"Sesión {today}.md").write_text(
+            f"# Sesión {today}\n- **10:00** [update] Started work\n",
             encoding="utf-8",
         )
 
@@ -556,10 +556,10 @@ class ProjectLogVaultWriteTestCase(TestCase):
             load_database_path=lambda: self.db_path,
             vault_project_dir=self.vault_project_dir,
         )
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
-        session_file = self.vault_project_dir / "Sessions" / f"Session {today}.md"
+        today = datetime.now().strftime("%Y-%m-%d")
+        session_file = self.vault_project_dir / "Sessions" / f"Sesión {today}.md"
         self.assertTrue(session_file.exists())
         content = session_file.read_text(encoding="utf-8")
         self.assertIn("[update] started work", content)
