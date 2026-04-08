@@ -81,20 +81,31 @@ brain suggest-entities --config config/vault.yaml
 This is allowed when the user says "enriquece X" or "crea entidad X" in conversation.
 Claude acts as the LLM directly (no API cost). But MUST follow these rules:
 
-**BEFORE writing — quality check (CRITICAL):**
-1. WebFetch the source URL to get the full content
-2. Identify ALL major sections/topics in the source
-3. Ask yourself: "If someone reads only my note, will they understand this entity completely?"
-4. For important entities (historical figures, empires, battles): every major event, campaign, relationship, and turning point MUST be represented — not just mentioned, but explained
-5. Don't write from general knowledge alone — verify against the source
+**BEFORE writing — determine mode:**
 
-**Checklist for important entities (person, empire, battle, civilization):**
+DEEP MODE (person, empire, civilization, battle, war, country, book, discipline):
+1. WebFetch the source URL to get the full content
+2. Identify all sections and classify: HIGH (must cover), MEDIUM (cover if valuable), LOW (skip)
+3. Write covering ALL high-priority sections and valuable medium ones
+4. After writing, run check-coverage and fill any high-priority gaps
+
+LIGHT MODE (cities, simple concepts, animals, minor entities):
+1. WebFetch or use general knowledge
+2. Write a solid note covering the essentials
+3. No formal coverage check needed
+
+**Rule: "If the source has it AND it's structurally important, the note covers it."**
+
+Not ALL sections — only the important ones. References, bibliography, metadata = skip.
+Campaigns, turning points, death, legacy = always cover.
+
+**Checklist for DEEP MODE entities:**
 - Are ALL major campaigns/events covered? (not just the famous ones)
 - Are key turning points explained? (not just listed as dates)
-- Are important relationships described with context? (not just "father of")
+- Are important relationships described with context?
 - Are strategic decisions and their consequences included?
 - Are contradictions and uncertainties noted?
-- Would a reader understand WHY this entity matters, not just WHAT happened?
+- Would a reader understand WHY this entity matters?
 
 **While writing any entity note directly:**
 1. Update frontmatter `related` field with all entities mentioned

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from .chunking import ContentChunk, chunk_by_headings
@@ -31,6 +32,7 @@ class CoverageReport:
     gaps: list[CoverageGap]
     coverage_pct: float
     needs_second_pass: bool
+    mode: str  # "deep" or "light"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -39,29 +41,91 @@ class CoverageReport:
             "covered_headings": self.covered_headings,
             "coverage_pct": round(self.coverage_pct, 1),
             "needs_second_pass": self.needs_second_pass,
+            "mode": self.mode,
             "gaps": [g.to_dict() for g in self.gaps],
+            "high_gaps": len([g for g in self.gaps if g.priority == "high"]),
+            "medium_gaps": len([g for g in self.gaps if g.priority == "medium"]),
         }
 
 
-# Keywords that indicate high-priority content per subtype
+# ============================================================================
+# PRIORITY CLASSIFICATION
+# ============================================================================
+
 HIGH_PRIORITY_KEYWORDS: dict[str, list[str]] = {
-    "person": ["juventud", "youth", "nacimiento", "birth", "muerte", "death",
-               "reinado", "reign", "campañas", "campaigns", "legado", "legacy",
-               "educación", "education", "matrimonio", "marriage", "asesinato",
-               "assassination", "exilio", "exile", "conquista", "conquest"],
+    "person": ["nacimiento", "birth", "infancia", "childhood", "muerte", "death",
+               "reinado", "reign", "campañas", "campaigns", "conquista", "conquest",
+               "legado", "legacy", "educación", "education", "ascenso", "rise",
+               "exilio", "exile", "asesinato", "assassination", "batalla", "battle",
+               "egipto", "egypt", "india", "persia", "últimos años", "conspiración",
+               "sitio", "siege", "ocupación", "fundación"],
     "empire": ["fundación", "founding", "caída", "fall", "expansión", "expansion",
-               "gobierno", "government", "territorio", "territory", "economía", "economy"],
+               "gobierno", "government", "territorio", "territory", "declive", "decline",
+               "conquista", "conquest", "economía", "economy", "administración"],
     "battle": ["antecedentes", "background", "desarrollo", "development",
-               "consecuencias", "consequences", "fuerzas", "forces"],
+               "consecuencias", "consequences", "fuerzas", "forces", "estrategia",
+               "persecución", "ocupación"],
     "civilization": ["gobierno", "government", "cultura", "culture", "religión", "religion",
-                     "economía", "economy", "arte", "art", "ciencia", "science"],
+                     "economía", "economy", "arte", "art", "ciencia", "science", "filosofía",
+                     "guerras", "wars"],
     "book": ["resumen", "summary", "temas", "themes", "personajes", "characters",
-             "autor", "author", "influencia", "influence"],
+             "autor", "author", "influencia", "influence", "ideas"],
 }
 
-# Minimum chars for a heading to be considered significant
+LOW_PRIORITY_KEYWORDS = [
+    "véase", "referencias", "bibliografía", "enlaces", "notas", "fuentes",
+    "see also", "references", "bibliography", "links", "notes", "sources",
+    "bustos", "monumentos", "monedas", "pinturas", "música",
+    "categorías", "wikipedia", "isbn", "texto griego", "texto francés",
+    "bibliografía adicional", "obras modernas", "fuentes clásicas",
+]
+
+DEEP_MODE_SUBTYPES = {
+    "person", "empire", "civilization", "battle", "war", "country", "book",
+    "discipline", "school_of_thought", "deity", "revolution", "historical_event",
+}
+
 MIN_SIGNIFICANT_CHARS = 200
 
+
+def should_use_deep_mode(entity_subtype: str, raw_length: int) -> bool:
+    """Determine if this entity needs deep coverage check."""
+    if entity_subtype in DEEP_MODE_SUBTYPES:
+        return True
+    if raw_length > 20000:
+        return True
+    return False
+
+
+def classify_section_priority(heading: str, char_count: int, entity_subtype: str) -> str:
+    """Classify a section as high, medium, or low priority."""
+    heading_lower = heading.lower()
+
+    # Low priority: references, bibliography, metadata
+    for kw in LOW_PRIORITY_KEYWORDS:
+        if kw in heading_lower:
+            return "low"
+
+    # High priority: matches subtype keywords
+    priority_keywords = HIGH_PRIORITY_KEYWORDS.get(entity_subtype, [])
+    for kw in priority_keywords:
+        if kw in heading_lower:
+            return "high"
+
+    # Large sections are at least medium
+    if char_count >= 800:
+        return "medium"
+
+    # Small sections with no keyword match
+    if char_count < 300:
+        return "low"
+
+    return "medium"
+
+
+# ============================================================================
+# COVERAGE CHECK
+# ============================================================================
 
 def check_coverage(
     entity_name: str,
@@ -72,20 +136,29 @@ def check_coverage(
     """Check what headings from the raw source are missing from the note."""
     raw_chunks = chunk_by_headings(raw_text)
     note_lower = note_body.lower()
-
-    priority_keywords = HIGH_PRIORITY_KEYWORDS.get(entity_subtype, [])
+    mode = "deep" if should_use_deep_mode(entity_subtype, len(raw_text)) else "light"
 
     gaps: list[CoverageGap] = []
     covered = 0
+    total_significant = 0
 
     for chunk in raw_chunks:
         if chunk.char_count < MIN_SIGNIFICANT_CHARS:
             continue
 
-        heading_lower = chunk.heading.lower()
+        priority = classify_section_priority(chunk.heading, chunk.char_count, entity_subtype)
 
-        # Check if this heading's content is represented in the note
-        # Simple heuristic: check if key phrases from the chunk appear in the note
+        # Skip low priority in both modes
+        if priority == "low":
+            continue
+
+        # In light mode, skip medium too
+        if mode == "light" and priority == "medium":
+            continue
+
+        total_significant += 1
+
+        # Check if this section's content is represented in the note
         key_phrases = _extract_key_phrases(chunk.text)
         matches = sum(1 for phrase in key_phrases if phrase in note_lower)
         coverage_ratio = matches / max(len(key_phrases), 1)
@@ -94,10 +167,6 @@ def check_coverage(
             covered += 1
             continue
 
-        # This heading is not well covered — is it important?
-        is_high_priority = any(kw in heading_lower for kw in priority_keywords)
-        priority = "high" if is_high_priority else "medium" if chunk.char_count > 500 else "low"
-
         gaps.append(CoverageGap(
             heading=chunk.heading,
             char_count=chunk.char_count,
@@ -105,32 +174,31 @@ def check_coverage(
             priority=priority,
         ))
 
-    significant_chunks = [c for c in raw_chunks if c.char_count >= MIN_SIGNIFICANT_CHARS]
-    total = len(significant_chunks)
-    coverage_pct = (covered / total * 100) if total > 0 else 100.0
-
+    coverage_pct = (covered / total_significant * 100) if total_significant > 0 else 100.0
     high_gaps = [g for g in gaps if g.priority == "high"]
-    needs_second_pass = len(high_gaps) >= 2 or coverage_pct < 50
+    needs_second_pass = len(high_gaps) >= 2 or (mode == "deep" and coverage_pct < 40)
+
+    # Sort: high first, then by char_count
+    gaps.sort(key=lambda g: (0 if g.priority == "high" else 1, -g.char_count))
 
     return CoverageReport(
         entity_name=entity_name,
-        raw_headings=total,
+        raw_headings=total_significant,
         covered_headings=covered,
         gaps=gaps,
         coverage_pct=coverage_pct,
         needs_second_pass=needs_second_pass,
+        mode=mode,
     )
 
 
 def _extract_key_phrases(text: str, max_phrases: int = 10) -> list[str]:
     """Extract key phrases from text for coverage matching."""
-    import re
     sentences = re.split(r"[.!?]\s+", text[:2000])
     phrases: list[str] = []
     for sentence in sentences:
         words = sentence.lower().split()
         if len(words) >= 4:
-            # Take 3-4 word sequences as key phrases
             phrase = " ".join(words[1:4])
             if len(phrase) >= 10:
                 phrases.append(phrase)
@@ -142,5 +210,8 @@ def _extract_key_phrases(text: str, max_phrases: int = 10) -> list[str]:
 __all__ = [
     "CoverageGap",
     "CoverageReport",
+    "DEEP_MODE_SUBTYPES",
     "check_coverage",
+    "classify_section_priority",
+    "should_use_deep_mode",
 ]
