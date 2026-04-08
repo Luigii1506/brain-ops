@@ -81,6 +81,21 @@ brain suggest-entities --config config/vault.yaml
 This is allowed when the user says "enriquece X" or "crea entidad X" in conversation.
 Claude acts as the LLM directly (no API cost). But MUST follow these rules:
 
+**BEFORE writing — quality check (CRITICAL):**
+1. WebFetch the source URL to get the full content
+2. Identify ALL major sections/topics in the source
+3. Ask yourself: "If someone reads only my note, will they understand this entity completely?"
+4. For important entities (historical figures, empires, battles): every major event, campaign, relationship, and turning point MUST be represented — not just mentioned, but explained
+5. Don't write from general knowledge alone — verify against the source
+
+**Checklist for important entities (person, empire, battle, civilization):**
+- Are ALL major campaigns/events covered? (not just the famous ones)
+- Are key turning points explained? (not just listed as dates)
+- Are important relationships described with context? (not just "father of")
+- Are strategic decisions and their consequences included?
+- Are contradictions and uncertainties noted?
+- Would a reader understand WHY this entity matters, not just WHAT happened?
+
 **While writing any entity note directly:**
 1. Update frontmatter `related` field with all entities mentioned
 2. Use subtype-specific sections from `object_model.py`
@@ -89,7 +104,14 @@ Claude acts as the LLM directly (no API cost). But MUST follow these rules:
 5. Never leave Identity section empty
 6. Write in the same language as the entity name
 
-**After writing, run post-process to close the pipeline:**
+**After writing, verify coverage:**
+```bash
+brain post-process "Entity Name" --source-url "https://url-used" --config config/vault.yaml
+brain check-coverage "Entity Name" --config config/vault.yaml
+```
+If check-coverage shows high-priority gaps, enrich those sections before moving on.
+
+**After verification, close the pipeline:**
 ```bash
 brain post-process "Entity Name" --source-url "https://url-used" --config config/vault.yaml
 ```
