@@ -309,22 +309,33 @@ def _write_vault_log(
     if changelog_path.is_file():
         _append_to_changelog(changelog_path, date_str, entry_type, text)
 
-    # Append to Decisions.md for decision entries
+    # Append to Decisions.md for decision entries (ADR-lite format)
     if entry_type == "decision":
         decisions_path = vault_project_dir / "Decisions.md"
         if decisions_path.is_file():
+            # Count existing decisions to get next number
+            content = decisions_path.read_text(encoding="utf-8")
+            existing = re.findall(r"^##+ \d+\.", content, re.MULTILINE)
+            next_num = len(existing) + 1
             _append_line_to_file(
                 decisions_path,
-                f"\n- **{date_str}** — {text}\n",
+                f"\n---\n\n## {next_num:03d}. {text}\n\n"
+                f"**Fecha:** {date_str}\n"
+                f"**Contexto:** (pendiente de documentar)\n"
+                f"**Decisión:** {text}\n\n",
             )
 
-    # Append to Debugging.md for bug entries
+    # Append to Debugging.md for bug entries (structured format)
     if entry_type == "bug":
         debugging_path = vault_project_dir / "Debugging.md"
         if debugging_path.is_file():
             _append_line_to_file(
                 debugging_path,
-                f"\n- **{date_str}** — {text}\n",
+                f"\n---\n\n## {text}\n\n"
+                f"**Fecha:** {date_str}\n"
+                f"**Síntoma:** (pendiente)\n"
+                f"**Causa raíz:** (pendiente)\n"
+                f"**Solución:** (pendiente)\n\n",
             )
 
     # Create/prepend to session note (newest entry first)
