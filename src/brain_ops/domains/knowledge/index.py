@@ -29,8 +29,9 @@ def build_entity_index_entry(
 ) -> EntityIndexEntry | None:
     if not is_entity_note(frontmatter):
         return None
-    entity_type = frontmatter.get("type")
-    if not isinstance(entity_type, str) or entity_type not in ENTITY_TYPES:
+    # Use object_kind or subtype for grouping, fallback to type
+    entity_type = frontmatter.get("subtype") or frontmatter.get("type")
+    if not isinstance(entity_type, str):
         return None
     name = frontmatter.get("name")
     title = str(name).strip() if name else relative_path
@@ -69,7 +70,7 @@ def render_entity_index_markdown(
     lines.append("")
 
     for entity_type in sorted(groups):
-        type_label = ENTITY_TYPES.get(entity_type, entity_type)
+        type_label = ENTITY_TYPES.get(entity_type, entity_type.replace("_", " ").title())
         group = groups[entity_type]
         lines.append(f"## {entity_type.title()} ({len(group)})")
         lines.append(f"*{type_label}*")

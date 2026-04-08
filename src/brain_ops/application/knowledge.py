@@ -742,6 +742,36 @@ def execute_query_knowledge_workflow(
         )
         filed_path = operation.path
 
+    # Query learning: log the query and detect knowledge gaps
+    try:
+        from brain_ops.domains.knowledge.query_learning import build_query_record, save_query_log
+
+        existing_entity_names = {
+            fm.get("name") for _p, fm, _b in notes
+            if fm.get("entity") is True and isinstance(fm.get("name"), str)
+        }
+        record = build_query_record(
+            query, answer, sources_used, existing_entity_names,
+            had_llm_answer=llm_generate_text_fn is not None,
+            filed_back=filed_path is not None,
+        )
+        query_log_path = Path(vault.config.vault_path) / ".brain-ops" / "query_log.jsonl"
+        save_query_log(query_log_path, record)
+
+        # Update registry importance for queried entities
+        from brain_ops.domains.knowledge.registry import load_entity_registry, save_entity_registry
+
+        registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+        registry = load_entity_registry(registry_path)
+        for entity_name in record.entities_found:
+            entity = registry.get(entity_name)
+            if entity is not None:
+                entity.source_count += 1
+                registry.update_confidence(entity_name)
+        save_entity_registry(registry_path, registry)
+    except Exception:
+        pass
+
     return QueryResult(
         query=query,
         answer=answer,

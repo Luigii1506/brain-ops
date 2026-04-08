@@ -54,6 +54,8 @@ Rules for direct operations:
 - **Cross-enrichment**: After writing/enriching any entity, check if the new content contains facts, relationships, or insights about OTHER existing entities. If so, update those related entity notes too. Only add high-confidence, non-redundant facts. Mark cross-enriched items with *(cross-enriched from [[Source Entity]])*.
 - Always update frontmatter `related` field with all entities mentioned.
 - Always run `brain compile-knowledge` after changes.
+- **Source notes**: When enriching from a URL, also create a source note in `01 - Sources/` with the URL, source_type, confidence, and which entity was enriched. Format: `{Entity Name} - {Source Domain}.md`
+- **Query learning**: When answering questions, the system logs queries and detects knowledge gaps automatically. Entities mentioned in answers get importance boost in the registry.
 
 Vault path: `/Users/luisencinas/Documents/Obsidian Vault`
 Config: `config/vault.yaml`

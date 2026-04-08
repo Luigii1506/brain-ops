@@ -191,9 +191,11 @@ class BuildEntityIndexEntryTestCase(TestCase):
         fm = {"type": "source"}
         self.assertIsNone(build_entity_index_entry(fm, "01 - Sources/article.md"))
 
-    def test_returns_none_for_entity_with_unknown_type(self) -> None:
+    def test_accepts_any_subtype_for_entity(self) -> None:
         fm = {"entity": True, "type": "spaceship", "name": "Enterprise"}
-        self.assertIsNone(build_entity_index_entry(fm, "test.md"))
+        entry = build_entity_index_entry(fm, "test.md")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.entity_type, "spaceship")
 
     def test_uses_relative_path_as_title_when_name_missing(self) -> None:
         fm = {"entity": True, "type": "concept"}
