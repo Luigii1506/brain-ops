@@ -17,9 +17,31 @@ LINK_ALIASES: dict[str, str] = {
 # These are contextual: they MIGHT need redirect depending on meaning.
 # The fix-links command will use display aliases: [[canonical|display]]
 CONTEXTUAL_ALIASES: dict[str, str] = {
+    # Imperios / reinos referidos por nombre corto
     "Persia": "Imperio Persa",
-    # "Macedonia" is both a kingdom entity AND a region — keep as-is, it's correct
-    # "Grecia" is both a civilization AND a place — we have the entity, it's correct
+    "Imperio Aqueménida": "Imperio Persa",
+    "Imperio persa": "Imperio Persa",
+
+    # Entidades futuras probables — descomentar cuando se creen
+    # "Roma": "República Romana",  # o "Imperio Romano" según el contexto
+    # "Cartago": "Imperio Cartaginés",
+    # "Egipto": "Antiguo Egipto",  # cuando se cree como entidad histórica
+    # "Asiria": "Imperio Asirio",
+    # "Babilonia": "Imperio Babilónico",
+    # "Bizancio": "Imperio Bizantino",
+    # "Esparta": "Esparta",  # ya es correcto como está
+    # "Atenas": "Atenas",  # ya es correcto como está
+
+    # Personas referidas por nombre corto → nombre canónico
+    "Alejandro": "Alejandro Magno",
+    "Filipo": "Filipo II de Macedonia",
+    "Filipo II": "Filipo II de Macedonia",
+    "Darío": "Darío III",  # en contexto de Alejandro, Darío = Darío III
+    "Ciro": "Ciro el Grande",
+    "Clístenes": "Clístenes de Atenas",
+
+    # Obras referidas por nombre corto
+    "República": "La República",
 }
 
 
