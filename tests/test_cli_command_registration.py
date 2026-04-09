@@ -146,6 +146,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "apply-link-suggestions",
                 "promote-note",
                 "enrich-note",
+                "fix-links",
             },
         )
 

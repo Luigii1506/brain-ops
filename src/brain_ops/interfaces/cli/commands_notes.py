@@ -1361,4 +1361,37 @@ entity: false
             handle_error(error)
 
 
+    @app.command("fix-links")
+    def fix_links_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Corregir links ambiguos: [[Persia]] → [[Imperio Persa|Persia]], etc."""
+        try:
+            from brain_ops.domains.knowledge.link_aliases import fix_ambiguous_links
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            vault = load_validated_vault(config_path, dry_run=dry_run)
+            result = fix_ambiguous_links(vault.config.vault_path, dry_run=dry_run)
+
+            if as_json:
+                console.print_json(data=result.to_dict())
+                return
+
+            if result.fixes:
+                console.print(f"\n[bold]{'[dry-run] ' if dry_run else ''}Links corregidos:[/bold]")
+                seen_files: set[str] = set()
+                for file_path, old, new in result.fixes:
+                    if file_path not in seen_files:
+                        console.print(f"\n  [cyan]{file_path}[/cyan]")
+                        seen_files.add(file_path)
+                    console.print(f"    {old} → {new}")
+                console.print(f"\n[bold]Total:[/bold] {len(result.fixes)} links en {result.notes_fixed} notas")
+            else:
+                console.print("No se encontraron links ambiguos para corregir.")
+        except BrainOpsError as error:
+            handle_error(error)
+
+
 __all__ = ["register_note_and_knowledge_commands"]
