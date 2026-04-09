@@ -1365,6 +1365,7 @@ entity: false
     def fix_links_command(
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
         dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+        include_risky: bool = typer.Option(False, "--include-risky", help="Incluir aliases ambiguos (Roma, Egipto, Grecia)."),
         as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
     ) -> None:
         """Corregir links ambiguos: [[Persia]] → [[Imperio Persa|Persia]], etc."""
@@ -1373,7 +1374,7 @@ entity: false
             from brain_ops.interfaces.cli.runtime import load_validated_vault
 
             vault = load_validated_vault(config_path, dry_run=dry_run)
-            result = fix_ambiguous_links(vault.config.vault_path, dry_run=dry_run)
+            result = fix_ambiguous_links(vault.config.vault_path, dry_run=dry_run, include_risky=include_risky)
 
             if as_json:
                 console.print_json(data=result.to_dict())

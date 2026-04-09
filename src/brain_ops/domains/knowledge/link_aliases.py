@@ -7,43 +7,305 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# Map: ambiguous name → canonical entity name
-# These are cases where a short name almost always refers to a specific entity
-LINK_ALIASES: dict[str, str] = {
-    "Persia": "Imperio Persa",
-    "Egipto": "Alejandría",  # NO — Egipto is a place, not Alejandría. Remove this.
-}
+# =========================================================
+# ALIASES PARA WIKI HISTÓRICA
+# =========================================================
+#
+# 3 niveles de confianza:
+#
+# 1) SAFE_LINK_ALIASES — se aplican automáticamente con `brain fix-links`
+# 2) SPELLING_VARIANTS — variantes ortográficas, sin acento, transliteraciones
+# 3) RISKY_ALIASES — casos ambiguos, NO aplicar sin contexto
+#
+# Regla: no incluir self-mappings ("Esparta": "Esparta")
+#
+# Ejemplo en Obsidian:
+#   [[Persia]] → [[Imperio Persa|Persia]]
+#   [[Alejandro]] → [[Alejandro Magno|Alejandro]]
+# =========================================================
 
-# These are contextual: they MIGHT need redirect depending on meaning.
-# The fix-links command will use display aliases: [[canonical|display]]
-CONTEXTUAL_ALIASES: dict[str, str] = {
-    # Imperios / reinos referidos por nombre corto
+
+def _drop_identity(alias_map: dict[str, str]) -> dict[str, str]:
+    """Elimina entradas donde alias == canonical."""
+    return {a: c for a, c in alias_map.items() if a.strip() != c.strip()}
+
+
+# ---------------------------------------------------------
+# SAFE — se aplican automáticamente
+# ---------------------------------------------------------
+
+SAFE_LINK_ALIASES: dict[str, str] = _drop_identity({
+    # IMPERIOS / REINOS / ESTADOS
     "Persia": "Imperio Persa",
-    "Imperio Aqueménida": "Imperio Persa",
     "Imperio persa": "Imperio Persa",
+    "Imperio Aqueménida": "Imperio Persa",
+    "Imperio aqueménida": "Imperio Persa",
+    "Imperio aquemenida": "Imperio Persa",
+    "Aqueménidas": "Imperio Persa",
+    "Aqueménida": "Imperio Persa",
 
-    # Entidades futuras probables — descomentar cuando se creen
-    # "Roma": "República Romana",  # o "Imperio Romano" según el contexto
-    # "Cartago": "Imperio Cartaginés",
-    # "Egipto": "Antiguo Egipto",  # cuando se cree como entidad histórica
-    # "Asiria": "Imperio Asirio",
-    # "Babilonia": "Imperio Babilónico",
-    # "Bizancio": "Imperio Bizantino",
-    # "Esparta": "Esparta",  # ya es correcto como está
-    # "Atenas": "Atenas",  # ya es correcto como está
+    "Imperio sasánida": "Imperio Sasánida",
+    "Imperio sasanida": "Imperio Sasánida",
+    "Sasánidas": "Imperio Sasánida",
+    "Sasanidas": "Imperio Sasánida",
 
-    # Personas referidas por nombre corto → nombre canónico
+    "Partia": "Imperio Parto",
+    "Imperio parto": "Imperio Parto",
+    "Partos": "Imperio Parto",
+
+    "Asiria": "Imperio Asirio",
+    "Imperio asirio": "Imperio Asirio",
+    "Neoasiria": "Imperio Neoasirio",
+    "Imperio neoasirio": "Imperio Neoasirio",
+
+    # "Babilonia" es ambiguo (ciudad vs imperio) — movido a RISKY
+    "Imperio babilónico": "Imperio Babilónico",
+    "Imperio babilonico": "Imperio Babilónico",
+    "Neobabilonia": "Imperio Neobabilónico",
+    "Imperio neobabilónico": "Imperio Neobabilónico",
+    "Imperio neobabilonico": "Imperio Neobabilónico",
+    "Caldea": "Imperio Neobabilónico",
+
+    "Sumer": "Civilización sumeria",
+    "Sumeria": "Civilización sumeria",
+    "Acad": "Imperio acadio",
+    "Akkad": "Imperio acadio",
+    "Imperio acadio": "Imperio acadio",
+
+    "Hititas": "Imperio Hitita",
+    "Imperio hitita": "Imperio Hitita",
+    "Mitani": "Reino de Mitani",
+    "Urartu": "Reino de Urartu",
+    "Elam": "Civilización elamita",
+
+    # "Bizancio" es ambiguo (ciudad antigua vs imperio) — movido a RISKY
+    "Imperio bizantino": "Imperio Bizantino",
+    "Imperio romano de oriente": "Imperio Bizantino",
+
+    "Cartago": "Imperio Cartaginés",
+    "Cártago": "Imperio Cartaginés",
+    "Imperio cartaginés": "Imperio Cartaginés",
+    "Imperio cartagines": "Imperio Cartaginés",
+
+    "Macedonia": "Reino de Macedonia",
+    "Reino macedonio": "Reino de Macedonia",
+    "Epiro": "Reino de Epiro",
+    "Ponto": "Reino del Ponto",
+    "Pérgamo": "Reino de Pérgamo",
+    "Pergamo": "Reino de Pérgamo",
+    "Capadocia": "Reino de Capadocia",
+    "Bitinia": "Reino de Bitinia",
+
+    "Imperio seléucida": "Imperio seléucida",
+    "Imperio seleucida": "Imperio seléucida",
+    "Seléucidas": "Imperio seléucida",
+    "Seleucidas": "Imperio seléucida",
+    "Reino seléucida": "Imperio seléucida",
+    "Reino seleucida": "Imperio seléucida",
+
+    "Imperio ptolemaico": "Reino ptolemaico",
+    "Ptolemaicos": "Reino ptolemaico",
+    "Egipto ptolemaico": "Reino ptolemaico",
+
+    "Liga Délica": "Liga de Delos",
+    "Liga Delica": "Liga de Delos",
+    "Liga aquea": "Liga Aquea",
+    "Liga etolia": "Liga Etolia",
+    "Liga corintia": "Liga de Corinto",
+
+    # PERSONAS — MUNDO GRIEGO
+    "Clístenes": "Clístenes de Atenas",
+    "Clistenes": "Clístenes de Atenas",
+    "Leónidas": "Leónidas I",
+    "Leonidas": "Leónidas I",
+
+    # PERSONAS — MACEDONIA / HELENISMO
     "Alejandro": "Alejandro Magno",
+    "Alejandro III": "Alejandro Magno",
+    "Alejandro III de Macedonia": "Alejandro Magno",
     "Filipo": "Filipo II de Macedonia",
     "Filipo II": "Filipo II de Macedonia",
-    "Darío": "Darío III",  # en contexto de Alejandro, Darío = Darío III
+    "Filipo de Macedonia": "Filipo II de Macedonia",
+    # "Olimpia" es ambiguo (persona vs santuario/ciudad) — movido a RISKY
+    "Casandro": "Casandro de Macedonia",
+    "Pirro": "Pirro de Epiro",
+
+    # PERSONAS — MUNDO PERSA
     "Ciro": "Ciro el Grande",
-    "Clístenes": "Clístenes de Atenas",
+    "Ciro II": "Ciro el Grande",
+    "Cambises": "Cambises II",
+    "Jerjes": "Jerjes I",
 
-    # Obras referidas por nombre corto
+    # PERSONAS — MUNDO ROMANO
+    "César": "Julio César",
+    "Cesar": "Julio César",
+    "Octavio": "Augusto",
+    "Octaviano": "Augusto",
+    "Pompeyo": "Pompeyo Magno",
+    "Bruto": "Marco Junio Bruto",
+    "Casio": "Cayo Casio Longino",
+    "Constantino": "Constantino I",
+    "Justiniano": "Justiniano I",
+
+    # PERSONAS — EGIPTO / MESOPOTAMIA
+    "Akhenatón": "Akenatón",
+    "Akhenaton": "Akenatón",
+    "Amenhotep IV": "Akenatón",
+    "Ramsés": "Ramsés II",
+    "Ramses": "Ramsés II",
+    "Keops": "Jufu",
+    "Kefrén": "Jafra",
+    "Kefren": "Jafra",
+    "Sargón": "Sargón de Acad",
+    "Sargon": "Sargón de Acad",
+    "Nabucodonosor": "Nabucodonosor II",
+
+    # REGIONES / CIVILIZACIONES
+    "Hélade": "Antigua Grecia",
+    "Helade": "Antigua Grecia",
+    "Grecia antigua": "Antigua Grecia",
+    "Mundo griego": "Antigua Grecia",
+    "Mundo helénico": "Antigua Grecia",
+    "Mundo helenico": "Antigua Grecia",
+    "Mundo helenístico": "Período helenístico",
+    "Mundo helenistico": "Período helenístico",
+    "Helenismo": "Período helenístico",
+    "Mesopotamia": "Antigua Mesopotamia",
+    "Oriente Próximo": "Antiguo Oriente Próximo",
+    "Oriente Proximo": "Antiguo Oriente Próximo",
+    "Asia Menor": "Anatolia",
+    "Bactria": "Bactriana",
+
+    # GUERRAS / CONFLICTOS
+    "Guerras persas": "Guerras médicas",
+    "Guerras del Peloponeso": "Guerra del Peloponeso",
+    "Periodo helenistico": "Período helenístico",
+
+    # BATALLAS
+    "Maratón": "Batalla de Maratón",
+    "Maraton": "Batalla de Maratón",
+    "Termópilas": "Batalla de las Termópilas",
+    "Termopilas": "Batalla de las Termópilas",
+    "Salamina": "Batalla de Salamina",
+    "Platea": "Batalla de Platea",
+    "Mícale": "Batalla de Mícale",
+    "Micale": "Batalla de Mícale",
+    "Queronea": "Batalla de Queronea",
+    "Gránico": "Batalla del Gránico",
+    "Granico": "Batalla del Gránico",
+    "Issos": "Batalla de Issos",
+    "Arbela": "Batalla de Gaugamela",
+    "Hidaspes": "Batalla del Hidaspes",
+    "Accio": "Batalla de Accio",
+    "Actium": "Batalla de Accio",
+    # "Filipos" es ambiguo (ciudad vs batalla) — movido a RISKY
+    "Adrianópolis": "Batalla de Adrianópolis",
+    "Adrianopolis": "Batalla de Adrianópolis",
+    "Milvio": "Batalla del Puente Milvio",
+
+    # OBRAS / TEXTOS
     "República": "La República",
-}
+    "Republica": "La República",
 
+    # INSTITUCIONES
+    "Senado": "Senado romano",
+    "Ekklesia": "Ekklesía",
+})
+
+
+# ---------------------------------------------------------
+# SPELLING VARIANTS — variantes ortográficas sin acento
+# ---------------------------------------------------------
+
+SPELLING_VARIANTS: dict[str, str] = _drop_identity({
+    "Socrates": "Sócrates",
+    "Platon": "Platón",
+    "Aristoteles": "Aristóteles",
+    "Herodoto": "Heródoto",
+    "Tucidides": "Tucídides",
+    "Temistocles": "Temístocles",
+    "Milciades": "Milcíades",
+    "Alcibiades": "Alcibíades",
+    "Solon": "Solón",
+    "Dracon": "Dracón",
+    "Pisistrato": "Pisístrato",
+    "Pelopidas": "Pelópidas",
+    "Hesiodo": "Hesíodo",
+    "Pindaro": "Píndaro",
+    "Pitagoras": "Pitágoras",
+    "Parmenides": "Parménides",
+    "Heraclito": "Heráclito",
+    "Democrito": "Demócrito",
+    "Sofocles": "Sófocles",
+    "Euripides": "Eurípides",
+    "Aristofanes": "Aristófanes",
+    "Antipatro": "Antípatro",
+    "Dario": "Darío III",
+    "Artajerjes": "Artajerjes I",
+    "Ramses II": "Ramsés II",
+    "Akenaton": "Akenatón",
+    "Tutankamon": "Tutankamón",
+    "Tutankhamon": "Tutankamón",
+    "Julio Cesar": "Julio César",
+    "Ciceron": "Cicerón",
+    "Anibal": "Aníbal",
+    "Neron": "Nerón",
+    "Caligula": "Calígula",
+    "Alejandria": "Alejandría",
+    "Persepolis": "Persépolis",
+    "Ilion": "Troya",
+    "Iliada": "Ilíada",
+    "Teogonia": "Teogonía",
+    "Anabasis": "Anábasis",
+})
+
+
+# ---------------------------------------------------------
+# RISKY — NO aplicar automáticamente sin contexto
+# ---------------------------------------------------------
+
+RISKY_ALIASES: dict[str, str] = _drop_identity({
+    # Estados / regiones / ciudades ambiguos
+    "Roma": "República Romana",
+    "Egipto": "Antiguo Egipto",
+    "Grecia": "Antigua Grecia",
+    "Siria": "Siria seléucida",
+    "Persas": "Imperio Persa",
+    "Macedonios": "Reino de Macedonia",
+    "Babilonia": "Imperio Babilónico",  # puede ser la ciudad
+    "Bizancio": "Imperio Bizantino",  # puede ser la ciudad antigua
+    "Olimpia": "Olimpia de Epiro",  # puede ser el santuario
+    "Filipos": "Batalla de Filipos",  # puede ser la ciudad
+
+    # Personas con múltiples homónimos
+    "Darío": "Darío III",
+    "Ptolomeo": "Ptolomeo I Sóter",
+    "Seleuco": "Seleuco I Nicátor",
+    "Antíoco": "Antíoco III el Grande",
+    "Antígono": "Antígono I Monoftalmos",
+    "Demetrio": "Demetrio I Poliorcetes",
+    "Cleopatra": "Cleopatra VII",
+    "Ramsés": "Ramsés II",
+})
+
+# Merge safe + spelling for default use by fix-links
+ALL_SAFE_ALIASES: dict[str, str] = {**SAFE_LINK_ALIASES, **SPELLING_VARIANTS}
+
+
+def resolve_alias(term: str, *, allow_risky: bool = False) -> str | None:
+    """Devuelve nombre canónico si encuentra alias exacto, o None."""
+    if term in SAFE_LINK_ALIASES:
+        return SAFE_LINK_ALIASES[term]
+    if term in SPELLING_VARIANTS:
+        return SPELLING_VARIANTS[term]
+    if allow_risky and term in RISKY_ALIASES:
+        return RISKY_ALIASES[term]
+    return None
+
+
+# =========================================================
+# LINK FIXING
+# =========================================================
 
 @dataclass(slots=True, frozen=True)
 class LinkFixResult:
@@ -64,6 +326,7 @@ def fix_ambiguous_links(
     aliases: dict[str, str] | None = None,
     *,
     dry_run: bool = False,
+    include_risky: bool = False,
     excluded_parts: set[str] | None = None,
 ) -> LinkFixResult:
     """Scan vault notes and replace [[alias]] with [[canonical|alias]].
@@ -72,7 +335,9 @@ def fix_ambiguous_links(
     This preserves the display text while linking to the correct entity.
     """
     if aliases is None:
-        aliases = CONTEXTUAL_ALIASES
+        aliases = dict(ALL_SAFE_ALIASES)
+        if include_risky:
+            aliases.update(RISKY_ALIASES)
     if excluded_parts is None:
         excluded_parts = {".git", ".obsidian", ".brain-ops", "Templates"}
 
@@ -93,16 +358,11 @@ def fix_ambiguous_links(
         file_fixed = False
 
         for alias, canonical in aliases.items():
-            # Skip the canonical entity's own note
             if md_file.stem == canonical:
                 continue
 
-            # Match [[alias]] but NOT [[canonical|alias]] (already fixed)
-            pattern = re.compile(
-                rf"\[\[{re.escape(alias)}\]\]",
-            )
+            pattern = re.compile(rf"\[\[{re.escape(alias)}\]\]")
 
-            # Don't replace if it's already [[canonical|alias]]
             already_fixed = f"[[{canonical}|{alias}]]"
             if already_fixed in new_content:
                 continue
@@ -158,9 +418,12 @@ def add_alias_to_frontmatter(
 
 
 __all__ = [
-    "CONTEXTUAL_ALIASES",
-    "LINK_ALIASES",
+    "ALL_SAFE_ALIASES",
     "LinkFixResult",
+    "RISKY_ALIASES",
+    "SAFE_LINK_ALIASES",
+    "SPELLING_VARIANTS",
     "add_alias_to_frontmatter",
     "fix_ambiguous_links",
+    "resolve_alias",
 ]
