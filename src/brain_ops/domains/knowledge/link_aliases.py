@@ -87,8 +87,9 @@ SAFE_LINK_ALIASES: dict[str, str] = _drop_identity({
     "Imperio cartaginés": "Imperio Cartaginés",
     "Imperio cartagines": "Imperio Cartaginés",
 
-    "Macedonia": "Reino de Macedonia",
-    "Reino macedonio": "Reino de Macedonia",
+    # "Macedonia" NO incluido — la nota se llama Macedonia.md y ya es la entidad correcta
+    "Reino macedonio": "Macedonia",
+    "Reino de Macedonia": "Macedonia",  # redirect inverso: si alguien escribe el nombre largo
     "Epiro": "Reino de Epiro",
     "Ponto": "Reino del Ponto",
     "Pérgamo": "Reino de Pérgamo",
