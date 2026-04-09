@@ -163,12 +163,17 @@ Config: `config/vault.yaml`
 
 **AFTER completing significant work:**
 1. Log what you did: `brain project-log brain-ops "resumen de lo que hiciste" --config config/vault.yaml`
-2. For decisions, prefix with "decisión:": `brain project-log brain-ops "decisión: usar X por Y" --config config/vault.yaml`
-3. For bugs found, prefix with "bug:": `brain project-log brain-ops "bug: descripción" --config config/vault.yaml`
-4. For next steps, prefix with "next:": `brain project-log brain-ops "next: lo que sigue" --config config/vault.yaml`
+2. Refresh the project docs/context pack: `brain refresh-project brain-ops --config config/vault.yaml`
+3. For decisions, prefix with "decisión:": `brain project-log brain-ops "decisión: usar X por Y" --config config/vault.yaml`
+4. For bugs found, prefix with "bug:": `brain project-log brain-ops "bug: descripción" --config config/vault.yaml`
+5. For next steps, prefix with "next:": `brain project-log brain-ops "next: lo que sigue" --config config/vault.yaml`
 
 **AFTER git commits:**
-The commit message is already in git history. Only log to project-log if the change is architecturally significant or involves a decision.
+The repository now uses shared git hooks:
+- `.githooks/post-commit` runs `brain project-log` and `brain refresh-project`
+- `.githooks/post-merge` and `.githooks/post-rewrite` run `brain refresh-project`
+
+This keeps the vault project docs and context pack synchronized when the repository changes. Only log manually if the change is architecturally significant beyond the commit itself or if no commit was made.
 
 ## Preferred implementation stack
 

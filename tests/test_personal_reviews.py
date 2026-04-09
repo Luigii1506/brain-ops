@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from brain_ops.domains.personal.reviews import (
     DailyReview,
     WeeklyReview,

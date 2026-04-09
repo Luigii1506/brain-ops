@@ -9,14 +9,18 @@ from unittest import TestCase
 from brain_ops.application.projects import (
     ProjectAuditResult,
     ProjectLogResult,
+    ProjectRefreshResult,
     ProjectSessionResult,
     _classify_entry,
+    build_agent_context_pack,
     execute_audit_project_workflow,
     execute_project_log_workflow,
+    execute_refresh_project_workflow,
     execute_register_project_workflow,
     execute_session_workflow,
 )
 from brain_ops.errors import ConfigError
+from brain_ops.interfaces.cli.projects import _build_context_pack
 from brain_ops.storage.db import initialize_database
 from brain_ops.storage.sqlite.project_logs import (
     fetch_project_logs,
@@ -465,6 +469,125 @@ class SessionWithVaultTestCase(TestCase):
             self.assertEqual(len(result.vault_bugs), 1)
             self.assertIn("Config path not resolving on Windows", result.vault_bugs[0])
             self.assertEqual(result.vault_path, str(self.vault_project_dir))
+        finally:
+            proj_mod._resolve_vault_project_dir = original
+
+    def test_refresh_project_syncs_registry_context_from_vault(self) -> None:
+        import brain_ops.application.projects as proj_mod
+
+        original = proj_mod._resolve_vault_project_dir
+        proj_mod._resolve_vault_project_dir = lambda cp, pn: self.vault_project_dir
+        try:
+            result = execute_refresh_project_workflow(
+                project_name="brain-ops",
+                load_registry_path=lambda: self.registry_path,
+                load_database_path=lambda: self.db_path,
+                config_path=Path("dummy"),
+            )
+            self.assertIsInstance(result, ProjectRefreshResult)
+            self.assertIn("Project registry context", result.refreshed)
+
+            project = execute_session_workflow(
+                project_name="brain-ops",
+                load_registry_path=lambda: self.registry_path,
+                load_database_path=lambda: self.db_path,
+                run_git_log=lambda _: [],
+                config_path=Path("dummy"),
+            ).project
+            self.assertEqual(project.context.phase, "Working on audit feature.")
+            self.assertEqual(
+                project.context.pending,
+                [
+                    "Finish tests.",
+                ],
+            )
+            self.assertIsNone(project.context.notes)
+            self.assertIsNone(project.commands.get("test"))
+        finally:
+            proj_mod._resolve_vault_project_dir = original
+
+    def test_context_pack_excludes_next_actions_and_bugs_blockers_sections(self) -> None:
+        import brain_ops.application.projects as proj_mod
+        from brain_ops.application.projects import execute_update_project_context_workflow
+
+        execute_update_project_context_workflow(
+            name="brain-ops",
+            phase="active",
+            pending=["Finish tests", "Remove stale blockers"],
+            decisions=None,
+            notes=None,
+            load_registry_path=lambda: self.registry_path,
+        )
+        insert_project_log(
+            self.db_path,
+            project_name="brain-ops",
+            entry_type="bug",
+            entry_text="stale bug entry that should not appear in context pack",
+        )
+
+        original = proj_mod._resolve_vault_project_dir
+        proj_mod._resolve_vault_project_dir = lambda cp, pn: self.vault_project_dir
+        try:
+            result = execute_session_workflow(
+                project_name="brain-ops",
+                load_registry_path=lambda: self.registry_path,
+                load_database_path=lambda: self.db_path,
+                run_git_log=lambda _: [],
+                config_path=Path("dummy"),
+            )
+            context_pack = _build_context_pack(result)
+            self.assertNotIn("Next actions:", context_pack)
+            self.assertNotIn("Bugs/blockers:", context_pack)
+            self.assertNotIn("Finish tests", context_pack)
+            self.assertNotIn("stale bug entry", context_pack)
+            self.assertIn("Status:", context_pack)
+            self.assertIn("Working on audit feature", context_pack)
+        finally:
+            proj_mod._resolve_vault_project_dir = original
+
+    def test_context_pack_omits_stale_phase_pending_notes_and_derives_test_command(self) -> None:
+        import brain_ops.application.projects as proj_mod
+        from brain_ops.application.projects import (
+            execute_register_project_workflow,
+            execute_update_project_context_workflow,
+        )
+
+        fake_project_dir = self.tmp_path / "repo"
+        (fake_project_dir / "tests").mkdir(parents=True)
+        (fake_project_dir / "uv.lock").write_text("", encoding="utf-8")
+        execute_register_project_workflow(
+            name="brain-ops",
+            path=str(fake_project_dir),
+            stack=["python"],
+            description="Test project",
+            commands=None,
+            load_registry_path=lambda: self.registry_path,
+        )
+
+        execute_update_project_context_workflow(
+            name="brain-ops",
+            phase="stale phase",
+            pending=["stale pending item"],
+            decisions=None,
+            notes="stale notes",
+            load_registry_path=lambda: self.registry_path,
+        )
+
+        original = proj_mod._resolve_vault_project_dir
+        proj_mod._resolve_vault_project_dir = lambda cp, pn: self.vault_project_dir
+        try:
+            result = execute_session_workflow(
+                project_name="brain-ops",
+                load_registry_path=lambda: self.registry_path,
+                load_database_path=lambda: self.db_path,
+                run_git_log=lambda _: [],
+                config_path=Path("dummy"),
+            )
+            context_pack = build_agent_context_pack(result)
+            self.assertNotIn("stale phase", context_pack)
+            self.assertNotIn("stale pending item", context_pack)
+            self.assertNotIn("stale notes", context_pack)
+            self.assertIn("test: uv run python -m unittest discover -s tests -v", context_pack)
         finally:
             proj_mod._resolve_vault_project_dir = original
 

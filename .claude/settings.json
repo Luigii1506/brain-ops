@@ -1,16 +1,3 @@
 {
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if echo \"$TOOL_INPUT\" | grep -q 'git commit'; then COMMIT_MSG=$(cd /Users/luisencinas/Documents/GitHub/brain-ops && git log -1 --pretty=%s 2>/dev/null); brain project-log brain-ops \"commit: $COMMIT_MSG\" --config config/vault.yaml 2>/dev/null || true; fi",
-            "timeout": 15
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }

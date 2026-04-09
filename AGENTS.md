@@ -16,6 +16,7 @@ brain session brain-ops --context-only --config config/vault.yaml
 Registra lo que hiciste:
 ```bash
 brain project-log brain-ops "lo que hiciste" --config config/vault.yaml
+brain refresh-project brain-ops --config config/vault.yaml
 ```
 
 Usa prefijos para clasificacion:
@@ -25,7 +26,7 @@ Usa prefijos para clasificacion:
 
 ## Despues de commits en git
 
-Los commits se registran automaticamente via hooks. Solo ejecuta `brain project-log` manualmente si el cambio involucra una decision arquitectonica o es particularmente significativo.
+Los commits se registran automaticamente via el hook compartido del repo (`.githooks/post-commit`), que ejecuta `brain project-log` y `brain refresh-project`. Ademas, `.githooks/post-merge` y `.githooks/post-rewrite` corren `brain refresh-project` para resync del context pack cuando cambia el estado del repo sin un commit normal. Solo ejecuta `brain project-log` manualmente si el cambio involucra una decision arquitectonica o es particularmente significativo; despues corre `brain refresh-project` para mantener el context pack y el registry sincronizados.
 
 ## Resumen del proyecto
 

@@ -446,17 +446,6 @@ def _read_vault_project_data(
                 if status:
                     vault_status = status
                     break
-            next_actions = _extract_section(content, "Next Actions")
-            if not next_actions:
-                next_actions = _extract_section(content, "Next actions")
-            if next_actions and not vault_status:
-                vault_status = next_actions
-            elif next_actions:
-                vault_status = f"{vault_status}\n\nNext actions:\n{next_actions}"
-            # Extract blockers
-            blockers = _extract_section(content, "Blockers")
-            if blockers:
-                vault_status = f"{vault_status}\n\nBlockers:\n{blockers}" if vault_status else blockers
             break
 
     # Read Decisions.md — extract ADR titles (lines starting with "### ")
@@ -480,6 +469,84 @@ def _read_vault_project_data(
         vault_bugs = headings[:5] if headings else []
 
     return vault_status, vault_decisions, vault_bugs
+
+
+def _extract_section_list(content: str, *headings: str) -> list[str]:
+    for heading in headings:
+        section = _extract_section(content, heading)
+        if not section:
+            continue
+        items: list[str] = []
+        for line in section.splitlines():
+            text = line.strip()
+            if not text:
+                continue
+            text = re.sub(r"^[-*]\s+", "", text)
+            text = re.sub(r"^\d+\.\s+", "", text)
+            text = text.strip()
+            if text:
+                items.append(text)
+        if items:
+            return items
+    return []
+
+
+def _sync_project_registry_from_vault(project: Project, vault_project_dir: Path) -> bool:
+    changed = False
+    root_note = None
+    for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
+        candidate_path = vault_project_dir / candidate
+        if candidate_path.is_file():
+            root_note = candidate_path
+            break
+
+    if root_note is not None:
+        content = root_note.read_text(encoding="utf-8")[:12000]
+        phase = (
+            _extract_section(content, "Foco actual")
+            or _extract_section(content, "Current Focus")
+            or _extract_section(content, "Current status")
+            or _extract_section(content, "Estado actual")
+        )
+        pending = _extract_section_list(
+            content,
+            "Próximas acciones (top 3)",
+            "Proximas acciones (top 3)",
+            "Próximas acciones",
+            "Proximas acciones",
+            "Next actions",
+            "En progreso",
+            "In Progress",
+        )
+
+        if project.context.phase != phase:
+            project.context.phase = phase
+            changed = True
+        if project.context.pending != pending:
+            project.context.pending = pending
+            changed = True
+        if project.context.notes is not None:
+            project.context.notes = None
+            changed = True
+
+    decisions_path = vault_project_dir / "Decisions.md"
+    if decisions_path.is_file():
+        content = decisions_path.read_text(encoding="utf-8")
+        adrs = re.findall(r"^###\s+(.+)$", content, re.MULTILINE)
+        if adrs:
+            decisions = adrs[-7:]
+        else:
+            decisions = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)[-7:]
+        if project.context.decisions != decisions:
+            project.context.decisions = decisions
+            changed = True
+
+    commands = _derive_context_commands(project)
+    if project.commands != commands:
+        project.commands = commands
+        changed = True
+
+    return changed
 
 
 def _resolve_vault_project_dir(
@@ -764,6 +831,56 @@ def _generate_cli_reference(project_path: str | None) -> str:
     return ""
 
 
+def _derive_context_commands(project: Project) -> dict[str, str]:
+    commands = dict(project.commands)
+    project_dir = Path(project.path)
+    if project_dir.is_dir() and (project_dir / "uv.lock").is_file() and (project_dir / "tests").is_dir():
+        commands["test"] = "uv run python -m unittest discover -s tests -v"
+    return commands
+
+
+def build_agent_context_pack(result: ProjectSessionResult) -> str:
+    """Build the compact project briefing used by agents and auto context packs."""
+    project = result.project
+    sections: list[str] = []
+
+    header = f"Project: {project.name}"
+    if project.description:
+        header += f" — {project.description}"
+    if project.stack:
+        header += f"\nStack: {', '.join(project.stack)}"
+    sections.append(header)
+
+    if result.vault_status:
+        sections.append(f"Status: {result.vault_status[:500]}")
+
+    commands = _derive_context_commands(project)
+    if commands:
+        cmd_lines = [f"  {label}: {cmd}" for label, cmd in commands.items()]
+        sections.append("Commands:\n" + "\n".join(cmd_lines))
+
+    decisions = list(result.vault_decisions or []) or list(project.context.decisions or [])
+    if decisions:
+        sections.append("Recent decisions:\n" + "\n".join(f"  - {d}" for d in decisions[-3:]))
+
+    visible_logs = [
+        log
+        for log in (result.recent_logs or [])
+        if log.get("entry_type") not in {"bug", "blocker", "next"}
+    ]
+    if visible_logs:
+        log_lines = []
+        for log in visible_logs[:5]:
+            date_part = log["logged_at"][:10] if log.get("logged_at") else "?"
+            log_lines.append(f"  [{date_part}] {log['entry_type']}: {log['entry_text'][:80]}")
+        sections.append("Recent activity:\n" + "\n".join(log_lines))
+
+    if result.recent_commits:
+        sections.append("Recent commits:\n" + "\n".join(f"  {c}" for c in result.recent_commits[:3]))
+
+    return "\n\n".join(sections)
+
+
 def _generate_context_pack_content(
     project_name: str,
     load_registry_path,
@@ -778,38 +895,15 @@ def _generate_context_pack_content(
             load_database_path=load_database_path,
             config_path=config_path,
         )
-        # Build a compact context pack — reuse the same function from CLI
-        project = result.project
-        lines: list[str] = []
-        lines.append(f"Proyecto: {project.name}")
-        if project.description:
-            lines.append(f"Descripción: {project.description}")
-        if project.stack:
-            lines.append(f"Stack: {', '.join(project.stack)}")
-        if project.context.phase:
-            lines.append(f"Fase: {project.context.phase}")
-        if project.context.pending:
-            lines.append("Próximas acciones:")
-            for p in project.context.pending[:5]:
-                lines.append(f"  - {p}")
-        if project.commands:
-            lines.append("Comandos:")
-            for label, cmd in project.commands.items():
-                lines.append(f"  {label}: {cmd}")
-        if project.context.decisions:
-            lines.append("Decisiones recientes:")
-            for d in project.context.decisions[-3:]:
-                lines.append(f"  - {d}")
-        if result.recent_logs:
-            lines.append("Actividad reciente:")
-            for log in result.recent_logs[:5]:
-                date_part = log["logged_at"][:10] if log.get("logged_at") else "?"
-                lines.append(f"  [{date_part}] {log['entry_type']}: {log['entry_text'][:80]}")
-        if result.vault_status:
-            lines.append(f"Estado: {result.vault_status[:500]}")
-        if project.context.notes:
-            lines.append(f"Notas: {project.context.notes}")
-        return "\n".join(lines)
+        context = build_agent_context_pack(result)
+        return (
+            context.replace("Project:", "Proyecto:")
+            .replace("\nStatus:", "\nEstado:")
+            .replace("\nCommands:", "\nComandos:")
+            .replace("\nRecent decisions:", "\nDecisiones recientes:")
+            .replace("\nRecent activity:", "\nActividad reciente:")
+            .replace("\nRecent commits:", "\nCommits recientes:")
+        )
     except Exception:
         return ""
 
@@ -858,6 +952,13 @@ def execute_refresh_project_workflow(
 
     refreshed: list[str] = []
     skipped: list[str] = []
+
+    if _sync_project_registry_from_vault(project, vault_project_dir):
+        registry[project.name] = project
+        save_project_registry(registry_path, registry)
+        refreshed.append("Project registry context")
+    else:
+        skipped.append("Project registry context (sin cambios)")
 
     # 1. Refresh Context Pack
     context_pack_dir = vault_project_dir / "Context Packs"
@@ -943,12 +1044,14 @@ __all__ = [
     "ProjectLogResult",
     "ProjectRegistryResult",
     "ProjectSessionResult",
+    "build_agent_context_pack",
     "execute_audit_project_workflow",
     "execute_generate_all_claude_md_workflow",
     "execute_generate_claude_md_workflow",
     "execute_list_projects_workflow",
     "execute_project_context_workflow",
     "execute_project_log_workflow",
+    "execute_refresh_project_workflow",
     "execute_register_project_workflow",
     "execute_session_workflow",
     "execute_update_project_context_workflow",

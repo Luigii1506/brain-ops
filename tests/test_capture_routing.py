@@ -5,8 +5,6 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from brain_ops.interfaces.conversation.routing_input import (
     normalize_capture_text,
     route_input,
@@ -135,15 +133,15 @@ class TestReflectiveDetection:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def tmp_db(tmp_path: Path) -> Path:
+def make_tmp_db(tmp_path: Path) -> Path:
     db_path = tmp_path / "test.db"
     initialize_database(db_path)
     return db_path
 
 
 class TestCaptureLogInsertAndFetch:
-    def test_insert_and_fetch(self, tmp_db: Path):
+    def test_insert_and_fetch(self, tmp_path: Path):
+        tmp_db = make_tmp_db(tmp_path)
         insert_capture_log(
             tmp_db,
             input_text="comí dos huevos",
@@ -168,7 +166,8 @@ class TestCaptureLogInsertAndFetch:
         assert log["source"] == "cli"
         assert log["logged_at"] is not None
 
-    def test_fetch_respects_limit(self, tmp_db: Path):
+    def test_fetch_respects_limit(self, tmp_path: Path):
+        tmp_db = make_tmp_db(tmp_path)
         for i in range(5):
             insert_capture_log(
                 tmp_db,
@@ -182,7 +181,8 @@ class TestCaptureLogInsertAndFetch:
         logs = fetch_recent_capture_logs(tmp_db, limit=3)
         assert len(logs) == 3
 
-    def test_fetch_returns_newest_first(self, tmp_db: Path):
+    def test_fetch_returns_newest_first(self, tmp_path: Path):
+        tmp_db = make_tmp_db(tmp_path)
         insert_capture_log(
             tmp_db,
             input_text="first",
