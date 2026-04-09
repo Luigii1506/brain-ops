@@ -10,6 +10,7 @@ from brain_ops.intents import (
     LogMealIntent,
     LogSupplementIntent,
     LogWorkoutIntent,
+    TaskIntent,
 )
 from brain_ops.services.body_metrics_service import log_body_metrics
 from brain_ops.services.daily_log_service import log_daily_event
@@ -133,5 +134,27 @@ def execute_logging_intent(
                 operations=result.operations,
                 normalized_fields={"log_domain": intent.log_domain},
                 reason="Executed daily log intent.",
+            )
+        case TaskIntent():
+            if dry_run:
+                return build_execution_outcome(
+                    payload={"title": intent.title, "project": intent.project},
+                    operations=[],
+                    normalized_fields={"title": intent.title, "project": intent.project},
+                    reason="Would create task (dry run).",
+                )
+            from brain_ops.storage.sqlite.tasks import insert_task
+
+            task_id = insert_task(
+                db_path,
+                intent.title,
+                project=intent.project,
+                source="capture",
+            )
+            return build_execution_outcome(
+                payload={"id": task_id, "title": intent.title, "project": intent.project},
+                operations=[],
+                normalized_fields={"title": intent.title, "project": intent.project, "task_id": task_id},
+                reason=f"Created task #{task_id}.",
             )
     return None

@@ -52,6 +52,27 @@ def build_logging_route_decision(text: str) -> RouteDecisionResult | None:
     lowered = stripped.lower()
     extracted: dict[str, object] = {}
 
+    # Task detection — explicit prefixes
+    if any(lowered.startswith(prefix) for prefix in ["pendiente:", "pendiente ", "todo:", "task:"]):
+        # Extract project if present: "pendiente oharatcg: arreglar bug"
+        import re
+        task_match = re.match(r"(?:pendiente|todo|task):?\s*(?:(\w[\w-]*):\s*)?(.+)", stripped, re.IGNORECASE)
+        if task_match:
+            project_hint = task_match.group(1)
+            title_hint = task_match.group(2).strip()
+            if project_hint:
+                extracted["project_hint"] = project_hint
+            extracted["title_hint"] = title_hint
+        return RouteDecisionResult(
+            input_text=stripped,
+            domain="tasks",
+            command="task",
+            confidence=0.92,
+            reason="Detected task/pendiente prefix.",
+            routing_source="heuristic",
+            extracted_fields=extracted,
+        )
+
     if any(keyword in lowered for keyword in ["gasté", "gaste", "pagué", "pague", "$", "mxn", "pesos", "compre", "compré"]):
         extracted["category_hint"] = _expense_category_hint(lowered)
         amount_match = AMOUNT_PATTERN.search(stripped)

@@ -103,6 +103,10 @@ class CliCommandRegistrationTestCase(TestCase):
                 "daily-review",
                 "week-review",
                 "capture",
+                "task",
+                "tasks",
+                "task-done",
+                "task-update",
             },
         )
 

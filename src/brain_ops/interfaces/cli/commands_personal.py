@@ -542,4 +542,178 @@ def register_personal_commands(app: typer.Typer, console: Console, handle_error)
             handle_error(error)
 
 
+    # -----------------------------------------------------------------------
+    # TASKS
+    # -----------------------------------------------------------------------
+
+    @app.command("task")
+    def task_command(
+        title: str,
+        project: str | None = typer.Option(None, "--project", "-p", help="Proyecto asociado."),
+        priority: str = typer.Option("medium", "--priority", help="high, medium, low."),
+        due: str | None = typer.Option(None, "--due", help="Fecha límite (YYYY-MM-DD)."),
+        focus: str | None = typer.Option(None, "--focus", help="Fecha de foco (YYYY-MM-DD)."),
+        tag: list[str] = typer.Option(None, "--tag", help="Tags (repetible)."),
+        note: str | None = typer.Option(None, "--note", help="Nota adicional."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="JSON output."),
+    ) -> None:
+        """Crear una tarea nueva."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path
+            from brain_ops.storage.sqlite.tasks import insert_task
+
+            db_path = load_database_path(config_path)
+
+            # Validar project contra registry si existe
+            if project:
+                try:
+                    from brain_ops.interfaces.cli.projects import load_project_registry_path
+                    from brain_ops.domains.projects import load_project_registry
+
+                    registry = load_project_registry(load_project_registry_path())
+                    if project not in registry:
+                        console.print(f"[yellow]Aviso: proyecto '{project}' no está en el registry[/yellow]")
+                except Exception:
+                    pass
+
+            task_id = insert_task(
+                db_path,
+                title,
+                project=project,
+                priority=priority,
+                due_date=due,
+                focus_date=focus,
+                tags=tag or None,
+                note=note,
+                source="cli",
+            )
+
+            if as_json:
+                console.print_json(data={"id": task_id, "title": title, "project": project, "priority": priority})
+            else:
+                proj_str = f" [{project}]" if project else ""
+                due_str = f" (vence: {due})" if due else ""
+                console.print(f"✓ Tarea #{task_id}{proj_str}: {title}{due_str} [{priority}]")
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("tasks")
+    def tasks_command(
+        project: str | None = typer.Option(None, "--project", "-p", help="Filtrar por proyecto. 'personal' para sin proyecto."),
+        priority: str | None = typer.Option(None, "--priority", help="Filtrar por prioridad."),
+        status: str | None = typer.Option(None, "--status", help="Filtrar por estado."),
+        due_soon: bool = typer.Option(False, "--due-soon", help="Solo tareas que vencen en 7 días."),
+        focus_today: bool = typer.Option(False, "--focus", help="Solo tareas con focus_date <= hoy."),
+        all_tasks: bool = typer.Option(False, "--all", help="Incluir done y cancelled."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="JSON output."),
+    ) -> None:
+        """Listar tareas pendientes."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path
+            from brain_ops.storage.sqlite.tasks import fetch_tasks
+
+            db_path = load_database_path(config_path)
+            effective_status = None if all_tasks else status
+            tasks = fetch_tasks(
+                db_path,
+                project=project,
+                status=effective_status,
+                priority=priority,
+                due_soon_days=7 if due_soon else None,
+                focus_today=focus_today,
+            )
+
+            if as_json:
+                console.print_json(data=tasks)
+                return
+
+            if not tasks:
+                console.print("No hay tareas pendientes.")
+                return
+
+            from rich.table import Table
+
+            table = Table(title="Tareas", show_lines=False)
+            table.add_column("#", style="dim", width=4)
+            table.add_column("Proyecto", style="cyan", width=15)
+            table.add_column("Tarea", width=40)
+            table.add_column("Prior.", width=6)
+            table.add_column("Estado", width=8)
+            table.add_column("Vence", width=12)
+            table.add_column("Foco", width=12)
+
+            priority_colors = {"high": "red", "medium": "yellow", "low": "dim"}
+            status_icons = {"pending": "○", "active": "●", "done": "✓", "cancelled": "✗"}
+
+            for t in tasks:
+                pcolor = priority_colors.get(t["priority"], "")
+                sicon = status_icons.get(t["status"], "?")
+                table.add_row(
+                    str(t["id"]),
+                    t["project"] or "personal",
+                    t["title"][:40],
+                    f"[{pcolor}]{t['priority']}[/{pcolor}]",
+                    sicon,
+                    t.get("due_date") or "—",
+                    t.get("focus_date") or "—",
+                )
+
+            console.print(table)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("task-done")
+    def task_done_command(
+        task_id: int,
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Marcar una tarea como completada."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path
+            from brain_ops.storage.sqlite.tasks import complete_task, fetch_task_by_id
+
+            db_path = load_database_path(config_path)
+            task = fetch_task_by_id(db_path, task_id)
+            if not task:
+                console.print(f"Tarea #{task_id} no encontrada.")
+                return
+
+            complete_task(db_path, task_id)
+            console.print(f"✓ Tarea #{task_id} completada: {task['title']}")
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("task-update")
+    def task_update_command(
+        task_id: int,
+        priority: str | None = typer.Option(None, "--priority", help="Nueva prioridad."),
+        status: str | None = typer.Option(None, "--status", help="Nuevo estado."),
+        due: str | None = typer.Option(None, "--due", help="Nueva fecha límite."),
+        focus: str | None = typer.Option(None, "--focus", help="Nueva fecha de foco."),
+        note: str | None = typer.Option(None, "--note", help="Nueva nota."),
+        project: str | None = typer.Option(None, "--project", help="Cambiar proyecto."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Actualizar una tarea existente."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path
+            from brain_ops.storage.sqlite.tasks import update_task
+
+            db_path = load_database_path(config_path)
+            updated = update_task(
+                db_path, task_id,
+                priority=priority, status=status,
+                due_date=due, focus_date=focus,
+                note=note, project=project,
+            )
+            if updated:
+                console.print(f"✓ Tarea #{task_id} actualizada.")
+            else:
+                console.print(f"Tarea #{task_id} no encontrada o sin cambios.")
+        except BrainOpsError as error:
+            handle_error(error)
+
+
 __all__ = ["register_personal_commands"]

@@ -215,6 +215,24 @@ SCHEMA_STATEMENTS = [
         source TEXT NOT NULL DEFAULT 'cli'
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+        completed_at TEXT,
+        project TEXT,
+        title TEXT NOT NULL,
+        priority TEXT NOT NULL DEFAULT 'medium',
+        status TEXT NOT NULL DEFAULT 'pending',
+        due_date TEXT,
+        focus_date TEXT,
+        tags_json TEXT,
+        note TEXT,
+        source TEXT NOT NULL DEFAULT 'cli',
+        origin_text TEXT
+    )
+    """,
 ]
 
 

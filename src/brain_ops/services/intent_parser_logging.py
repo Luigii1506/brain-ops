@@ -117,6 +117,17 @@ def build_logging_intent_from_decision(
             confidence=decision.confidence,
             routing_source=decision.routing_source,
         )
+    if decision.command == "task":
+        from brain_ops.intents import TaskIntent
+
+        title = decision.extracted_fields.get("title_hint", text)
+        project = decision.extracted_fields.get("project_hint")
+        return TaskIntent(
+            title=str(title),
+            project=str(project) if project else None,
+            confidence=decision.confidence,
+            routing_source=decision.routing_source,
+        )
     return None
 
 

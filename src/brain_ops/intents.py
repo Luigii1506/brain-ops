@@ -186,6 +186,14 @@ class DailyLogIntent(BaseIntent):
     log_domain: str = "daily"
 
 
+class TaskIntent(BaseIntent):
+    intent: Literal["task"] = "task"
+    domain: str = "tasks"
+    command: str = "task"
+    title: str
+    project: str | None = None
+
+
 class ParseFailure(BaseModel):
     input_text: str
     reason: str
@@ -214,6 +222,7 @@ IntentModel = (
     | DailyStatusIntent
     | CaptureNoteIntent
     | DailyLogIntent
+    | TaskIntent
 )
 
 
