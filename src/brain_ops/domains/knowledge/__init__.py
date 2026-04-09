@@ -90,6 +90,14 @@ from brain_ops.domains.knowledge.review import (
     is_possible_orphan_note,
     is_stale_project_note,
 )
+from brain_ops.domains.knowledge.agent_enrich import (
+    DirectEnrichPassPlan,
+    DirectEnrichPlan,
+    RankedChunk,
+    build_direct_enrich_plan,
+    save_direct_enrich_plan,
+)
+from brain_ops.domains.knowledge.direct_edit import build_direct_edit_extraction
 
 __all__ = [
     "ENTITY_SCHEMAS",
@@ -157,8 +165,14 @@ __all__ = [
     "research_search_results",
     "research_summary_text",
     "ReviewNoteAnalysis",
+    "DirectEnrichPassPlan",
+    "DirectEnrichPlan",
+    "RankedChunk",
     "score_terms",
     "suggest_link_candidate",
     "SYSTEM_LIKE_TYPES",
     "tokenize",
+    "build_direct_enrich_plan",
+    "build_direct_edit_extraction",
+    "save_direct_enrich_plan",
 ]

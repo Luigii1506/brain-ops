@@ -31,13 +31,31 @@ def plan_multi_pass(
 ) -> list[EnrichPass]:
     """Plan multiple enrichment passes for a long source text."""
     chunks = chunk_by_headings(text)
+    return plan_multi_pass_chunks(
+        chunks,
+        max_chars_per_pass=max_chars_per_pass,
+        fallback_text=text,
+    )
+
+
+def plan_multi_pass_chunks(
+    chunks: list[ContentChunk],
+    *,
+    max_chars_per_pass: int = 6000,
+    fallback_text: str = "",
+) -> list[EnrichPass]:
+    """Plan multiple enrichment passes from precomputed semantic chunks."""
 
     if not chunks:
         return [EnrichPass(
             pass_number=1,
             focus="General content",
-            chunks=[ContentChunk(heading="Content", text=text[:max_chars_per_pass], char_count=min(len(text), max_chars_per_pass))],
-            total_chars=min(len(text), max_chars_per_pass),
+            chunks=[ContentChunk(
+                heading="Content",
+                text=fallback_text[:max_chars_per_pass],
+                char_count=min(len(fallback_text), max_chars_per_pass),
+            )],
+            total_chars=min(len(fallback_text), max_chars_per_pass),
         )]
 
     total_chars = sum(c.char_count for c in chunks)
@@ -114,5 +132,6 @@ def _infer_focus(chunks: list[ContentChunk]) -> str:
 __all__ = [
     "EnrichPass",
     "plan_multi_pass",
+    "plan_multi_pass_chunks",
     "render_pass_context",
 ]

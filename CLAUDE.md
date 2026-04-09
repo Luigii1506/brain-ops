@@ -39,6 +39,8 @@ Claude Code acts as both LLM and system operator. The key rule is:
 
 **ALWAYS prefer official commands over direct file editing.**
 
+See also: `docs/operations/AGENT_DIRECT_LLM_WORKFLOWS.md` for reusable direct-agent prompt templates and command-equivalence workflows.
+
 ### Priority order for every operation:
 
 1. **USE OFFICIAL COMMAND** if one exists (`brain create-entity`, `brain enrich-entity`, etc.)
@@ -84,10 +86,11 @@ Claude acts as the LLM directly (no API cost). But MUST follow these rules:
 **BEFORE writing — determine mode:**
 
 DEEP MODE (person, empire, civilization, battle, war, country, book, discipline):
-1. WebFetch the source URL to get the full content
-2. Identify all sections and classify: HIGH (must cover), MEDIUM (cover if valuable), LOW (skip)
-3. Write covering ALL high-priority sections and valuable medium ones
-4. After writing, run check-coverage and fill any high-priority gaps
+1. Run `brain plan-direct-enrich "Entity Name" --url "https://..." --config config/vault.yaml`
+2. Use the generated raw source and pass plan from `.brain-ops/direct-enrich/<slug>.json`
+3. Write pass by pass covering ALL high-priority sections and valuable medium ones
+4. After writing, run `brain post-process ...` and `brain check-coverage ...`
+5. If coverage still shows important gaps, do another direct pass focused on those sections and post-process again
 
 LIGHT MODE (cities, simple concepts, animals, minor entities):
 1. WebFetch or use general knowledge
@@ -130,19 +133,32 @@ This single command does everything: emits event, creates source note, saves ext
 
 If multiple entities were edited, run `brain reconcile` instead (bulk sync without per-entity traceability).
 
-**For long sources (Wikipedia, long articles):** Use multi-pass to avoid truncation:
+**For long sources (Wikipedia, long articles) when the agent is the LLM:** Use the direct planning pipeline:
+```bash
+brain plan-direct-enrich "Entity Name" --url "https://..." --config config/vault.yaml
+```
+This downloads the full source, saves it as raw, splits it into multi-pass contexts, ranks useful chunks by subtype, and writes a reusable plan file so Claude/Codex can follow the same deterministic structure without API calls.
+
+**For long sources when you DO want the provider pipeline:** use:
 ```bash
 brain multi-enrich "Entity Name" --url "https://..." --llm-provider openai --config config/vault.yaml
 ```
-This downloads the full source, saves it as raw, splits into chunks, and runs multiple enrich passes so nothing is lost.
 
 **Raw source persistence:** Post-process with `--source-url` automatically downloads and saves the full raw source to `.brain-ops/raw/`. This enables future re-processing and audit.
 
-**What Claude CANNOT do when writing directly (only the pipeline does these):**
-- Save extraction JSON (no LLM extraction happened)
-- Emit events to event log
-- Update entity_registry.json automatically (must be done manually or via reconcile)
-- Normalize predicates programmatically
+**Standard no-API direct-enrich workflow for large entities:**
+1. `brain create-entity "Entity Name" --type person --config config/vault.yaml` (if the note does not exist)
+2. `brain plan-direct-enrich "Entity Name" --url "https://..." --config config/vault.yaml`
+3. Claude/Codex writes the note using the generated pass contexts in order
+4. `brain post-process "Entity Name" --source-url "https://..." --config config/vault.yaml`
+5. `brain check-coverage "Entity Name" --config config/vault.yaml`
+6. If needed, do one more focused direct pass and run `post-process` again
+
+**What direct writing ALONE cannot do before post-processing:**
+- Persist raw source automatically
+- Save the extraction record automatically
+- Sync the entity registry automatically
+- Compile back to SQLite automatically
 - Trigger auto-entity creation
 
 ### Signals — never mix these:

@@ -129,6 +129,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "ingest-source",
                 "list-extractions",
                 "multi-enrich",
+                "plan-direct-enrich",
                 "post-process",
                 "query-knowledge",
                 "reconcile",

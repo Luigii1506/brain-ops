@@ -36,6 +36,22 @@ def _clean_heading(line: str) -> str:
     return re.sub(r"\s*\[editar\]\s*", "", line).strip()
 
 
+def _looks_like_plain_wiki_heading(stripped: str) -> bool:
+    """Detect standalone wiki headings without explicit markdown/edit markers."""
+    words = stripped.split()
+    if not words:
+        return False
+
+    # Plain person/place names like "Niels Bohr" are common in wiki exports and
+    # should not be treated as headings unless there is a stronger signal.
+    has_lowercase_connector = any(
+        word and word[0].islower()
+        for word in words[1:]
+    )
+    has_heading_punctuation = any(marker in stripped for marker in {"-", ":", "(", ")"})
+    return has_lowercase_connector or has_heading_punctuation
+
+
 def _is_heading(line: str) -> bool:
     """Detect section headings in markdown or Wikipedia plain text."""
     stripped = line.strip()
@@ -65,6 +81,8 @@ def _is_heading(line: str) -> bool:
         not re.match(r"^[\[\(]", stripped)):
         # Has [editar] suffix — strong signal
         if "[editar]" in stripped:
+            return True
+        if _looks_like_plain_wiki_heading(stripped):
             return True
     return False
 
@@ -109,6 +127,21 @@ def chunk_by_headings(text: str) -> list[ContentChunk]:
             current_lines = []
             # Skip the "[", "editar", "]" lines
             i += 4 if (i + 3 < len(lines) and lines[i + 3].strip() == "]") else i + 3
+            continue
+
+        # Plain standalone heading in wiki/plaintext exports.
+        # This catches headings like "Debate Bohr-Einstein" that appear as a
+        # single line without markdown markers but still introduce a new section.
+        if (
+            _is_heading(stripped)
+            and current_lines
+            and sum(len(line.strip()) for line in current_lines) >= 200
+        ):
+            if current_lines and len(current_lines) > 2:
+                raw_chunks.append((current_heading, list(current_lines)))
+            current_heading = _clean_heading(stripped)
+            current_lines = []
+            i += 1
             continue
 
         # Skip standalone noise
@@ -224,7 +257,9 @@ SUBTYPE_PRIORITY_KEYWORDS: dict[str, list[str]] = {
     "person": ["nacimiento", "birth", "muerte", "death", "reinado", "reign",
                "legado", "legacy", "campañas", "campaigns", "juventud", "youth",
                "ascenso", "rise", "biografía", "biography", "carrera", "career",
-               "infancia", "childhood", "educación", "education", "conquista"],
+               "infancia", "childhood", "educación", "education", "conquista",
+               "debate", "debates", "teoría", "theory", "obra", "works",
+               "pensamiento", "thought", "física", "physics", "cuántica", "quantum"],
     "war": ["causas", "causes", "batallas", "battles", "resultado", "outcome",
             "consecuencias", "consequences", "participantes", "participants"],
     "place": ["geografía", "geography", "historia", "history", "gobierno",

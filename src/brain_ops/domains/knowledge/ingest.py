@@ -70,15 +70,28 @@ class IngestPlan:
         }
 
 
+@dataclass(slots=True, frozen=True)
+class FetchedUrlDocument:
+    text: str
+    title: str | None
+    html: str | None
+    source_profile: str
+
+
 def classify_source_type(url: str | None, text: str) -> str:
     from .source_strategy import classify_source
     return classify_source(url, text)
 
 
-def fetch_url_content(url: str) -> tuple[str, str | None]:
+def fetch_url_document(url: str) -> FetchedUrlDocument:
+    from .source_blocks import detect_source_profile
+
     req = Request(url, headers={"User-Agent": "brain-ops/1.0"})
     with urlopen(req, timeout=30) as response:
         html = response.read().decode("utf-8", errors="replace")
+
+    source_profile = detect_source_profile(url)
+
     try:
         from bs4 import BeautifulSoup
 
@@ -88,9 +101,24 @@ def fetch_url_content(url: str) -> tuple[str, str | None]:
         title_tag = soup.find("title")
         title = title_tag.get_text(strip=True) if title_tag else None
         body = soup.get_text(separator="\n", strip=True)
-        return body, title
+        return FetchedUrlDocument(
+            text=body,
+            title=title,
+            html=html,
+            source_profile=source_profile,
+        )
     except ImportError:
-        return html, None
+        return FetchedUrlDocument(
+            text=html,
+            title=None,
+            html=html,
+            source_profile=source_profile,
+        )
+
+
+def fetch_url_content(url: str) -> tuple[str, str | None]:
+    document = fetch_url_document(url)
+    return document.text, document.title
 
 
 INGEST_EXTRACT_PROMPT = """You are not summarizing. You are building a high-quality personal knowledge system.

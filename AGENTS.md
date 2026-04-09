@@ -92,6 +92,8 @@ Storage (SQLite + Obsidian vault + JSON registries)
 
 ### Prioridad: siempre preferir comandos oficiales
 
+Ver tambien: `docs/operations/AGENT_DIRECT_LLM_WORKFLOWS.md` para templates reutilizables y equivalencias entre pipeline oficial y workflows sin API usando Claude/Codex como LLM.
+
 1. **USAR COMANDO OFICIAL** si existe (`brain create-entity`, `brain enrich-entity`, etc.)
 2. **Escribir directamente + post-procesamiento** solo si no existe un comando para la tarea
 3. **NUNCA editar una nota y abandonarla** — siempre ejecutar reconciliacion despues de ediciones directas
@@ -137,10 +139,11 @@ El agente actua como el LLM directamente (sin costo de API). Pero DEBE seguir es
 ### ANTES de escribir — determinar modo:
 
 **DEEP MODE** (person, empire, civilization, battle, war, country, book, discipline):
-1. WebFetch la URL fuente para obtener el contenido completo
-2. Identificar todas las secciones y clasificar: HIGH (debe cubrirse), MEDIUM (cubrir si es valioso), LOW (skip)
-3. Escribir cubriendo TODAS las secciones de alta prioridad y las de media prioridad que sean valiosas
-4. Despues de escribir, ejecutar check-coverage y llenar cualquier gap de alta prioridad
+1. Ejecutar `brain plan-direct-enrich "Nombre Entidad" --url "https://..." --config config/vault.yaml`
+2. Usar el raw y el plan generado en `.brain-ops/direct-enrich/<slug>.json`
+3. Escribir por pasadas cubriendo TODAS las secciones de alta prioridad y las de media prioridad valiosas
+4. Despues de escribir, ejecutar `brain post-process ...` y `brain check-coverage ...`
+5. Si coverage muestra gaps importantes, hacer otra pasada directa enfocada y volver a correr `post-process`
 
 **LIGHT MODE** (ciudades, conceptos simples, animales, entidades menores):
 1. WebFetch o usar conocimiento general
@@ -183,20 +186,33 @@ Este unico comando hace todo: emite evento, crea nota de fuente, guarda registro
 
 Si se editaron multiples entidades, ejecutar `brain reconcile` en su lugar (sincronizacion bulk sin trazabilidad por entidad).
 
-### Para fuentes largas (Wikipedia, articulos extensos):
+### Para fuentes largas (Wikipedia, articulos extensos) cuando el agente es el LLM:
+```bash
+brain plan-direct-enrich "Nombre Entidad" --url "https://..." --config config/vault.yaml
+```
+Descarga la fuente completa, la guarda como raw, la divide en contextos multi-pass, rankea chunks por subtipo y genera un plan reusable para que Claude/Codex sigan la misma estructura sin usar API.
+
+### Para fuentes largas cuando SI quieres el pipeline con proveedor:
 ```bash
 brain multi-enrich "Nombre Entidad" --url "https://..." --llm-provider openai --config config/vault.yaml
 ```
-Descarga la fuente completa, la guarda como raw, divide en chunks, y ejecuta multiples pasadas de enrich para no perder nada.
 
 ### Persistencia de raw source:
 Post-process con `--source-url` descarga y guarda automaticamente la fuente raw completa en `.brain-ops/raw/`. Esto permite re-procesamiento futuro y auditoria.
 
-### Lo que el agente NO puede hacer cuando escribe directamente (solo el pipeline lo hace):
-- Guardar JSON de extraccion (no hubo extraccion LLM)
-- Emitir eventos al event log
-- Actualizar entity_registry.json automaticamente (debe hacerse manualmente o via reconcile)
-- Normalizar predicados programaticamente
+### Flujo estandar sin API para entidades grandes:
+1. `brain create-entity "Nombre Entidad" --type person --config config/vault.yaml` si la entidad no existe
+2. `brain plan-direct-enrich "Nombre Entidad" --url "https://..." --config config/vault.yaml`
+3. Claude/Codex redacta la nota usando las pasadas generadas
+4. `brain post-process "Nombre Entidad" --source-url "https://..." --config config/vault.yaml`
+5. `brain check-coverage "Nombre Entidad" --config config/vault.yaml`
+6. Si hace falta, otra pasada directa enfocada y `post-process` otra vez
+
+### Lo que la escritura directa SOLA no hace antes de post-process:
+- Persistir raw source automaticamente
+- Guardar el extraction record automaticamente
+- Sincronizar el entity registry automaticamente
+- Compilar de regreso a SQLite automaticamente
 - Disparar creacion automatica de entidades
 
 ---

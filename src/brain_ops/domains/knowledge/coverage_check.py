@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from .chunking import ContentChunk, chunk_by_headings
@@ -78,6 +79,7 @@ LOW_PRIORITY_KEYWORDS = [
     "bustos", "monumentos", "monedas", "pinturas", "música",
     "categorías", "wikipedia", "isbn", "texto griego", "texto francés",
     "bibliografía adicional", "obras modernas", "fuentes clásicas",
+    "publicaciones", "eponimia", "cultura popular",
 ]
 
 DEEP_MODE_SUBTYPES = {
@@ -132,10 +134,12 @@ def check_coverage(
     entity_subtype: str,
     raw_text: str,
     note_body: str,
+    *,
+    raw_chunks: list[ContentChunk] | None = None,
 ) -> CoverageReport:
     """Check what headings from the raw source are missing from the note."""
-    raw_chunks = chunk_by_headings(raw_text)
-    note_lower = note_body.lower()
+    raw_chunks = raw_chunks or chunk_by_headings(raw_text)
+    note_normalized = _normalize_for_match(note_body)
     mode = "deep" if should_use_deep_mode(entity_subtype, len(raw_text)) else "light"
 
     gaps: list[CoverageGap] = []
@@ -161,8 +165,12 @@ def check_coverage(
         # Check if this section's content is represented in the note
         # Match by key concepts: proper nouns, dates, places — not exact phrases
         key_concepts = _extract_key_concepts(chunk.text)
-        matches = sum(1 for concept in key_concepts if concept in note_lower)
+        matches = sum(1 for concept in key_concepts if _normalize_for_match(concept) in note_normalized)
         coverage_ratio = matches / max(len(key_concepts), 1)
+
+        heading_signal = _normalize_heading_signal(chunk.heading)
+        if heading_signal and heading_signal in note_normalized:
+            coverage_ratio = max(coverage_ratio, 0.5)
 
         if coverage_ratio >= 0.3:
             covered += 1
@@ -224,6 +232,22 @@ def _extract_key_concepts(text: str, max_concepts: int = 20) -> list[str]:
         concepts.append(bg.lower())
 
     return list(set(concepts))[:max_concepts]
+
+
+def _normalize_for_match(text: str) -> str:
+    lowered = text.lower()
+    stripped = "".join(
+        c for c in unicodedata.normalize("NFD", lowered)
+        if unicodedata.category(c) != "Mn"
+    )
+    return re.sub(r"[^a-z0-9]+", "", stripped)
+
+
+def _normalize_heading_signal(heading: str) -> str:
+    last_segment = heading.split("/")[-1].strip()
+    if len(last_segment) < 4:
+        return ""
+    return _normalize_for_match(last_segment)
 
 
 __all__ = [

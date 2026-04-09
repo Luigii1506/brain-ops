@@ -221,9 +221,14 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         try:
             from datetime import datetime, timezone
             from subprocess import run as subprocess_run
-            from brain_ops.domains.knowledge.ingest import fetch_url_content
-            from brain_ops.domains.knowledge.multi_pass import plan_multi_pass, render_pass_context
+            from brain_ops.domains.knowledge.ingest import fetch_url_document
+            from brain_ops.domains.knowledge.multi_pass import plan_multi_pass_chunks, render_pass_context
             from brain_ops.domains.knowledge.coverage_check import check_coverage
+            from brain_ops.domains.knowledge.chunking import chunk_by_headings
+            from brain_ops.domains.knowledge.source_blocks import (
+                extract_planning_chunks,
+                save_chunk_sidecar,
+            )
             from brain_ops.frontmatter import split_frontmatter
             from brain_ops.interfaces.cli.runtime import load_validated_vault
             from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
@@ -234,7 +239,8 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
 
             # Step 1: Fetch and save raw
             console.print(f"[bold]Step 1/4: Downloading source[/bold]")
-            raw_content, raw_title = fetch_url_content(url)
+            fetched = fetch_url_document(url)
+            raw_content = fetched.text
             raw_dir = vault_path / ".brain-ops" / "raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
             slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
@@ -249,11 +255,21 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 index_data = json.loads(index_path.read_text(encoding="utf-8"))
             index_data[name] = str(raw_file)
             index_path.write_text(json.dumps(index_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            source_profile, planning_chunks = extract_planning_chunks(
+                url=url,
+                html=fetched.html,
+                article_title=fetched.title,
+            )
+            if planning_chunks:
+                save_chunk_sidecar(raw_file, source_profile=source_profile, chunks=planning_chunks)
             console.print(f"  Raw saved: {len(raw_content)} chars")
 
             # Step 2: Multi-pass enrich
             console.print(f"\n[bold]Step 2/4: Multi-pass enrichment[/bold]")
-            passes = plan_multi_pass(raw_content)
+            passes = plan_multi_pass_chunks(
+                planning_chunks or chunk_by_headings(raw_content),
+                fallback_text=raw_content,
+            )
             console.print(f"  Planned {len(passes)} passes")
 
             for enrich_pass in passes:
@@ -287,7 +303,14 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 console.print("  Entity note not found after enrichment.")
                 return
 
-            report = check_coverage(name, entity_subtype, raw_content, entity_body or "")
+            effective_chunks = planning_chunks or chunk_by_headings(raw_content)
+            report = check_coverage(
+                name,
+                entity_subtype,
+                raw_content,
+                entity_body or "",
+                raw_chunks=effective_chunks,
+            )
             console.print(f"  Coverage: {report.coverage_pct:.0f}% ({report.covered_headings}/{report.raw_headings} sections)")
 
             high_gaps = [g for g in report.gaps if g.priority == "high"]
@@ -307,10 +330,8 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                     console.print(f"  Gap pass {gap_passes}: {gap.heading[:50]} ({gap.char_count} chars)")
 
                     # Find the chunk content for this gap from raw
-                    from brain_ops.domains.knowledge.chunking import chunk_by_headings
-                    raw_chunks = chunk_by_headings(raw_content)
                     gap_content = None
-                    for chunk in raw_chunks:
+                    for chunk in effective_chunks:
                         if chunk.heading == gap.heading:
                             gap_content = chunk.text
                             break
@@ -351,6 +372,7 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
         """Check what content from the raw source is missing from the entity note."""
         try:
             from brain_ops.domains.knowledge.coverage_check import check_coverage
+            from brain_ops.domains.knowledge.source_blocks import load_chunk_sidecar
             from brain_ops.frontmatter import split_frontmatter
             from brain_ops.interfaces.cli.runtime import load_validated_vault
             from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
@@ -377,7 +399,9 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
 
             # Find raw source
             raw_text = None
+            resolved_raw_file = None
             if raw_file and raw_file.exists():
+                resolved_raw_file = raw_file
                 raw_text = raw_file.read_text(encoding="utf-8")
             else:
                 raw_dir = vault.config.vault_path / ".brain-ops" / "raw"
@@ -390,6 +414,7 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                         if name in index_data:
                             mapped_path = Path(index_data[name])
                             if mapped_path.exists():
+                                resolved_raw_file = mapped_path
                                 raw_text = mapped_path.read_text(encoding="utf-8")
 
                     # Priority 2: slug-based fallback
@@ -403,10 +428,12 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                         for f in sorted(raw_dir.glob("*.txt"), reverse=True):
                             fname = _strip_accents(f.name.lower())
                             if slug in fname or slug_short in fname:
+                                resolved_raw_file = f
                                 raw_text = f.read_text(encoding="utf-8")
                                 break
                             fname_core = fname.split("-", 1)[-1].rsplit(".", 1)[0] if "-" in fname else fname
                             if fname_core and len(fname_core) >= 4 and fname_core in slug:
+                                resolved_raw_file = f
                                 raw_text = f.read_text(encoding="utf-8")
                                 break
 
@@ -414,7 +441,17 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 console.print(f"No raw source found for '{name}'. Run post-process with --source-url first.")
                 return
 
-            report = check_coverage(name, entity_subtype, raw_text, entity_body)
+            raw_chunks = None
+            if resolved_raw_file is not None:
+                _source_profile, raw_chunks = load_chunk_sidecar(resolved_raw_file)
+
+            report = check_coverage(
+                name,
+                entity_subtype,
+                raw_text,
+                entity_body,
+                raw_chunks=raw_chunks,
+            )
 
             if as_json:
                 console.print_json(data=report.to_dict())
@@ -445,15 +482,21 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
     ) -> None:
         """Enrich an entity from a URL in multiple passes to cover the full source."""
         try:
-            from brain_ops.domains.knowledge.ingest import fetch_url_content
-            from brain_ops.domains.knowledge.multi_pass import plan_multi_pass, render_pass_context
+            from brain_ops.domains.knowledge.chunking import chunk_by_headings
+            from brain_ops.domains.knowledge.ingest import fetch_url_document
+            from brain_ops.domains.knowledge.multi_pass import plan_multi_pass_chunks, render_pass_context
+            from brain_ops.domains.knowledge.source_blocks import (
+                extract_planning_chunks,
+                save_chunk_sidecar,
+            )
 
             from brain_ops.interfaces.cli.runtime import load_validated_vault
             vault = load_validated_vault(config_path, dry_run=False)
             vault_path = vault.config.vault_path
 
             # Fetch and save raw
-            raw_content, raw_title = fetch_url_content(url)
+            fetched = fetch_url_document(url)
+            raw_content = fetched.text
             from datetime import datetime, timezone
             raw_dir = vault_path / ".brain-ops" / "raw"
             raw_dir.mkdir(parents=True, exist_ok=True)
@@ -468,10 +511,20 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                 index_data = json.loads(index_path.read_text(encoding="utf-8"))
             index_data[name] = str(raw_file)
             index_path.write_text(json.dumps(index_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            source_profile, planning_chunks = extract_planning_chunks(
+                url=url,
+                html=fetched.html,
+                article_title=fetched.title,
+            )
+            if planning_chunks:
+                save_chunk_sidecar(raw_file, source_profile=source_profile, chunks=planning_chunks)
             console.print(f"Raw source saved: {len(raw_content)} chars")
 
             # Plan passes
-            passes = plan_multi_pass(raw_content)
+            passes = plan_multi_pass_chunks(
+                planning_chunks or chunk_by_headings(raw_content),
+                fallback_text=raw_content,
+            )
             console.print(f"Planned {len(passes)} enrichment passes")
 
             if as_json:
@@ -498,6 +551,103 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                     console.print(f"  Pass {enrich_pass.pass_number} failed: {result.stderr[:200]}")
 
             console.print(f"\nMulti-enrich complete: {len(passes)} passes on '{name}'")
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("plan-direct-enrich")
+    def plan_direct_enrich_command(
+        name: str,
+        url: str = typer.Option(..., "--url", help="URL to download and plan for direct agent enrichment."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        subtype: str | None = typer.Option(None, "--subtype", help="Override entity subtype when planning priorities."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Prepare the full deterministic pipeline for agent-driven direct enrichment."""
+        try:
+            import json
+            from datetime import datetime, timezone
+
+            from brain_ops.domains.knowledge import build_direct_enrich_plan, save_direct_enrich_plan
+            from brain_ops.domains.knowledge.ingest import fetch_url_document
+            from brain_ops.domains.knowledge.source_blocks import (
+                extract_planning_chunks,
+                save_chunk_sidecar,
+            )
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+            from brain_ops.storage.obsidian import list_vault_markdown_notes, read_note_text
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            vault_path = vault.config.vault_path
+
+            fetched = fetch_url_document(url)
+            raw_content = fetched.text
+            raw_dir = vault_path / ".brain-ops" / "raw"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
+            raw_file = raw_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{slug}-full.txt"
+            raw_file.write_text(raw_content, encoding="utf-8")
+
+            index_path = raw_dir / "_index.json"
+            index_data: dict[str, str] = {}
+            if index_path.exists():
+                index_data = json.loads(index_path.read_text(encoding="utf-8"))
+            index_data[name] = str(raw_file)
+            index_path.write_text(json.dumps(index_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            resolved_subtype = subtype or "person"
+            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+                _safe, _rel, text = read_note_text(vault, note_path)
+                try:
+                    fm, _body = split_frontmatter(text)
+                except Exception:
+                    continue
+                if fm.get("entity") is True and fm.get("name") == name:
+                    resolved_subtype = str(fm.get("subtype", fm.get("type", resolved_subtype)))
+                    break
+
+            source_profile, planning_chunks = extract_planning_chunks(
+                url=url,
+                html=fetched.html,
+                article_title=fetched.title,
+            )
+            if planning_chunks:
+                save_chunk_sidecar(raw_file, source_profile=source_profile, chunks=planning_chunks)
+
+            plan = build_direct_enrich_plan(
+                entity_name=name,
+                source_url=url,
+                raw_text=raw_content,
+                raw_file=raw_file,
+                subtype=resolved_subtype,
+                planning_chunks=planning_chunks,
+                source_profile=source_profile,
+            )
+            plan_path = save_direct_enrich_plan(vault_path / ".brain-ops" / "direct-enrich", plan)
+            payload = {**plan.to_dict(), "plan_file": str(plan_path)}
+
+            if as_json:
+                console.print_json(data=payload)
+                return
+
+            console.print(f"[bold]Direct enrich plan:[/bold] {name}")
+            console.print(f"  Raw source saved: {raw_file}")
+            console.print(f"  Plan file: {plan_path}")
+            console.print(f"  Mode: {plan.mode} | Subtype: {plan.subtype} | Raw chars: {plan.raw_chars}")
+            console.print(f"  Planned passes: {len(plan.pass_plans)}")
+            for enrich_pass in plan.pass_plans:
+                console.print(
+                    f"    Pass {enrich_pass.pass_number}: {enrich_pass.focus} "
+                    f"({enrich_pass.total_chars} chars, {len(enrich_pass.headings)} headings)"
+                )
+            if plan.ranked_chunks:
+                console.print("  Top ranked chunks:")
+                for chunk in plan.ranked_chunks[:8]:
+                    console.print(f"    - {chunk.heading} ({chunk.char_count} chars)")
+            console.print("  Workflow:")
+            for step in plan.workflow_steps:
+                console.print(f"    - {step}")
+
         except BrainOpsError as error:
             handle_error(error)
 
@@ -545,8 +695,13 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
             # 0. Save raw source content if URL provided
             if source_url:
                 try:
-                    from brain_ops.domains.knowledge.ingest import fetch_url_content
-                    raw_content, raw_title = fetch_url_content(source_url)
+                    from brain_ops.domains.knowledge.ingest import fetch_url_document
+                    from brain_ops.domains.knowledge.source_blocks import (
+                        extract_planning_chunks,
+                        save_chunk_sidecar,
+                    )
+                    fetched = fetch_url_document(source_url)
+                    raw_content = fetched.text
                     raw_dir = vault_path / ".brain-ops" / "raw"
                     raw_dir.mkdir(parents=True, exist_ok=True)
                     slug = "".join(c if c.isalnum() or c in "-_ " else "" for c in name)[:60].strip().replace(" ", "-").lower()
@@ -559,6 +714,13 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
                         idx = json_mod.loads(index_path.read_text(encoding="utf-8"))
                     idx[name] = str(raw_file)
                     index_path.write_text(json_mod.dumps(idx, indent=2, ensure_ascii=False), encoding="utf-8")
+                    source_profile, planning_chunks = extract_planning_chunks(
+                        url=source_url,
+                        html=fetched.html,
+                        article_title=fetched.title,
+                    )
+                    if planning_chunks:
+                        save_chunk_sidecar(raw_file, source_profile=source_profile, chunks=planning_chunks)
                     actions.append(f"raw source saved ({len(raw_content)} chars)")
                 except Exception:
                     pass
@@ -621,25 +783,22 @@ entity: false
 
             # 3. Save extraction log entry
             try:
+                from brain_ops.domains.knowledge import build_direct_edit_extraction
                 from brain_ops.domains.knowledge.extraction_store import save_extraction_record
                 extractions_dir = vault_path / ".brain-ops" / "extractions"
-                # Build a pseudo-extraction from the note content
-                related = entity_fm.get("related", [])
+                extraction = build_direct_edit_extraction(
+                    entity_fm,
+                    entity_body or "",
+                    name=name,
+                    source_url=source_url,
+                )
                 save_extraction_record(
                     extractions_dir,
                     source_title=name,
                     source_url=source_url,
                     source_type="direct_edit",
-                    raw_llm_json={
-                        "title": name,
-                        "source_type": "direct_edit",
-                        "entities": [{"name": name, "type": entity_fm.get("type", ""), "importance": "high"}],
-                        "relationships": [
-                            {"subject": name, "predicate": "related_to", "object": str(r)}
-                            for r in (related if isinstance(related, list) else [])
-                        ],
-                    },
-                    prompt_version="direct_claude",
+                    raw_llm_json=extraction,
+                    prompt_version="direct_agent_v2",
                 )
                 actions.append("extraction record saved")
             except Exception:
