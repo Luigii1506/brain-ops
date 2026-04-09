@@ -170,7 +170,35 @@ def execute_create_entity_workflow(
             body_override=plan.body,
         ),
     )
-    return publish_result_events("create-entity", source="application.notes", result=result, event_sink=event_sink)
+
+    # Auto-backlink: scan existing notes and convert plain mentions to [[wikilinks]]
+    backlink_result = None
+    try:
+        from brain_ops.domains.knowledge.backlinking import inject_backlinks
+
+        backlink_result = inject_backlinks(
+            vault.config.vault_path,
+            name,
+        )
+    except Exception:
+        pass
+
+    published = publish_result_events("create-entity", source="application.notes", result=result, event_sink=event_sink)
+
+    # Attach backlink info to the result for display
+    if backlink_result is not None and backlink_result.notes_linked > 0:
+        from brain_ops.models import OperationRecord, OperationStatus
+
+        published.operations.append(
+            OperationRecord(
+                action="backlink",
+                path=Path(f"{backlink_result.notes_linked} notes"),
+                detail=f"Linked [[{name}]] in: {', '.join(backlink_result.linked_files)}",
+                status=OperationStatus.UPDATED,
+            )
+        )
+
+    return published
 
 
 __all__ = [
