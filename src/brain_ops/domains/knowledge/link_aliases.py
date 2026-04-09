@@ -182,29 +182,20 @@ SAFE_LINK_ALIASES: dict[str, str] = _drop_identity({
     "Guerras del Peloponeso": "Guerra del Peloponeso",
     "Periodo helenistico": "Período helenístico",
 
-    # BATALLAS
-    "Maratón": "Batalla de Maratón",
-    "Maraton": "Batalla de Maratón",
-    # "Termópilas" NO incluido — puede ser el lugar (desfiladero) o la batalla
-    # Usar [[Batalla de las Termópilas]] explícitamente para la batalla
-    # Usar [[Termópilas]] para el lugar geográfico
-    "Termopilas": "Termópilas",  # solo corrección ortográfica
-    "Salamina": "Batalla de Salamina",
-    "Platea": "Batalla de Platea",
-    "Mícale": "Batalla de Mícale",
-    "Micale": "Batalla de Mícale",
-    "Queronea": "Batalla de Queronea",
-    "Gránico": "Batalla del Gránico",
-    "Granico": "Batalla del Gránico",
-    "Issos": "Batalla de Issos",
-    "Arbela": "Batalla de Gaugamela",
-    "Hidaspes": "Batalla del Hidaspes",
-    "Accio": "Batalla de Accio",
-    "Actium": "Batalla de Accio",
-    # "Filipos" es ambiguo (ciudad vs batalla) — movido a RISKY
-    "Adrianópolis": "Batalla de Adrianópolis",
-    "Adrianopolis": "Batalla de Adrianópolis",
-    "Milvio": "Batalla del Puente Milvio",
+    # BATALLAS — solo nombres que NO son también lugares
+    # Regla: si el nombre es también un lugar (ciudad, paso, río, isla),
+    # NO incluir aquí. Usar [[Batalla de X]] explícitamente para la batalla.
+    # Los nombres de lugar solos ([[Maratón]], [[Salamina]]) deben apuntar al lugar.
+    "Arbela": "Batalla de Gaugamela",  # Arbela no es ambiguo — siempre refiere a la batalla
+    "Actium": "Batalla de Accio",  # nombre latino, siempre refiere a la batalla
+    "Milvio": "Batalla del Puente Milvio",  # siempre refiere a la batalla
+
+    # Correcciones ortográficas (sin acento → con acento)
+    "Termopilas": "Termópilas",
+    "Maraton": "Maratón",
+    "Micale": "Mícale",
+    "Granico": "Gránico",
+    "Adrianopolis": "Adrianópolis",
 
     # OBRAS / TEXTOS
     "República": "La República",
@@ -279,6 +270,30 @@ RISKY_ALIASES: dict[str, str] = _drop_identity({
     "Bizancio": "Imperio Bizantino",  # puede ser la ciudad antigua
     "Olimpia": "Olimpia de Epiro",  # puede ser el santuario
     "Filipos": "Batalla de Filipos",  # puede ser la ciudad
+
+    # Lugares que también son nombres de batallas
+    # [[Maratón]] puede ser la llanura o la batalla
+    # [[Salamina]] puede ser la isla o la batalla
+    # [[Platea]] puede ser la ciudad o la batalla
+    # [[Queronea]] puede ser la ciudad o la batalla
+    # [[Termópilas]] puede ser el desfiladero o la batalla
+    # [[Gránico]] puede ser el río o la batalla
+    # [[Issos]] puede ser la ciudad o la batalla
+    # [[Hidaspes]] puede ser el río o la batalla
+    # [[Accio]] puede ser el promontorio o la batalla
+    # [[Adrianópolis]] puede ser la ciudad o la batalla
+    # [[Mícale]] puede ser el monte o la batalla
+    "Maratón": "Batalla de Maratón",
+    "Salamina": "Batalla de Salamina",
+    "Platea": "Batalla de Platea",
+    "Queronea": "Batalla de Queronea",
+    "Termópilas": "Batalla de las Termópilas",
+    "Gránico": "Batalla del Gránico",
+    "Issos": "Batalla de Issos",
+    "Hidaspes": "Batalla del Hidaspes",
+    "Accio": "Batalla de Accio",
+    "Adrianópolis": "Batalla de Adrianópolis",
+    "Mícale": "Batalla de Mícale",
 
     # Personas con múltiples homónimos
     "Darío": "Darío III",
