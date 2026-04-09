@@ -185,8 +185,10 @@ SAFE_LINK_ALIASES: dict[str, str] = _drop_identity({
     # BATALLAS
     "Maratón": "Batalla de Maratón",
     "Maraton": "Batalla de Maratón",
-    "Termópilas": "Batalla de las Termópilas",
-    "Termopilas": "Batalla de las Termópilas",
+    # "Termópilas" NO incluido — puede ser el lugar (desfiladero) o la batalla
+    # Usar [[Batalla de las Termópilas]] explícitamente para la batalla
+    # Usar [[Termópilas]] para el lugar geográfico
+    "Termopilas": "Termópilas",  # solo corrección ortográfica
     "Salamina": "Batalla de Salamina",
     "Platea": "Batalla de Platea",
     "Mícale": "Batalla de Mícale",
