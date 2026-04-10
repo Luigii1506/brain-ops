@@ -40,6 +40,7 @@ class Project:
     description: str | None = None
     commands: dict[str, str] = field(default_factory=dict)
     context: ProjectContext = field(default_factory=ProjectContext)
+    doc_layout: str = "flat"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -49,6 +50,7 @@ class Project:
             "description": self.description,
             "commands": dict(self.commands),
             "context": self.context.to_dict(),
+            "doc_layout": self.doc_layout,
         }
 
     @staticmethod
@@ -60,6 +62,7 @@ class Project:
             description=data.get("description") if isinstance(data.get("description"), str) else None,
             commands=dict(data.get("commands", {})),
             context=ProjectContext.from_dict(data.get("context", {})) if isinstance(data.get("context"), dict) else ProjectContext(),
+            doc_layout=str(data.get("doc_layout", "flat")),
         )
 
 

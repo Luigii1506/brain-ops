@@ -176,6 +176,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "project-log",
                 "audit-project",
                 "refresh-project",
+                "migrate-project-docs",
             },
         )
 

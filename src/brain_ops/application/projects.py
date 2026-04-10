@@ -13,6 +13,7 @@ from brain_ops.domains.projects import (
     render_claude_md,
     update_project_context,
 )
+from brain_ops.domains.projects.doc_layout import DocLayout, resolve_doc_path
 from brain_ops.domains.projects.registry import (
     load_project_registry,
     save_project_registry,
@@ -281,7 +282,7 @@ def execute_project_log_workflow(
         save_project_registry(registry_path, projects)
 
     # Write to vault files (best-effort)
-    _write_vault_log(vault_project_dir, entry_type, cleaned_text)
+    _write_vault_log(vault_project_dir, entry_type, cleaned_text, doc_layout=project.doc_layout)
 
     return ProjectLogResult(
         project_name=project_name.strip(),
@@ -295,6 +296,8 @@ def _write_vault_log(
     vault_project_dir: Path | None,
     entry_type: str,
     text: str,
+    *,
+    doc_layout: str = "flat",
 ) -> None:
     """Best-effort append to vault project files."""
     if vault_project_dir is None or not vault_project_dir.is_dir():
@@ -307,33 +310,24 @@ def _write_vault_log(
     # Changelog: NO auto-populate (redundante con Sessions).
     # Se genera como resumen curado via `brain refresh-project`.
 
-    # Prepend to Decisions.md for decision entries (ADR-lite, newest first)
     if entry_type == "decision":
-        decisions_path = vault_project_dir / "Decisions.md"
-        if decisions_path.is_file():
-            content = decisions_path.read_text(encoding="utf-8")
-            existing = re.findall(r"^##+ \d+\.", content, re.MULTILINE)
-            next_num = len(existing) + 1
-            new_entry = (
-                f"\n---\n\n## {next_num:03d}. {text}\n\n"
-                f"**Fecha:** {date_str}\n"
-                f"**Contexto:** (pendiente de documentar)\n"
-                f"**Decisión:** {text}\n\n"
-            )
-            # Insert after the intro paragraph (first ---)
-            first_separator = content.find("\n---\n")
-            if first_separator >= 0:
-                insert_pos = first_separator
-                decisions_path.write_text(
-                    content[:insert_pos] + new_entry + content[insert_pos:],
+        if doc_layout == DocLayout.LAYERED_V1:
+            _write_decision_as_adr(vault_project_dir, text, date_str)
+        else:
+            _write_decision_flat(vault_project_dir, text, date_str)
+
+    if entry_type == "bug":
+        debugging_dir = resolve_doc_path(vault_project_dir, "debugging", doc_layout)
+        if doc_layout == DocLayout.LAYERED_V1:
+            debugging_dir.mkdir(parents=True, exist_ok=True)
+            debugging_path = debugging_dir / "known-issues.md"
+            if not debugging_path.exists():
+                debugging_path.write_text(
+                    "---\ntype: debugging_note\n---\n\n# Known Issues\n\n",
                     encoding="utf-8",
                 )
-            else:
-                _append_line_to_file(decisions_path, new_entry)
-
-    # Append to Debugging.md for bug entries (structured format)
-    if entry_type == "bug":
-        debugging_path = vault_project_dir / "Debugging.md"
+        else:
+            debugging_path = debugging_dir / "Debugging.md"
         if debugging_path.is_file():
             _append_line_to_file(
                 debugging_path,
@@ -345,7 +339,7 @@ def _write_vault_log(
             )
 
     # Create/prepend to session note (newest entry first)
-    sessions_dir = vault_project_dir / "Sessions"
+    sessions_dir = resolve_doc_path(vault_project_dir, "sessions", doc_layout)
     if sessions_dir.is_dir():
         session_file = sessions_dir / f"Sesión {date_str}.md"
         entry_line = f"- **{time_str}** [{entry_type}] {text}\n"
@@ -366,6 +360,56 @@ def _write_vault_log(
                 insert_idx = len(lines)
             lines.insert(insert_idx, entry_line)
             session_file.write_text("".join(lines), encoding="utf-8")
+
+
+def _write_decision_flat(vault_project_dir: Path, text: str, date_str: str) -> None:
+    """Prepend decision to monolithic Decisions.md (flat layout)."""
+    decisions_path = vault_project_dir / "Decisions.md"
+    if decisions_path.is_file():
+        content = decisions_path.read_text(encoding="utf-8")
+        existing = re.findall(r"^##+ \d+\.", content, re.MULTILINE)
+        next_num = len(existing) + 1
+        new_entry = (
+            f"\n---\n\n## {next_num:03d}. {text}\n\n"
+            f"**Fecha:** {date_str}\n"
+            f"**Contexto:** (pendiente de documentar)\n"
+            f"**Decisión:** {text}\n\n"
+        )
+        first_separator = content.find("\n---\n")
+        if first_separator >= 0:
+            insert_pos = first_separator
+            decisions_path.write_text(
+                content[:insert_pos] + new_entry + content[insert_pos:],
+                encoding="utf-8",
+            )
+        else:
+            _append_line_to_file(decisions_path, new_entry)
+
+
+def _write_decision_as_adr(vault_project_dir: Path, text: str, date_str: str) -> None:
+    """Create individual ADR file in layered layout."""
+    adr_dir = resolve_doc_path(vault_project_dir, "decisions", DocLayout.LAYERED_V1)
+    adr_dir.mkdir(parents=True, exist_ok=True)
+
+    # Determine next ADR number by scanning existing files
+    existing_nums: list[int] = []
+    for f in adr_dir.glob("ADR-*.md"):
+        match = re.match(r"ADR-(\d+)", f.stem)
+        if match:
+            existing_nums.append(int(match.group(1)))
+    next_num = max(existing_nums, default=0) + 1
+
+    adr_path = adr_dir / f"ADR-{next_num:03d}.md"
+    adr_path.write_text(
+        f"---\ntype: adr\nadr_number: {next_num}\ncreated: {date_str}\n"
+        f"project:\ntags: []\n---\n\n"
+        f"# ADR-{next_num:03d}. {text}\n\n"
+        f"## Context\n\n(pendiente de documentar)\n\n"
+        f"## Decision\n\n{text}\n\n"
+        f"## Rationale\n\n\n"
+        f"## Consequences\n\n\n",
+        encoding="utf-8",
+    )
 
 
 def _append_to_changelog(path: Path, date_str: str, entry_type: str, text: str) -> None:
@@ -429,6 +473,7 @@ def _extract_section(content: str, heading: str, max_chars: int = 2000) -> str |
 def _read_vault_project_data(
     vault_project_dir: Path,
     project_name: str,
+    doc_layout: str = "flat",
 ) -> tuple[str | None, list[str], list[str]]:
     """Read vault project files and return (status, decisions, bugs)."""
     vault_status: str | None = None
@@ -436,11 +481,16 @@ def _read_vault_project_data(
     vault_bugs: list[str] = []
 
     # Try project root note
-    for candidate in [f"{project_name}.md", "Brain-Ops.md"]:
-        root_note = vault_project_dir / candidate
+    root_dir = resolve_doc_path(vault_project_dir, "root_note", doc_layout)
+    root_candidates = (
+        ["PROJECT.md", f"{project_name}.md"]
+        if doc_layout == DocLayout.LAYERED_V1
+        else [f"{project_name}.md", "Brain-Ops.md"]
+    )
+    for candidate in root_candidates:
+        root_note = root_dir / candidate
         if root_note.is_file():
             content = root_note.read_text(encoding="utf-8")[:4000]
-            # Try multiple heading names for current state
             for heading in ("Current Focus", "Current status", "In Progress"):
                 status = _extract_section(content, heading)
                 if status:
@@ -448,24 +498,37 @@ def _read_vault_project_data(
                     break
             break
 
-    # Read Decisions.md — extract ADR titles (lines starting with "### ")
-    decisions_path = vault_project_dir / "Decisions.md"
-    if decisions_path.is_file():
-        content = decisions_path.read_text(encoding="utf-8")
-        # Prefer ADR titles (### headings) over bullets
-        adrs = re.findall(r"^###\s+(.+)$", content, re.MULTILINE)
-        if adrs:
-            vault_decisions = adrs[-5:]
-        else:
-            items = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)
-            vault_decisions = items[-5:] if items else []
+    # Read decisions
+    if doc_layout == DocLayout.LAYERED_V1:
+        adr_dir = resolve_doc_path(vault_project_dir, "decisions", doc_layout)
+        if adr_dir.is_dir():
+            for adr_file in sorted(adr_dir.glob("ADR-*.md")):
+                content = adr_file.read_text(encoding="utf-8")
+                # Extract title from first # heading
+                title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+                if title_match:
+                    vault_decisions.append(title_match.group(1))
+            vault_decisions = vault_decisions[-5:]
+    else:
+        decisions_path = vault_project_dir / "Decisions.md"
+        if decisions_path.is_file():
+            content = decisions_path.read_text(encoding="utf-8")
+            adrs = re.findall(r"^###\s+(.+)$", content, re.MULTILINE)
+            if adrs:
+                vault_decisions = adrs[-5:]
+            else:
+                items = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)
+                vault_decisions = items[-5:] if items else []
 
-    # Read Debugging.md — extract problem titles (## headings), not all bullets
-    debugging_path = vault_project_dir / "Debugging.md"
+    # Read bugs
+    debugging_dir = resolve_doc_path(vault_project_dir, "debugging", doc_layout)
+    if doc_layout == DocLayout.LAYERED_V1:
+        debugging_path = debugging_dir / "known-issues.md"
+    else:
+        debugging_path = debugging_dir / "Debugging.md"
     if debugging_path.is_file():
         content = debugging_path.read_text(encoding="utf-8")
-        # Extract section headings as bug summaries — they're the problem titles
-        headings = re.findall(r"^##\s+(?!General)(.+)$", content, re.MULTILINE)
+        headings = re.findall(r"^##\s+(?!General|Known)(.+)$", content, re.MULTILINE)
         vault_bugs = headings[:5] if headings else []
 
     return vault_status, vault_decisions, vault_bugs
@@ -493,9 +556,18 @@ def _extract_section_list(content: str, *headings: str) -> list[str]:
 
 def _sync_project_registry_from_vault(project: Project, vault_project_dir: Path) -> bool:
     changed = False
+    layout = project.doc_layout
+
+    # Find root note
+    root_dir = resolve_doc_path(vault_project_dir, "root_note", layout)
     root_note = None
-    for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
-        candidate_path = vault_project_dir / candidate
+    root_candidates = (
+        ["PROJECT.md", f"{project.name}.md"]
+        if layout == DocLayout.LAYERED_V1
+        else [f"{project.name}.md", "Brain-Ops.md"]
+    )
+    for candidate in root_candidates:
+        candidate_path = root_dir / candidate
         if candidate_path.is_file():
             root_note = candidate_path
             break
@@ -529,17 +601,32 @@ def _sync_project_registry_from_vault(project: Project, vault_project_dir: Path)
             project.context.notes = None
             changed = True
 
-    decisions_path = vault_project_dir / "Decisions.md"
-    if decisions_path.is_file():
-        content = decisions_path.read_text(encoding="utf-8")
-        adrs = re.findall(r"^###\s+(.+)$", content, re.MULTILINE)
-        if adrs:
-            decisions = adrs[-7:]
-        else:
-            decisions = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)[-7:]
-        if project.context.decisions != decisions:
-            project.context.decisions = decisions
-            changed = True
+    # Sync decisions
+    if layout == DocLayout.LAYERED_V1:
+        adr_dir = resolve_doc_path(vault_project_dir, "decisions", layout)
+        if adr_dir.is_dir():
+            decisions: list[str] = []
+            for adr_file in sorted(adr_dir.glob("ADR-*.md")):
+                content = adr_file.read_text(encoding="utf-8")
+                title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+                if title_match:
+                    decisions.append(title_match.group(1))
+            decisions = decisions[-7:]
+            if project.context.decisions != decisions:
+                project.context.decisions = decisions
+                changed = True
+    else:
+        decisions_path = vault_project_dir / "Decisions.md"
+        if decisions_path.is_file():
+            content = decisions_path.read_text(encoding="utf-8")
+            adrs = re.findall(r"^###\s+(.+)$", content, re.MULTILINE)
+            if adrs:
+                decisions = adrs[-7:]
+            else:
+                decisions = re.findall(r"^[-*]\s+(.+)$", content, re.MULTILINE)[-7:]
+            if project.context.decisions != decisions:
+                project.context.decisions = decisions
+                changed = True
 
     commands = _derive_context_commands(project)
     if project.commands != commands:
@@ -602,7 +689,7 @@ def execute_session_workflow(
     vault_project_dir = _resolve_vault_project_dir(config_path, project.name)
     if vault_project_dir is not None:
         vault_path_str = str(vault_project_dir)
-        status, decisions, bugs = _read_vault_project_data(vault_project_dir, project.name)
+        status, decisions, bugs = _read_vault_project_data(vault_project_dir, project.name, doc_layout=project.doc_layout)
         vault_status = status
         vault_decisions = tuple(decisions)
         vault_bugs = tuple(bugs)
@@ -674,40 +761,56 @@ def execute_audit_project_workflow(
 
     issues: list[str] = []
     score = 100
+    layout = project.doc_layout
 
     # Resolve vault project directory
     vault_project_dir = _resolve_vault_project_dir(config_path, project.name)
 
     # --- Vault file checks ---
-    expected_files: list[tuple[str, int]] = [
-        ("Architecture.md", 7),
-        ("Decisions.md", 5),
-        ("Runbook.md", 7),
-        ("CLI Reference.md", 5),
-        ("Workflows.md", 5),
-        ("Debugging.md", 5),
-        ("Changelog.md", 5),  # Also accepts Changelog/ folder
-    ]
+    if layout == DocLayout.LAYERED_V1:
+        expected_files: list[tuple[str, int]] = [
+            ("00 - Canonical/ARCHITECTURE.md", 7),
+            ("00 - Canonical/INVARIANTS.md", 5),
+            ("02 - Operations/RUNBOOKS/Runbook.md", 7),
+            ("00 - Canonical/REFERENCE/CLI.md", 5),
+            ("03 - Direction/PRIORITIES.md", 5),
+        ]
+    else:
+        expected_files = [
+            ("Architecture.md", 7),
+            ("Decisions.md", 5),
+            ("Runbook.md", 7),
+            ("CLI Reference.md", 5),
+            ("Workflows.md", 5),
+            ("Debugging.md", 5),
+            ("Changelog.md", 5),
+        ]
 
     # Check for project root note
     root_note_found = False
     if vault_project_dir is not None:
-        for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
-            if (vault_project_dir / candidate).is_file():
+        root_dir = resolve_doc_path(vault_project_dir, "root_note", layout)
+        root_candidates = (
+            ["PROJECT.md", f"{project.name}.md"]
+            if layout == DocLayout.LAYERED_V1
+            else [f"{project.name}.md", "Brain-Ops.md"]
+        )
+        for candidate in root_candidates:
+            if (root_dir / candidate).is_file():
                 root_note_found = True
                 break
     if not root_note_found:
-        issues.append("Missing project root note (Brain-Ops.md or {name}.md)")
+        issues.append("Missing project root note")
         score -= 10
 
     if vault_project_dir is not None:
         for filename, penalty in expected_files:
             file_path = vault_project_dir / filename
-            # Changelog.md can be a file OR a Changelog/ folder
+            # Changelog.md can be a file OR a Changelog/ folder (flat layout)
             if filename == "Changelog.md" and not file_path.is_file():
                 changelog_dir = vault_project_dir / "Changelog"
                 if changelog_dir.is_dir() and any(changelog_dir.iterdir()):
-                    continue  # Changelog/ folder with files is fine
+                    continue
             if not file_path.is_file():
                 issues.append(f"Falta {filename}")
                 score -= penalty
@@ -715,16 +818,21 @@ def execute_audit_project_workflow(
                 issues.append(f"{filename} está vacío")
                 score -= penalty
 
+        # Check ADR directory for layered layout
+        if layout == DocLayout.LAYERED_V1:
+            adr_dir = resolve_doc_path(vault_project_dir, "decisions", layout)
+            if not adr_dir.is_dir() or not list(adr_dir.glob("ADR-*.md")):
+                issues.append("No ADR files in 00 - Canonical/ADR/")
+                score -= 5
+
         # Check for recent session notes
-        sessions_dir = vault_project_dir / "Sessions"
+        sessions_dir = resolve_doc_path(vault_project_dir, "sessions", layout)
         if sessions_dir.is_dir():
             from datetime import timedelta
 
             cutoff = datetime.now(tz=timezone.utc) - timedelta(days=7)
             has_recent_session = False
-            # Support both "Session" and "Sesión" naming
             for session_file in list(sessions_dir.glob("Session *.md")) + list(sessions_dir.glob("Sesión *.md")):
-                # Extract date from filename
                 match = re.search(r"(?:Session|Sesión) (\d{4}-\d{2}-\d{2})", session_file.name)
                 if match:
                     try:
@@ -952,6 +1060,7 @@ def execute_refresh_project_workflow(
 
     refreshed: list[str] = []
     skipped: list[str] = []
+    layout = project.doc_layout
 
     if _sync_project_registry_from_vault(project, vault_project_dir):
         registry[project.name] = project
@@ -961,7 +1070,7 @@ def execute_refresh_project_workflow(
         skipped.append("Project registry context (sin cambios)")
 
     # 1. Refresh Context Pack
-    context_pack_dir = vault_project_dir / "Context Packs"
+    context_pack_dir = resolve_doc_path(vault_project_dir, "context_packs", layout)
     context_pack_dir.mkdir(parents=True, exist_ok=True)
     pack_path = context_pack_dir / f"{project.name} Context Pack.md"
     try:
@@ -992,10 +1101,16 @@ def execute_refresh_project_workflow(
     except Exception:
         skipped.append("Context Pack (error)")
 
-    # 2. Refresh Brain-Ops.md auto sections (test count, entity count)
+    # 2. Refresh root note auto sections (test count)
+    root_dir = resolve_doc_path(vault_project_dir, "root_note", layout)
     root_note = None
-    for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
-        p = vault_project_dir / candidate
+    root_candidates = (
+        ["PROJECT.md", f"{project.name}.md"]
+        if layout == DocLayout.LAYERED_V1
+        else [f"{project.name}.md", "Brain-Ops.md"]
+    )
+    for candidate in root_candidates:
+        p = root_dir / candidate
         if p.is_file():
             root_note = p
             break
@@ -1003,8 +1118,6 @@ def execute_refresh_project_workflow(
         test_count = _count_tests(project.path)
         if test_count is not None:
             content = root_note.read_text(encoding="utf-8")
-            import re
-            # Update test count in any format like "**NNN tests**"
             new_content = re.sub(
                 r"\*\*\d+ tests?\*\*",
                 f"**{test_count} tests**",
@@ -1012,24 +1125,26 @@ def execute_refresh_project_workflow(
             )
             if new_content != content:
                 root_note.write_text(new_content, encoding="utf-8")
-                refreshed.append(f"Brain-Ops.md (tests: {test_count})")
+                refreshed.append(f"Root note (tests: {test_count})")
             else:
-                skipped.append("Brain-Ops.md (sin cambios)")
+                skipped.append("Root note (sin cambios)")
         else:
-            skipped.append("Brain-Ops.md (no se pudo contar tests)")
+            skipped.append("Root note (no se pudo contar tests)")
     else:
-        skipped.append("Brain-Ops.md (no encontrado)")
+        skipped.append("Root note (no encontrado)")
 
-    # 3. Refresh CLI Reference auto block if it has AUTO markers
-    cli_ref = vault_project_dir / "CLI Reference.md"
+    # 3. Refresh CLI Reference auto block
+    cli_ref_dir = resolve_doc_path(vault_project_dir, "cli_reference", layout)
+    cli_ref_name = "CLI.md" if layout == DocLayout.LAYERED_V1 else "CLI Reference.md"
+    cli_ref = cli_ref_dir / cli_ref_name
     if cli_ref.is_file():
         cli_help = _generate_cli_reference(project.path)
         if cli_help and _refresh_auto_block(cli_ref, f"```\n{cli_help}\n```"):
-            refreshed.append("CLI Reference.md (auto-block)")
+            refreshed.append(f"{cli_ref_name} (auto-block)")
         else:
-            skipped.append("CLI Reference.md (sin marcadores AUTO o sin cambios)")
+            skipped.append(f"{cli_ref_name} (sin marcadores AUTO o sin cambios)")
     else:
-        skipped.append("CLI Reference.md (no encontrado)")
+        skipped.append(f"{cli_ref_name} (no encontrado)")
 
     return ProjectRefreshResult(
         project_name=project.name,
@@ -1038,10 +1153,235 @@ def execute_refresh_project_workflow(
     )
 
 
+# ============================================================================
+# MIGRATE PROJECT DOCS — flat → layered-v1
+# ============================================================================
+
+
+@dataclass(slots=True, frozen=True)
+class ProjectMigrationResult:
+    project_name: str
+    moves: tuple[str, ...]
+    created: tuple[str, ...]
+    adrs_split: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "project_name": self.project_name,
+            "moves": list(self.moves),
+            "created": list(self.created),
+            "adrs_split": self.adrs_split,
+        }
+
+
+def split_decisions_to_adrs(decisions_path: Path, adr_dir: Path, project_name: str = "") -> list[Path]:
+    """Split a monolithic Decisions.md into individual ADR files."""
+    content = decisions_path.read_text(encoding="utf-8")
+    # Split by "## NNN." pattern
+    entries = re.split(r"\n(?=---\s*\n\s*##\s+\d{3}\.)", content)
+
+    created: list[Path] = []
+    for entry in entries:
+        match = re.search(r"##\s+(\d{3})\.\s+(.+?)(?:\n|$)", entry)
+        if not match:
+            continue
+        num = int(match.group(1))
+        title = match.group(2).strip()
+
+        # Extract date
+        date_match = re.search(r"\*\*Fecha:\*\*\s*(.+?)(?:\n|$)", entry)
+        date_str = date_match.group(1).strip() if date_match else ""
+
+        # Extract decision text
+        decision_match = re.search(r"\*\*Decisión:\*\*\s*(.+?)(?:\n|$)", entry)
+        decision_text = decision_match.group(1).strip() if decision_match else title
+
+        # Extract context
+        context_match = re.search(r"\*\*Contexto:\*\*\s*(.+?)(?:\n|$)", entry)
+        context_text = context_match.group(1).strip() if context_match else ""
+
+        # Extract tradeoffs
+        tradeoffs_match = re.search(r"\*\*Tradeoffs?:\*\*\s*(.+?)(?:\n\*\*|$)", entry, re.DOTALL)
+        tradeoffs_text = tradeoffs_match.group(1).strip() if tradeoffs_match else ""
+
+        # Extract consequences
+        consequences_match = re.search(r"\*\*Consecuencias?:\*\*\s*(.+?)(?:\n\*\*|$)", entry, re.DOTALL)
+        consequences_text = consequences_match.group(1).strip() if consequences_match else ""
+
+        adr_path = adr_dir / f"ADR-{num:03d}.md"
+        adr_content = (
+            f"---\ntype: adr\nadr_number: {num}\ncreated: {date_str}\n"
+            f"project: {project_name}\ntags: []\n---\n\n"
+            f"# ADR-{num:03d}. {title}\n\n"
+            f"## Context\n\n{context_text}\n\n"
+            f"## Decision\n\n{decision_text}\n\n"
+            f"## Rationale\n\n{tradeoffs_text}\n\n"
+            f"## Consequences\n\n{consequences_text}\n\n"
+        )
+        adr_path.write_text(adr_content, encoding="utf-8")
+        created.append(adr_path)
+
+    return created
+
+
+# File moves for migration: (source_name, target_layer_path, target_filename, is_dir)
+_MIGRATION_MOVES: list[tuple[str, str, str, bool]] = [
+    ("Architecture.md", "00 - Canonical", "ARCHITECTURE.md", False),
+    ("Debugging.md", "02 - Operations/DEBUGGING", "known-issues.md", False),
+    ("Runbook.md", "02 - Operations/RUNBOOKS", "Runbook.md", False),
+    ("Workflows.md", "02 - Operations/WORKFLOWS", "Workflows.md", False),
+    ("CLI Reference.md", "00 - Canonical/REFERENCE", "CLI.md", False),
+    ("Guía de Uso Diario.md", "02 - Operations/RUNBOOKS", "daily-usage.md", False),
+]
+
+_MIGRATION_DIR_MOVES: list[tuple[str, str]] = [
+    ("Changelog", "02 - Operations/CHANGELOGS"),
+    ("Sessions", "02 - Operations/SESSIONS"),
+    ("Context Packs", "02 - Operations/CONTEXT_PACKS"),
+]
+
+
+def execute_migrate_project_docs_workflow(
+    *,
+    project_name: str,
+    load_registry_path,
+    config_path: Path | None = None,
+    dry_run: bool = False,
+) -> ProjectMigrationResult:
+    """Migrate a project's vault docs from flat to layered-v1 layout."""
+    from brain_ops.domains.projects.doc_layout import SCAFFOLD_DIRS_V1
+    import shutil
+
+    registry_path = load_registry_path()
+    projects = load_project_registry(registry_path)
+    project = projects.get(project_name.strip())
+    if project is None:
+        raise ConfigError(f"Project '{project_name}' not found.")
+    if project.doc_layout == DocLayout.LAYERED_V1:
+        raise ConfigError(f"Project '{project_name}' already uses layered-v1 layout.")
+
+    vault_project_dir = _resolve_vault_project_dir(config_path, project.name)
+    if vault_project_dir is None:
+        raise ConfigError(f"Vault project folder not found for '{project_name}'.")
+
+    moves: list[str] = []
+    created: list[str] = []
+    adrs_split = 0
+
+    if dry_run:
+        # Report what would happen without executing
+        for src, target_dir, target_name, _ in _MIGRATION_MOVES:
+            if (vault_project_dir / src).exists():
+                moves.append(f"{src} → {target_dir}/{target_name}")
+        for src, target_dir in _MIGRATION_DIR_MOVES:
+            if (vault_project_dir / src).is_dir():
+                moves.append(f"{src}/ → {target_dir}/")
+        # Root note
+        for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
+            if (vault_project_dir / candidate).is_file():
+                moves.append(f"{candidate} → 00 - Canonical/PROJECT.md")
+                break
+        # Decisions split
+        if (vault_project_dir / "Decisions.md").is_file():
+            moves.append("Decisions.md → split into 00 - Canonical/ADR/ADR-*.md")
+        return ProjectMigrationResult(
+            project_name=project_name,
+            moves=tuple(moves),
+            created=tuple(created),
+            adrs_split=adrs_split,
+        )
+
+    # Create layer directories
+    for subdir in SCAFFOLD_DIRS_V1:
+        (vault_project_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    # Move root note → 00 - Canonical/PROJECT.md
+    canonical_dir = vault_project_dir / "00 - Canonical"
+    canonical_dir.mkdir(parents=True, exist_ok=True)
+    for candidate in [f"{project.name}.md", "Brain-Ops.md"]:
+        src = vault_project_dir / candidate
+        if src.is_file():
+            dst = canonical_dir / "PROJECT.md"
+            # Add alias to frontmatter for Obsidian link resolution
+            content = src.read_text(encoding="utf-8")
+            if "aliases:" not in content:
+                content = content.replace("---\n", f"---\naliases: [{candidate.removesuffix('.md')}]\n", 1)
+            dst.write_text(content, encoding="utf-8")
+            src.unlink()
+            moves.append(f"{candidate} → 00 - Canonical/PROJECT.md")
+            break
+
+    # Split Decisions.md into individual ADRs
+    decisions_path = vault_project_dir / "Decisions.md"
+    if decisions_path.is_file():
+        adr_dir = vault_project_dir / "00 - Canonical" / "ADR"
+        adr_dir.mkdir(parents=True, exist_ok=True)
+        adr_files = split_decisions_to_adrs(decisions_path, adr_dir, project_name=project.name)
+        adrs_split = len(adr_files)
+        if adr_files:
+            decisions_path.unlink()
+            moves.append(f"Decisions.md → split into {adrs_split} ADR files")
+
+    # Move individual files
+    for src_name, target_dir, target_name, _ in _MIGRATION_MOVES:
+        src = vault_project_dir / src_name
+        if src.is_file():
+            dst_dir = vault_project_dir / target_dir
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            dst = dst_dir / target_name
+            shutil.move(str(src), str(dst))
+            moves.append(f"{src_name} → {target_dir}/{target_name}")
+
+    # Move directories
+    for src_name, target_dir in _MIGRATION_DIR_MOVES:
+        src = vault_project_dir / src_name
+        if src.is_dir():
+            dst = vault_project_dir / target_dir
+            dst.mkdir(parents=True, exist_ok=True)
+            for item in src.iterdir():
+                shutil.move(str(item), str(dst / item.name))
+            src.rmdir()
+            moves.append(f"{src_name}/ → {target_dir}/")
+
+    # Create new scaffold files that didn't exist before
+    from brain_ops.domains.projects.doc_layout import SCAFFOLD_SPEC_V1
+    new_templates = {
+        "invariants": ("00 - Canonical", "INVARIANTS.md"),
+        "domain_glossary": ("00 - Canonical", "DOMAIN_GLOSSARY.md"),
+        "priorities": ("03 - Direction", "PRIORITIES.md"),
+        "tech_debt": ("03 - Direction", "TECH_DEBT.md"),
+        "open_questions": ("03 - Direction", "OPEN_QUESTIONS.md"),
+    }
+    for note_type, (layer, filename) in new_templates.items():
+        dst = vault_project_dir / layer / filename
+        if not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            from brain_ops.constants import DEFAULT_TEMPLATE_DIR
+            template_path = DEFAULT_TEMPLATE_DIR / f"{note_type}.md"
+            if template_path.is_file():
+                content = template_path.read_text(encoding="utf-8")
+                content = content.replace("{{title}}", filename.removesuffix(".md"))
+                content = content.replace("project:", f"project: {project.name}")
+                dst.write_text(content, encoding="utf-8")
+                created.append(f"{layer}/{filename}")
+
+    # Update registry
+    project.doc_layout = DocLayout.LAYERED_V1
+    save_project_registry(registry_path, projects)
+
+    return ProjectMigrationResult(
+        project_name=project_name,
+        moves=tuple(moves),
+        created=tuple(created),
+        adrs_split=adrs_split,
+    )
+
+
 __all__ = [
     "ProjectAuditResult",
     "ProjectClaudeMdResult",
     "ProjectLogResult",
+    "ProjectMigrationResult",
     "ProjectRegistryResult",
     "ProjectSessionResult",
     "build_agent_context_pack",
@@ -1049,10 +1389,12 @@ __all__ = [
     "execute_generate_all_claude_md_workflow",
     "execute_generate_claude_md_workflow",
     "execute_list_projects_workflow",
+    "execute_migrate_project_docs_workflow",
     "execute_project_context_workflow",
     "execute_project_log_workflow",
     "execute_refresh_project_workflow",
     "execute_register_project_workflow",
     "execute_session_workflow",
     "execute_update_project_context_workflow",
+    "split_decisions_to_adrs",
 ]

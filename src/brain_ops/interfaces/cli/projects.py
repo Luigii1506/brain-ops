@@ -17,6 +17,7 @@ from brain_ops.application.projects import (
     execute_generate_all_claude_md_workflow,
     execute_generate_claude_md_workflow,
     execute_list_projects_workflow,
+    execute_migrate_project_docs_workflow,
     execute_project_context_workflow,
     execute_project_log_workflow,
     execute_refresh_project_workflow,
@@ -449,6 +450,49 @@ def present_refresh_project_command(
     console.print()
 
 
+def present_migrate_project_docs_command(
+    console: Console,
+    *,
+    project_name: str,
+    config_path,
+    dry_run: bool,
+    as_json: bool,
+) -> None:
+    result = execute_migrate_project_docs_workflow(
+        project_name=project_name,
+        load_registry_path=lambda: load_project_registry_path(),
+        config_path=config_path,
+        dry_run=dry_run,
+    )
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+
+    console.print()
+    if dry_run:
+        console.rule(f"Migration DRY RUN: {result.project_name}", style="bold yellow")
+    else:
+        console.rule(f"Migration: {result.project_name}", style="bold cyan")
+    console.print()
+
+    if result.moves:
+        console.print("[bold]Moves:[/bold]" if not dry_run else "[bold]Would move:[/bold]")
+        for move in result.moves:
+            console.print(f"  [green]\u2713[/green] {move}")
+
+    if result.created:
+        console.print("[bold]Created:[/bold]" if not dry_run else "[bold]Would create:[/bold]")
+        for item in result.created:
+            console.print(f"  [cyan]+[/cyan] {item}")
+
+    if result.adrs_split > 0:
+        console.print(f"\n[bold]ADRs split:[/bold] {result.adrs_split}")
+
+    if not dry_run:
+        console.print(f"\n[green]Layout updated to layered-v1[/green]")
+    console.print()
+
+
 __all__ = [
     "build_project_context_table",
     "build_project_list_table",
@@ -457,6 +501,7 @@ __all__ = [
     "present_generate_all_claude_md_command",
     "present_generate_claude_md_command",
     "present_list_projects_command",
+    "present_migrate_project_docs_command",
     "present_project_context_command",
     "present_project_log_command",
     "present_refresh_project_command",

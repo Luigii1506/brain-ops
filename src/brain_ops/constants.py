@@ -49,6 +49,14 @@ DEFAULT_TYPE_FOLDER_MAP = {
     "decision": DEFAULT_FOLDER_MAP["projects"],
     "debugging_note": DEFAULT_FOLDER_MAP["projects"],
     "changelog": DEFAULT_FOLDER_MAP["projects"],
+    # Layered project doc types
+    "invariants": DEFAULT_FOLDER_MAP["projects"],
+    "domain_glossary": DEFAULT_FOLDER_MAP["projects"],
+    "priorities": DEFAULT_FOLDER_MAP["projects"],
+    "tech_debt": DEFAULT_FOLDER_MAP["projects"],
+    "open_questions": DEFAULT_FOLDER_MAP["projects"],
+    "reference_cli": DEFAULT_FOLDER_MAP["projects"],
+    "adr": DEFAULT_FOLDER_MAP["projects"],
     # Entity subtypes → Knowledge
     "person": DEFAULT_FOLDER_MAP["knowledge"],
     "animal": DEFAULT_FOLDER_MAP["knowledge"],

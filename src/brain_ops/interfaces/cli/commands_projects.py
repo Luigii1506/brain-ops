@@ -14,6 +14,7 @@ from .projects import (
     present_generate_all_claude_md_command,
     present_generate_claude_md_command,
     present_list_projects_command,
+    present_migrate_project_docs_command,
     present_project_context_command,
     present_project_log_command,
     present_refresh_project_command,
@@ -195,6 +196,25 @@ def register_project_commands(app: typer.Typer, console: Console, handle_error) 
                 console,
                 project_name=name,
                 config_path=config,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("migrate-project-docs")
+    def migrate_project_docs_command(
+        name: str,
+        config: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Show what would change without executing."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Migrate project docs from flat to 4-layer structure (layered-v1)."""
+        try:
+            present_migrate_project_docs_command(
+                console,
+                project_name=name,
+                config_path=config,
+                dry_run=dry_run,
                 as_json=as_json,
             )
         except BrainOpsError as error:
