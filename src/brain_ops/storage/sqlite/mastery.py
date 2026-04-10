@@ -9,10 +9,15 @@ from pathlib import Path
 from brain_ops.storage.db import connect_sqlite, require_database_file
 
 
-def _compute_next_review(difficulty: int, times_reviewed: int) -> str:
-    """SM-2 simplified: compute next review date based on difficulty and history."""
+def _compute_next_review(score: int, times_reviewed: int) -> str:
+    """SM-2 simplified: compute next review date based on recall score and history.
+
+    Score: 1=no recordé nada, 2=poco, 3=con esfuerzo, 4=bien, 5=perfecto.
+    Higher score = longer interval (don't need to review soon).
+    Lower score = shorter interval (need to review again quickly).
+    """
     base_intervals = {1: 1, 2: 1, 3: 3, 4: 7, 5: 14}
-    base = base_intervals.get(difficulty, 3)
+    base = base_intervals.get(score, 3)
 
     # Multiply by 1.5 for each successful review (capped at 90 days)
     multiplier = min(1.5 ** max(0, times_reviewed - 1), 30)
@@ -40,10 +45,10 @@ def record_review(
         row = cursor.fetchone()
 
         if row is None:
-            # First review
+            # First review (score: 1=bad, 5=perfect)
             times = 1
             avg_diff = float(difficulty)
-            level = 1 if difficulty <= 3 else 0
+            level = 1 if difficulty >= 3 else 0  # score 3+ = at least "visto"
             next_rev = _compute_next_review(difficulty, times)
 
             cursor.execute(
@@ -61,14 +66,14 @@ def record_review(
             times = old["times_reviewed"] + 1
             avg_diff = (old["avg_difficulty"] * old["times_reviewed"] + difficulty) / times
 
-            # Level progression
+            # Level progression (score: 1=bad, 5=perfect)
             level = old["mastery_level"]
-            if difficulty <= 2:
-                level = min(level + 1, 4)  # easy → progress
+            if difficulty >= 4:
+                level = min(level + 1, 4)  # good recall → progress
             elif difficulty == 3:
                 pass  # medium → stay
             else:
-                level = max(level - 1, 0)  # hard → regress
+                level = max(level - 1, 0)  # poor recall → regress
 
             next_rev = _compute_next_review(difficulty, times)
 
