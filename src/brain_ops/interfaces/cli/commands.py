@@ -38,6 +38,7 @@ def register_cli_commands(
     def serve_api_command(
         host: str = typer.Option("127.0.0.1", "--host", help="Host to bind the API server."),
         port: int = typer.Option(8420, "--port", help="Port to bind the API server."),
+        reload: bool = typer.Option(False, "--reload", help="Enable autoreload for local API development."),
     ) -> None:
         """Start the brain-ops REST API server."""
         try:
@@ -48,7 +49,13 @@ def register_cli_commands(
             raise typer.Exit(code=1)
         api_app = create_api_app()
         console.print(f"Starting brain-ops API at http://{host}:{port}")
-        uvicorn.run(api_app, host=host, port=port)
+        uvicorn.run(
+            "brain_ops.interfaces.api.app:create_api_app",
+            host=host,
+            port=port,
+            reload=reload,
+            factory=True,
+        )
 
 
 __all__ = ["register_cli_commands"]

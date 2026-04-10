@@ -247,7 +247,11 @@ def extract_wikipedia_api_section_blocks(
     except Exception:
         return []
 
-    sections = tocdata.get("parse", {}).get("tocdata", {}).get("sections", [])
+    if tocdata is None:
+        return []
+    _parse = tocdata.get("parse") or {}
+    _tocdata = _parse.get("tocdata") or {}
+    sections = _tocdata.get("sections", [])
     if not isinstance(sections, list):
         return []
 

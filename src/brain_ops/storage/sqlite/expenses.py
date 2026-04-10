@@ -36,6 +36,47 @@ def insert_expense(
         )
 
 
+def delete_expense(database_path: Path, *, expense_id: int) -> bool:
+    target = database_path.expanduser()
+    with connect_sqlite(target) as connection:
+        cursor = connection.execute(
+            "DELETE FROM expenses WHERE id = ?",
+            (expense_id,),
+        )
+    return cursor.rowcount > 0
+
+
+def fetch_distinct_expense_categories(database_path: Path) -> list[str]:
+    target = database_path.expanduser()
+    with connect_sqlite(target) as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT category
+            FROM expenses
+            WHERE category IS NOT NULL AND TRIM(category) != ''
+            ORDER BY category COLLATE NOCASE
+            """
+        ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def fetch_distinct_expense_merchants(database_path: Path, *, limit: int = 30) -> list[str]:
+    target = database_path.expanduser()
+    with connect_sqlite(target) as connection:
+        rows = connection.execute(
+            """
+            SELECT merchant
+            FROM expenses
+            WHERE merchant IS NOT NULL AND TRIM(merchant) != ''
+            GROUP BY merchant
+            ORDER BY MAX(logged_at) DESC, merchant COLLATE NOCASE
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def fetch_expense_category_totals(
     database_path: Path,
     *,

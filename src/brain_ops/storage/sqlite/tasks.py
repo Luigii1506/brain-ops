@@ -169,10 +169,15 @@ def count_tasks_by_status(db_path: Path, project: str | None = None) -> dict[str
     with connect_sqlite(target) as conn:
         cursor = conn.cursor()
         if project:
-            cursor.execute(
-                "SELECT status, COUNT(*) FROM tasks WHERE project = ? GROUP BY status",
-                (project,),
-            )
+            if project == "personal":
+                cursor.execute(
+                    "SELECT status, COUNT(*) FROM tasks WHERE project IS NULL GROUP BY status",
+                )
+            else:
+                cursor.execute(
+                    "SELECT status, COUNT(*) FROM tasks WHERE project = ? GROUP BY status",
+                    (project,),
+                )
         else:
             cursor.execute("SELECT status, COUNT(*) FROM tasks GROUP BY status")
         return {row[0]: row[1] for row in cursor.fetchall()}
