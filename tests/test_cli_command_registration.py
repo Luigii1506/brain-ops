@@ -110,6 +110,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "review-entity",
                 "knowledge-due",
                 "knowledge-status",
+                "study",
             },
         )
 
