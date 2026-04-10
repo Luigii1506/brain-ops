@@ -89,8 +89,15 @@ def record_review(
         }
 
 
-def fetch_due_entities(db_path: Path, limit: int = 10) -> list[dict]:
-    """Get entities due for review today (next_review <= today)."""
+def fetch_due_entities(
+    db_path: Path,
+    limit: int = 10,
+    topic_filter: set[str] | None = None,
+) -> list[dict]:
+    """Get entities due for review today (next_review <= today).
+
+    If topic_filter is provided, only return entities whose names are in the set.
+    """
     target = require_database_file(db_path)
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -102,18 +109,29 @@ def fetch_due_entities(db_path: Path, limit: int = 10) -> list[dict]:
                       times_reviewed, avg_difficulty
                FROM entity_mastery
                WHERE next_review <= ?
-               ORDER BY mastery_level ASC, avg_difficulty DESC, next_review ASC
-               LIMIT ?""",
-            (today, limit),
+               ORDER BY mastery_level ASC, avg_difficulty DESC, next_review ASC""",
+            (today,),
         )
-        return [dict(row) for row in cursor.fetchall()]
+        results = [dict(row) for row in cursor.fetchall()]
+
+    if topic_filter:
+        results = [r for r in results if r["entity_name"] in topic_filter]
+
+    return results[:limit]
 
 
-def fetch_new_entities(db_path: Path, vault_path: Path, limit: int = 10) -> list[str]:
-    """Get entity names that exist in vault but have never been reviewed."""
+def fetch_new_entities(
+    db_path: Path,
+    vault_path: Path,
+    limit: int = 10,
+    topic: str | None = None,
+) -> list[str]:
+    """Get entity names that exist in vault but have never been reviewed.
+
+    If topic is provided, only return entities whose tags contain the topic.
+    """
     target = require_database_file(db_path)
 
-    # Get all entity names from vault
     from brain_ops.frontmatter import split_frontmatter
 
     vault_entities: set[str] = set()
@@ -123,22 +141,58 @@ def fetch_new_entities(db_path: Path, vault_path: Path, limit: int = 10) -> list
             try:
                 text = md.read_text(encoding="utf-8")
                 fm, _ = split_frontmatter(text)
-                if fm.get("entity") is True:
-                    name = fm.get("name", "")
-                    if name:
-                        vault_entities.add(name)
+                if fm.get("entity") is not True:
+                    continue
+                name = fm.get("name", "")
+                if not name:
+                    continue
+
+                if topic:
+                    tags = fm.get("tags") or []
+                    if not isinstance(tags, list):
+                        tags = [str(tags)]
+                    tags_lower = [str(t).lower() for t in tags]
+                    if not any(topic.lower() in t for t in tags_lower):
+                        continue
+
+                vault_entities.add(name)
             except Exception:
                 pass
 
-    # Get reviewed entities
     with connect_sqlite(target) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT entity_name FROM entity_mastery")
         reviewed = {row[0] for row in cursor.fetchall()}
 
-    # Return unreviewed
     unreviewed = sorted(vault_entities - reviewed)
     return unreviewed[:limit]
+
+
+def get_entities_by_topic(vault_path: Path, topic: str) -> set[str]:
+    """Get all entity names that have a specific tag/topic."""
+    from brain_ops.frontmatter import split_frontmatter
+
+    entities: set[str] = set()
+    knowledge_dir = vault_path / "02 - Knowledge"
+    if not knowledge_dir.is_dir():
+        return entities
+
+    for md in knowledge_dir.glob("*.md"):
+        try:
+            text = md.read_text(encoding="utf-8")
+            fm, _ = split_frontmatter(text)
+            if fm.get("entity") is not True:
+                continue
+            name = fm.get("name", "")
+            tags = fm.get("tags") or []
+            if not isinstance(tags, list):
+                tags = [str(tags)]
+            tags_lower = [str(t).lower() for t in tags]
+            if any(topic.lower() in t for t in tags_lower):
+                entities.add(name)
+        except Exception:
+            pass
+    return entities
 
 
 def fetch_mastery_summary(db_path: Path) -> dict:

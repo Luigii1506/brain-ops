@@ -908,32 +908,42 @@ def register_personal_commands(app: typer.Typer, console: Console, handle_error)
     @app.command("study")
     def study_command(
         count: int = typer.Option(5, "--count", "-n", help="Número de entidades a repasar."),
+        topic: str | None = typer.Option(None, "--topic", "-t", help="Filtrar por tag/tema (ej: guerras-médicas, guerra-del-peloponeso)."),
         include_new: bool = typer.Option(True, "--include-new/--no-new", help="Incluir entidades nuevas si no hay suficientes pendientes."),
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
     ) -> None:
-        """Sesión de estudio: repasa entidades pendientes con preguntas interactivas."""
+        """Sesión de estudio: repasa entidades con preguntas interactivas (SRS elige por ti)."""
         try:
             from brain_ops.interfaces.cli.runtime import load_database_path, load_validated_vault
-            from brain_ops.storage.sqlite.mastery import fetch_due_entities, fetch_new_entities
+            from brain_ops.storage.sqlite.mastery import fetch_due_entities, fetch_new_entities, get_entities_by_topic
 
             db_path = load_database_path(config_path)
             vault = load_validated_vault(config_path, dry_run=True)
 
+            # Topic filter
+            topic_set: set[str] | None = None
+            if topic:
+                topic_set = get_entities_by_topic(vault.config.vault_path, topic)
+                if not topic_set:
+                    console.print(f"\n[yellow]No se encontraron entidades con tag '{topic}'.[/yellow]\n")
+                    return
+
             # Collect entities to study
-            due = fetch_due_entities(db_path, limit=count)
+            due = fetch_due_entities(db_path, limit=count, topic_filter=topic_set)
             entities_to_study = [e["entity_name"] for e in due]
 
             # Fill with new entities if not enough
             if include_new and len(entities_to_study) < count:
                 remaining = count - len(entities_to_study)
-                new = fetch_new_entities(db_path, vault.config.vault_path, limit=remaining)
+                new = fetch_new_entities(db_path, vault.config.vault_path, limit=remaining, topic=topic)
                 entities_to_study.extend(new)
 
             if not entities_to_study:
                 console.print("\n[green]No hay entidades para estudiar hoy. ¡Buen trabajo![/green]\n")
                 return
 
-            console.print(f"\n[bold]═══ Sesión de estudio ({len(entities_to_study)} entidades) ═══[/bold]")
+            topic_label = f" — tema: {topic}" if topic else ""
+            console.print(f"\n[bold]═══ Sesión de estudio ({len(entities_to_study)} entidades{topic_label}) ═══[/bold]")
             console.print()
 
             results: list[dict] = []
