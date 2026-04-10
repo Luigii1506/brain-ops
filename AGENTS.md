@@ -170,6 +170,12 @@ Campanas, puntos de inflexion, muerte, legado = siempre cubrir.
 4. Siempre usar `[[wikilinks]]` para entidades mencionadas
 5. Nunca dejar la seccion Identity vacia
 6. Escribir en espanol
+7. **SIEMPRE incluir `## Preguntas de recuperación`** con 5 preguntas:
+   - 🟢 Recordar (1): dato concreto, fecha, nombre
+   - 🟡 Explicar (2): por qué, cómo, causa-efecto
+   - 🔴 Comparar (1): similitud/diferencia con otra entidad
+   - ⚫ Aplicar (1): lección, patrón, transferencia
+   Formato: `- 🟢 **¿Pregunta?** → Respuesta concreta`
 
 ### Despues de escribir, verificar cobertura:
 ```bash

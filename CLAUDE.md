@@ -117,6 +117,12 @@ Campaigns, turning points, death, legacy = always cover.
 4. Always use [[wikilinks]] for entities mentioned
 5. Never leave Identity section empty
 6. Write in the same language as the entity name
+7. **ALWAYS include `## Preguntas de recuperación`** with 5 questions:
+   - 🟢 Recordar (1): dato concreto, fecha, nombre
+   - 🟡 Explicar (2): por qué, cómo, causa-efecto
+   - 🔴 Comparar (1): similitud/diferencia con otra entidad
+   - ⚫ Aplicar (1): lección, patrón, transferencia
+   Format: `- 🟢 **¿Pregunta?** → Respuesta concreta`
 
 **After writing, verify coverage:**
 ```bash
