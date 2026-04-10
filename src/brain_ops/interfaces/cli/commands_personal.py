@@ -945,6 +945,24 @@ def register_personal_commands(app: typer.Typer, console: Console, handle_error)
             topic_label = f" — tema: {topic}" if topic else ""
             console.print(f"\n[bold]═══ Sesión de estudio ({len(entities_to_study)} entidades{topic_label}) ═══[/bold]")
             console.print()
+            console.print("[bold]Tipos de preguntas:[/bold]")
+            console.print("  🟢 [green]Recordar[/green]  — hechos, fechas, nombres (memoria directa)")
+            console.print("  🟡 [yellow]Explicar[/yellow]  — por qué, cómo, causa-efecto (comprensión)")
+            console.print("  🔴 [red]Comparar[/red]   — similitudes y diferencias con otros temas (análisis)")
+            console.print("  ⚫ [bold]Aplicar[/bold]    — lecciones, patrones, qué enseña (transferencia)")
+            console.print()
+            console.print("[bold]Reglas:[/bold]")
+            console.print("  1. Lee la pregunta e intenta responder mentalmente")
+            console.print("  2. Presiona Enter para revelar la respuesta")
+            console.print("  3. Al terminar TODAS las preguntas de una entidad, califícate:")
+            console.print("     1=no recordé nada | 2=poco | 3=con esfuerzo | 4=bien | 5=perfecto")
+            console.print("  4. El sistema calcula cuándo toca repasar de nuevo")
+            console.print()
+            try:
+                input("[Presiona Enter para comenzar...]")
+            except EOFError:
+                pass
+            console.print()
 
             results: list[dict] = []
             level_names = {0: "nuevo", 1: "visto", 2: "recordado", 3: "explicado", 4: "dominado"}
