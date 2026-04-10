@@ -120,15 +120,27 @@ def fetch_due_entities(
     return results[:limit]
 
 
+def _has_recovery_questions(body: str) -> bool:
+    """Check if a note body contains ## Preguntas de recuperación with content."""
+    import re
+    match = re.search(r"## Preguntas de recuperación\n(.+?)(?=\n## |\Z)", body, re.DOTALL)
+    if not match:
+        return False
+    content = match.group(1).strip()
+    return any(line.strip().startswith("-") for line in content.splitlines())
+
+
 def fetch_new_entities(
     db_path: Path,
     vault_path: Path,
     limit: int = 10,
     topic: str | None = None,
+    require_questions: bool = True,
 ) -> list[str]:
     """Get entity names that exist in vault but have never been reviewed.
 
     If topic is provided, only return entities whose tags contain the topic.
+    If require_questions is True, only return entities that have recovery questions.
     """
     target = require_database_file(db_path)
 
@@ -140,11 +152,14 @@ def fetch_new_entities(
         for md in knowledge_dir.glob("*.md"):
             try:
                 text = md.read_text(encoding="utf-8")
-                fm, _ = split_frontmatter(text)
+                fm, body = split_frontmatter(text)
                 if fm.get("entity") is not True:
                     continue
                 name = fm.get("name", "")
                 if not name:
+                    continue
+
+                if require_questions and not _has_recovery_questions(body):
                     continue
 
                 if topic:
