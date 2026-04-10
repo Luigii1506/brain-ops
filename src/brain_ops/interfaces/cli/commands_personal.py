@@ -716,4 +716,164 @@ def register_personal_commands(app: typer.Typer, console: Console, handle_error)
             handle_error(error)
 
 
+    # -----------------------------------------------------------------------
+    # KNOWLEDGE MASTERY / SRS
+    # -----------------------------------------------------------------------
+
+    @app.command("review-entity")
+    def review_entity_command(
+        name: str,
+        difficulty: int = typer.Option(0, "--difficulty", "-d", help="Dificultad 1-5 (0=interactivo)."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Repasar una entidad: muestra preguntas y registra dificultad."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path, load_validated_vault
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.storage.sqlite.mastery import record_review, fetch_entity_mastery
+
+            db_path = load_database_path(config_path)
+            vault = load_validated_vault(config_path, dry_run=True)
+
+            # Find entity note and extract questions
+            knowledge_dir = vault.config.vault_path / "02 - Knowledge"
+            entity_file = None
+            for md in knowledge_dir.glob("*.md"):
+                try:
+                    text = md.read_text(encoding="utf-8")
+                    fm, body = split_frontmatter(text)
+                    if fm.get("entity") is True and fm.get("name") == name:
+                        entity_file = md
+                        break
+                except Exception:
+                    pass
+
+            if entity_file is None:
+                console.print(f"Entidad '{name}' no encontrada.")
+                return
+
+            text = entity_file.read_text(encoding="utf-8")
+            fm, body = split_frontmatter(text)
+
+            # Extract questions section
+            import re
+            q_match = re.search(
+                r"## Preguntas de recuperación\n(.*?)(?=\n## |\Z)",
+                body, re.DOTALL,
+            )
+
+            if q_match:
+                questions_text = q_match.group(1).strip()
+                questions = [l.strip() for l in questions_text.splitlines() if l.strip().startswith("-")]
+            else:
+                questions = []
+
+            # Show entity info
+            level_names = {0: "nuevo", 1: "visto", 2: "recordado", 3: "explicado", 4: "dominado"}
+            mastery = fetch_entity_mastery(db_path, name)
+            current_level = level_names.get(mastery["mastery_level"], "?") if mastery else "sin revisar"
+
+            console.print(f"\n[bold]Repaso: {name}[/bold] (nivel: {current_level})")
+            console.print()
+
+            if questions:
+                for i, q in enumerate(questions, 1):
+                    q_text = q.lstrip("- ").strip()
+                    console.print(f"  [bold]Pregunta {i}:[/bold] {q_text}")
+                console.print()
+            else:
+                console.print("  [yellow]Sin preguntas de recuperación — considera agregar la sección.[/yellow]")
+                console.print()
+
+            # Get difficulty rating
+            if difficulty == 0:
+                console.print("[dim]¿Qué tan bien recordaste? (1=nada, 2=poco, 3=con esfuerzo, 4=bien, 5=perfecto)[/dim]")
+                try:
+                    difficulty = int(input("Dificultad (1-5): ").strip())
+                except (ValueError, EOFError):
+                    difficulty = 3
+
+            result = record_review(db_path, name, difficulty)
+            console.print(f"\n✓ Registrado: nivel {level_names.get(result['mastery_level'], '?')} | próximo repaso: {result['next_review']} | revisiones: {result['times_reviewed']}")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("knowledge-due")
+    def knowledge_due_command(
+        limit: int = typer.Option(10, "--limit", help="Máximo de entidades a mostrar."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="JSON output."),
+    ) -> None:
+        """Listar entidades pendientes de repaso hoy (SRS)."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path, load_validated_vault
+            from brain_ops.storage.sqlite.mastery import fetch_due_entities, fetch_new_entities
+
+            db_path = load_database_path(config_path)
+            vault = load_validated_vault(config_path, dry_run=True)
+
+            due = fetch_due_entities(db_path, limit=limit)
+            new = fetch_new_entities(db_path, vault.config.vault_path, limit=5)
+
+            if as_json:
+                console.print_json(data={"due": due, "new": new})
+                return
+
+            level_names = {0: "nuevo", 1: "visto", 2: "recordado", 3: "explicado", 4: "dominado"}
+
+            if due:
+                console.print("\n[bold]Entidades para repasar hoy:[/bold]")
+                for e in due:
+                    lvl = level_names.get(e["mastery_level"], "?")
+                    console.print(f"  • {e['entity_name']} [{lvl}] (dificultad: {e['avg_difficulty']:.1f})")
+            else:
+                console.print("\n[green]No hay entidades pendientes de repaso hoy.[/green]")
+
+            if new:
+                console.print(f"\n[bold]Entidades nuevas sin revisar ({len(new)}):[/bold]")
+                for n in new[:5]:
+                    console.print(f"  ○ {n}")
+
+            console.print()
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("knowledge-status")
+    def knowledge_status_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        as_json: bool = typer.Option(False, "--json", help="JSON output."),
+    ) -> None:
+        """Resumen del estado de dominio del conocimiento."""
+        try:
+            from brain_ops.interfaces.cli.runtime import load_database_path, load_validated_vault
+            from brain_ops.storage.sqlite.mastery import fetch_mastery_summary, fetch_new_entities
+
+            db_path = load_database_path(config_path)
+            vault = load_validated_vault(config_path, dry_run=True)
+
+            summary = fetch_mastery_summary(db_path)
+            new = fetch_new_entities(db_path, vault.config.vault_path, limit=999)
+
+            if as_json:
+                summary["unreviewed"] = len(new)
+                console.print_json(data=summary)
+                return
+
+            console.print("\n[bold]Estado de conocimiento:[/bold]")
+            console.print(f"  Revisadas: {summary['total_reviewed']} entidades")
+            console.print(f"  Sin revisar: {len(new)} entidades")
+            console.print(f"  Pendientes hoy: {summary['due_today']}")
+            console.print(f"  Dificultad promedio: {summary['avg_difficulty']:.1f}/5")
+            console.print()
+            console.print("[bold]Por nivel:[/bold]")
+            for level, count in summary["by_level"].items():
+                console.print(f"  {level}: {count}")
+            console.print()
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+
 __all__ = ["register_personal_commands"]

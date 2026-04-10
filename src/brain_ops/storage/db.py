@@ -233,6 +233,17 @@ SCHEMA_STATEMENTS = [
         origin_text TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS entity_mastery (
+        entity_name TEXT PRIMARY KEY,
+        mastery_level INTEGER NOT NULL DEFAULT 0,
+        last_reviewed TEXT,
+        next_review TEXT,
+        times_reviewed INTEGER NOT NULL DEFAULT 0,
+        avg_difficulty REAL NOT NULL DEFAULT 3.0,
+        notes TEXT
+    )
+    """,
 ]
 
 

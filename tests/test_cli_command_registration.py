@@ -107,6 +107,9 @@ class CliCommandRegistrationTestCase(TestCase):
                 "tasks",
                 "task-done",
                 "task-update",
+                "review-entity",
+                "knowledge-due",
+                "knowledge-status",
             },
         )
 
