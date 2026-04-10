@@ -300,8 +300,15 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
 
 def sections_for_subtype(subtype: str | None) -> tuple[str, ...]:
     if subtype and subtype in SUBTYPE_SECTIONS:
-        return SUBTYPE_SECTIONS[subtype]
-    return ("Identity", "Key Facts", "Timeline", "Impact", "Relationships", "Strategic Insights", "Related notes")
+        sections = SUBTYPE_SECTIONS[subtype]
+    else:
+        sections = ("Identity", "Key Facts", "Timeline", "Impact", "Relationships", "Strategic Insights", "Related notes")
+
+    # Inject "Preguntas de recuperación" before "Related notes" if not already present
+    if "Preguntas de recuperación" not in sections and "Related notes" in sections:
+        idx = sections.index("Related notes")
+        sections = sections[:idx] + ("Preguntas de recuperación",) + sections[idx:]
+    return sections
 
 
 def resolve_object_kind(legacy_type: str) -> tuple[str, str]:

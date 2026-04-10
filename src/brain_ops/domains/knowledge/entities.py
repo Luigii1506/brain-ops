@@ -155,6 +155,7 @@ SECTION_HINTS: dict[str, str] = {
     "Relationships": "<!-- [[Entity]] — relationship type format -->",
     "Strategic Insights": "<!-- Non-obvious patterns, lessons, strategic behaviors -->",
     "Contradictions & Uncertainties": "<!-- Disputed facts, uncertain dates, conflicting sources -->",
+    "Preguntas de recuperación": "<!-- 5 preguntas: 🟢 Recordar (1), 🟡 Explicar (2), 🔴 Comparar (1), ⚫ Aplicar (1). Formato: - 🟢 **¿Pregunta?** → Respuesta -->",
     "Related notes": "",
 }
 

@@ -43,6 +43,12 @@ CRITICAL RULES — READ CAREFULLY:
 8. Write in the same language as the existing note. If the entity name is in Spanish, write in Spanish.
 9. Keep ## Related notes as the last section.
 10. Add narrative depth for key events — causes, development, consequences, not just dates.
+11. MUST include ## Preguntas de recuperación with exactly 5 questions:
+   - 🟢 Recordar (1): concrete fact/date/name
+   - 🟡 Explicar (2): why/how/cause-effect
+   - 🔴 Comparar (1): similarity/difference with another entity
+   - ⚫ Aplicar (1): lesson/pattern/transfer
+   Format: - 🟢 **¿Question?** → Concrete answer
 
 Return ONLY the updated note body, starting from the TLDR blockquote."""
 
@@ -69,6 +75,12 @@ CRITICAL RULES:
 8. Do not invent details you're not confident about.
 9. Write in Spanish if the entity name is in Spanish, otherwise English.
 10. Keep ## Related notes as the last section, leave it empty for the user.
+11. MUST include ## Preguntas de recuperación with exactly 5 questions:
+   - 🟢 Recordar (1): concrete fact/date/name
+   - 🟡 Explicar (2): why/how/cause-effect
+   - 🔴 Comparar (1): similarity/difference with another entity
+   - ⚫ Aplicar (1): lesson/pattern/transfer
+   Format: - 🟢 **¿Question?** → Concrete answer
 
 Return ONLY the note body, starting from the TLDR blockquote."""
 
