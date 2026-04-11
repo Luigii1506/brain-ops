@@ -217,6 +217,68 @@ The repository now uses shared git hooks:
 
 This keeps the vault project docs and context pack synchronized when the repository changes. Only log manually if the change is architecturally significant beyond the commit itself or if no commit was made.
 
+## Book operations — revision workflow
+
+The vault contains narrative books in `08 - Books/` that tell stories using entities from `02 - Knowledge/`. Books need periodic revision as the knowledge base grows.
+
+### Commands
+
+```bash
+# Check all books for gaps, missing standards, new entity candidates
+brain check-books --config config/vault.yaml
+
+# Check a specific book
+brain check-books "La Historia del Universo" --config config/vault.yaml
+
+# Sync quotes after book changes
+brain sync-quotes --config config/vault.yaml
+```
+
+### When to revise a book
+
+- After adding ~15-20 new entities in the same cluster/domain
+- When `check-books` shows high-value candidates (entities with 500+ words that match book tags)
+- When `check-books` shows missing standards (tesis, reflexión, 💭 preguntas)
+
+### Book revision process (Claude as author)
+
+When revising a book, Claude acts as expert author. The process:
+
+1. Run `brain check-books "Book Name"` to identify gaps
+2. Read the current book fully
+3. Read the new entities that are candidates for incorporation
+4. Decide what changes are needed:
+   - **New wikilinks**: mention new entities where they naturally fit in existing prose
+   - **New paragraphs**: add content if new entities reveal important context the book missed
+   - **New actos**: add sections only if there's a major narrative gap (e.g., a whole period not covered)
+   - **DO NOT rewrite working prose** — add to it, don't replace it
+5. Verify the book still follows the standard (tesis, 💭 per acto, reflexión, navigation)
+6. Run `brain check-books` again to confirm improvement
+
+### Book standard (output books)
+
+```yaml
+type: book
+subtype: output
+```
+
+Structure: `Tesis → Prólogo → Actos (with 💭 questions) → Epílogo → Reflexión → Guía de lectura → Navigation`
+
+Question types in books:
+- **💭** (per acto): "¿Por qué...?", "¿Qué pasaría si...?" — comprehension check
+- **🟡** (reflexión): cause-effect across the whole book
+- **🔴** (reflexión): counterfactuals that force deep understanding
+- **⚫** (reflexión): cross-domain patterns connecting to other books
+
+### Book standard (input books)
+
+```yaml
+type: book
+subtype: input
+```
+
+Input books are external sources. When processed: read → extract ideas → create/enrich entities in Knowledge → output books improve automatically.
+
 ## Preferred implementation stack
 
 - Python

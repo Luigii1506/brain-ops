@@ -156,6 +156,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "enrich-note",
                 "fix-links",
                 "sync-quotes",
+                "check-books",
             },
         )
 

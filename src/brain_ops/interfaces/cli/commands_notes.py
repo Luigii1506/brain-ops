@@ -1565,4 +1565,158 @@ Colección temática de frases célebres.
             handle_error(error)
 
 
+    # ── check-books ──────────────────────────────────────────────────
+
+    @app.command("check-books")
+    def check_books_command(
+        book_name: str | None = typer.Argument(None, help="Book name to check (without .md). If omitted, checks all."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+    ) -> None:
+        """Check books against current entities — find gaps, new entities, and improvement opportunities."""
+        try:
+            import re
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            vault_path = Path(vault.config.vault_path)
+            knowledge_path = vault.config.folder_path("knowledge")
+            books_path = vault_path / "08 - Books"
+
+            if not books_path.exists():
+                console.print("[red]No 08 - Books/ folder found.[/red]")
+                return
+
+            # ── 1. Load all entity names and their related fields ──
+            entity_names: set[str] = set()
+            entity_tags: dict[str, list[str]] = {}
+            entity_words: dict[str, int] = {}
+            for note_path in knowledge_path.glob("*.md"):
+                text = note_path.read_text(encoding="utf-8")
+                if not re.search(r"^entity:\s*true", text, re.MULTILINE):
+                    continue
+                name = note_path.stem
+                entity_names.add(name)
+                entity_words[name] = len(text.split())
+                tags_match = re.findall(r"^  - (.+)$", text, re.MULTILINE)
+                entity_tags[name] = [t.strip().strip("'\"") for t in tags_match]
+
+            # ── 2. Find book files ──
+            book_files: list[Path] = []
+            if book_name:
+                for f in books_path.rglob("*.md"):
+                    if f.stem.lower() == book_name.lower() or book_name.lower() in f.stem.lower():
+                        book_files.append(f)
+                if not book_files:
+                    console.print(f"[red]Book '{book_name}' not found.[/red]")
+                    return
+            else:
+                book_files = [
+                    f for f in books_path.rglob("*.md")
+                    if f.stem != "Biblioteca"
+                ]
+
+            # ── 3. Analyze each book ──
+            for book_path in sorted(book_files):
+                text = book_path.read_text(encoding="utf-8")
+                book_stem = book_path.stem
+                words = len(text.split())
+
+                # Extract wikilinks from book
+                book_links = set(re.findall(r"\[\[([^\]|]+)", text))
+                # Normalize link targets
+                book_links = {l.strip() for l in book_links}
+
+                # Classify links
+                existing = book_links & entity_names
+                missing = book_links - entity_names
+                # Remove non-entity targets (folders, maps, etc.)
+                missing = {m for m in missing if not m.startswith("MOC") and m != "Biblioteca"}
+
+                # Extract book tags/related from frontmatter
+                book_related = set()
+                in_related = False
+                for line in text.split("\n"):
+                    if line.strip().startswith("related:"):
+                        in_related = True
+                        continue
+                    if in_related:
+                        if line.strip().startswith("- "):
+                            rel = line.strip().lstrip("- ").strip().strip("'\"")
+                            book_related.add(rel)
+                        elif not line.strip().startswith("-"):
+                            in_related = False
+
+                # Find entities that SHOULD be in the book but aren't mentioned
+                # Based on: entities whose tags overlap with book tags
+                book_tags_set = set()
+                in_tags = False
+                for line in text.split("\n"):
+                    if line.strip().startswith("tags:"):
+                        # Inline tags: [a, b, c]
+                        inline = re.search(r"\[(.+)\]", line)
+                        if inline:
+                            book_tags_set = {t.strip() for t in inline.group(1).split(",")}
+                        else:
+                            in_tags = True
+                        continue
+                    if in_tags:
+                        if line.strip().startswith("- "):
+                            book_tags_set.add(line.strip().lstrip("- ").strip().strip("'\""))
+                        elif not line.strip().startswith("-"):
+                            in_tags = False
+
+                # Find candidate entities by tag overlap
+                candidates: list[tuple[str, int]] = []
+                for ename, etags in entity_tags.items():
+                    if ename in book_links:
+                        continue
+                    overlap = book_tags_set & set(etags)
+                    if overlap and entity_words.get(ename, 0) > 300:
+                        candidates.append((ename, entity_words.get(ename, 0)))
+                candidates.sort(key=lambda x: -x[1])
+
+                # Check standards
+                has_tesis = "**Tesis:**" in text or "Tesis:" in text
+                has_reflection = "## Reflexión" in text
+                has_questions = "💭" in text
+                has_nav = "📖" in text
+
+                # ── 4. Report ──
+                console.print(f"\n[bold]📖 {book_stem}[/bold]")
+                console.print(f"  Palabras: {words:,}")
+                console.print(f"  Entidades referenciadas: {len(existing)} (existen) + {len(missing)} (no existen)")
+
+                # Standards check
+                standards = []
+                if not has_tesis:
+                    standards.append("[red]✗[/red] Falta tesis")
+                if not has_reflection:
+                    standards.append("[red]✗[/red] Falta reflexión")
+                if not has_questions:
+                    standards.append("[red]✗[/red] Falta 💭 preguntas por acto")
+                if not has_nav:
+                    standards.append("[red]✗[/red] Falta navegación 📖")
+                if standards:
+                    console.print(f"  Estándar: {' · '.join(standards)}")
+                else:
+                    console.print("  Estándar: [green]✓ Completo[/green]")
+
+                # Missing entities (red links)
+                if missing:
+                    console.print(f"\n  [yellow]Links rojos ({len(missing)}):[/yellow]")
+                    for m in sorted(missing)[:15]:
+                        console.print(f"    [[{m}]] — no existe")
+
+                # New entity candidates
+                if candidates:
+                    console.print(f"\n  [cyan]Entidades candidatas a incorporar ({len(candidates)}):[/cyan]")
+                    for name, w in candidates[:10]:
+                        console.print(f"    [[{name}]] ({w:,} palabras)")
+
+                console.print("")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+
 __all__ = ["register_note_and_knowledge_commands"]
