@@ -57,6 +57,11 @@ DEFAULT_TYPE_FOLDER_MAP = {
     "open_questions": DEFAULT_FOLDER_MAP["projects"],
     "reference_cli": DEFAULT_FOLDER_MAP["projects"],
     "adr": DEFAULT_FOLDER_MAP["projects"],
+    # Science subtypes → Knowledge
+    "process": DEFAULT_FOLDER_MAP["knowledge"],
+    "phenomenon": DEFAULT_FOLDER_MAP["knowledge"],
+    "classification": DEFAULT_FOLDER_MAP["knowledge"],
+    "geological_feature": DEFAULT_FOLDER_MAP["knowledge"],
     # Entity subtypes → Knowledge
     "person": DEFAULT_FOLDER_MAP["knowledge"],
     "animal": DEFAULT_FOLDER_MAP["knowledge"],

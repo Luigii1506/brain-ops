@@ -29,16 +29,18 @@ SUBTYPES: dict[str, list[str]] = {
     "concept": [
         "abstract_concept", "emotion", "value", "theory", "discipline",
         "school_of_thought", "scientific_concept", "philosophical_concept",
-        "religious_concept",
+        "religious_concept", "process", "classification",
     ],
     "work": [
         "book", "paper", "poem", "play", "artwork", "dataset", "software_project",
     ],
     "event": [
         "war", "battle", "revolution", "treaty", "discovery", "historical_event",
+        "phenomenon",
     ],
     "place": [
         "country", "city", "region", "empire", "continent", "landmark",
+        "geological_feature",
     ],
     "organization": [
         "company", "institution", "government", "religion", "military_unit",
@@ -286,11 +288,16 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     "revolution": ("Identity", "Key Facts", "Causes", "Timeline", "Key Figures", "Outcome", "Legacy", "Relationships", "Related notes"),
     "discovery": ("Identity", "Key Facts", "Context", "How It Happened", "Impact", "Relationships", "Related notes"),
     "historical_event": ("Identity", "Key Facts", "Context", "Timeline", "Impact", "Relationships", "Contradictions & Uncertainties", "Related notes"),
+    "phenomenon": ("Identity", "Key Facts", "What Happens", "When & Where", "Causes", "Observable Effects", "Scale & Frequency", "Significance", "Relationships", "Related notes"),
+    # Concept subtypes (science)
+    "process": ("Definition", "Key Facts", "Stages", "Driving Forces", "Conditions", "Outcome", "Where It Occurs", "Relationships", "Related notes"),
+    "classification": ("Definition", "Key Facts", "Criteria", "Categories", "Comparison Table", "Exceptions & Edge Cases", "Relationships", "Related notes"),
     # Place subtypes
     "country": ("Identity", "Key Facts", "Geography", "History", "Government", "Culture", "Relationships", "Related notes"),
     "city": ("Identity", "Key Facts", "Geography", "History", "Landmarks", "Relationships", "Related notes"),
     "empire": ("Identity", "Key Facts", "Timeline", "Territory", "Key Rulers", "Achievements", "Decline", "Relationships", "Related notes"),
     "continent": ("Identity", "Key Facts", "Geography", "Countries", "History", "Relationships", "Related notes"),
+    "geological_feature": ("Identity", "Key Facts", "Formation", "Structure", "Types", "Distribution", "Geological Significance", "Relationships", "Related notes"),
     # Organization subtypes
     "company": ("Identity", "Key Facts", "Founded", "Products & Services", "Leadership", "Impact", "Relationships", "Related notes"),
     "institution": ("Identity", "Key Facts", "Founded", "Mission", "Structure", "Impact", "Relationships", "Related notes"),
@@ -406,6 +413,31 @@ SUBTYPE_WRITING_GUIDES: dict[str, str] = {
         "In Founded, include date, founders, and original purpose. "
         "In Mission, explain what it does and why it matters. "
         "In Impact, include concrete accomplishments with dates."
+    ),
+    "process": (
+        "In Stages, describe step-by-step with triggers, durations, and what changes at each step. "
+        "In Driving Forces, explain what causes and sustains the process. "
+        "In Conditions, specify what must be true for the process to occur. "
+        "In Outcome, describe what the process produces or transforms. "
+        "Include temporal scale (seconds? millions of years?) and spatial scale."
+    ),
+    "phenomenon": (
+        "In What Happens, describe the phenomenon as if explaining to someone who has never seen it. "
+        "In Causes, link to underlying processes and concepts with [[wikilinks]]. "
+        "In Observable Effects, describe what you can actually see or measure. "
+        "In Scale & Frequency, state how often it occurs and at what magnitude."
+    ),
+    "classification": (
+        "In Criteria, explain what properties are used to classify. "
+        "In Categories, list each type with 1-2 sentence description. "
+        "In Comparison Table, use a markdown table comparing key properties across types. "
+        "In Exceptions, note items that don't fit cleanly into categories."
+    ),
+    "geological_feature": (
+        "In Formation, explain the geological process that creates this feature. "
+        "In Structure, describe internal composition and layers if applicable. "
+        "In Types, distinguish subtypes with examples (e.g., shield vs stratovolcano). "
+        "In Distribution, describe where on Earth (or other planets) this feature is found."
     ),
 }
 
