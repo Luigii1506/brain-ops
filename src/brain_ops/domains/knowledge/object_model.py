@@ -258,7 +258,7 @@ _BASE_SECTIONS = ("Identity", "Key Facts", "Relationships", "Related notes")
 
 SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     # Entity subtypes
-    "person": ("Identity", "Key Facts", "Timeline", "Impact", "Relationships", "Strategic Insights", "Contradictions & Uncertainties", "Related notes"),
+    "person": ("Identity", "Key Facts", "Timeline", "Impact", "Relationships", "Strategic Insights", "Contradictions & Uncertainties", "Frases célebres", "Related notes"),
     "animal": ("Identity", "Key Facts", "Taxonomy", "Habitat & Distribution", "Diet & Behavior", "Conservation Status", "Relationships", "Related notes"),
     "plant": ("Identity", "Key Facts", "Taxonomy", "Habitat & Distribution", "Uses", "Relationships", "Related notes"),
     "celestial_body": ("Identity", "Key Facts", "Physical Characteristics", "Orbit & Position", "Atmosphere & Composition", "Exploration", "Relationships", "Related notes"),
@@ -331,7 +331,10 @@ SUBTYPE_WRITING_GUIDES: dict[str, str] = {
         "In Relationships, use [[Entity]] — role format and include ALL entities mentioned. "
         "Death section should be narrative with circumstances, theories if debated, and consequences. "
         "In Impact, include concrete legacy: what changed because of this person, with numbers/scale. "
-        "In Contradictions, note disputed facts, uncertain dates, conflicting sources."
+        "In Contradictions, note disputed facts, uncertain dates, conflicting sources. "
+        "In Frases célebres, each quote as blockquote with context, date, theme, source, and reliability. "
+        "Use ^quote-slug block IDs for cross-referencing from thematic collections. "
+        "Format: > \"Quote\" / > — Context, date / tema:: X / fuente:: Y / confiabilidad:: alta|media|baja|apócrifa"
     ),
     "battle": (
         "In Context, explain the strategic situation leading to the battle. "

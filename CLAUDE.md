@@ -124,6 +124,26 @@ Campaigns, turning points, death, legacy = always cover.
    - ⚫ Aplicar (1): lección, patrón, transferencia
    Format: `- 🟢 **¿Pregunta?** → Respuesta concreta`
 
+8. **For `person` entities, include `## Frases célebres`** if the person has notable quotes.
+   Format per quote:
+   ```
+   > "Texto de la frase."
+   > — Contexto: cuándo, dónde, a quién se la dijo
+   ^quote-slug-identificador
+
+   tema:: liderazgo, filosofía
+   contexto:: breve descripción de la situación
+   fecha:: ~336 a.C.
+   confiabilidad:: alta | media | baja | apócrifa | tradicional
+   fuente:: Plutarco, Vida de Alejandro
+   ```
+   Rules:
+   - `^quote-slug` block ID is mandatory — enables `![[Persona#^quote-slug]]` from thematic MOCs
+   - `confiabilidad` is mandatory — many famous quotes are misattributed
+   - `tema` enables thematic collection grouping
+   - Only include quotes with historical/pedagogical value, not trivia
+   - Thematic MOC collections (`Frases - Liderazgo.md`, etc.) live in `03 - Maps/` and use block refs (`![[Persona#^quote-slug]]`), never duplicate the text
+
 **After writing, verify coverage:**
 ```bash
 brain post-process "Entity Name" --source-url "https://url-used" --config config/vault.yaml
