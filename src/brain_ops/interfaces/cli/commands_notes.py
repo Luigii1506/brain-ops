@@ -1395,4 +1395,174 @@ entity: false
             handle_error(error)
 
 
+    # ── sync-quotes ──────────────────────────────────────────────────
+
+    @app.command("sync-quotes")
+    def sync_quotes_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing."),
+    ) -> None:
+        """Sync ^quote- blocks from entity notes into Frases MOC collections in maps folder."""
+        try:
+            import re
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            vault_path = Path(vault.config.vault_path)
+            knowledge_path = vault.config.folder_path("knowledge")
+            maps_path = vault.config.folder_path("maps")
+
+            # ── 1. Scan all entity notes for ^quote-* blocks ──
+            quote_pattern = re.compile(r"\^(quote-[a-z0-9-]+)")
+            tema_pattern = re.compile(r"tema::\s*(.+)")
+
+            quotes: list[dict] = []
+            for note_path in sorted(knowledge_path.glob("*.md")):
+                text = note_path.read_text(encoding="utf-8")
+                blocks = quote_pattern.findall(text)
+                if not blocks:
+                    continue
+                entity_name = note_path.stem
+                for block_id in blocks:
+                    # Find tema near this block
+                    idx = text.find("^" + block_id)
+                    if idx < 0:
+                        continue
+                    chunk = text[idx : idx + 600]
+                    tema_match = tema_pattern.search(chunk)
+                    temas_raw = tema_match.group(1).strip() if tema_match else ""
+                    temas = [t.strip().lower() for t in temas_raw.split(",") if t.strip()]
+                    quotes.append({
+                        "entity": entity_name,
+                        "block_id": block_id,
+                        "temas": temas,
+                    })
+
+            # ── 2. Scan MOC files for existing refs ──
+            moc_ref_pattern = re.compile(r"!\[\[([^#]+)#\^([^\]]+)\]\]")
+            moc_files: dict[str, set[str]] = {}
+            for moc_path in sorted(maps_path.glob("Frases - *.md")):
+                text = moc_path.read_text(encoding="utf-8")
+                refs = set()
+                for _entity, block_id in moc_ref_pattern.findall(text):
+                    refs.add(block_id)
+                moc_files[moc_path.stem] = refs
+
+            # ── 3. Tema → MOC mapping ──
+            tema_to_moc: dict[str, str] = {
+                "liderazgo": "Frases - Liderazgo y poder",
+                "poder": "Frases - Liderazgo y poder",
+                "imperio": "Frases - Liderazgo y poder",
+                "democracia": "Frases - Liderazgo y poder",
+                "justicia": "Frases - Liderazgo y poder",
+                "política": "Frases - Liderazgo y poder",
+                "decisión": "Frases - Liderazgo y poder",
+                "libertad": "Frases - Liderazgo y poder",
+                "reforma": "Frases - Liderazgo y poder",
+                "guerra": "Frases - Guerra y estrategia",
+                "estrategia": "Frases - Guerra y estrategia",
+                "táctica": "Frases - Guerra y estrategia",
+                "valor": "Frases - Guerra y estrategia",
+                "venganza": "Frases - Guerra y estrategia",
+                "soberbia": "Frases - Guerra y estrategia",
+                "prudencia": "Frases - Guerra y estrategia",
+                "diplomacia": "Frases - Guerra y estrategia",
+                "filosofía": "Frases - Filosofía y sabiduría",
+                "sabiduría": "Frases - Filosofía y sabiduría",
+                "ciencia": "Frases - Filosofía y sabiduría",
+                "verdad": "Frases - Filosofía y sabiduría",
+                "religión": "Frases - Filosofía y sabiduría",
+                "determinismo": "Frases - Filosofía y sabiduría",
+                "educación": "Frases - Filosofía y sabiduría",
+                "creatividad": "Frases - Filosofía y sabiduría",
+                "muerte": "Frases - Muerte y legado",
+                "legado": "Frases - Muerte y legado",
+                "tragedia": "Frases - Muerte y legado",
+                "dignidad": "Frases - Muerte y legado",
+                "reflexión": "Frases - Muerte y legado",
+                "humor": "Frases - Humor e ingenio",
+                "ingenio": "Frases - Humor e ingenio",
+                "ironía": "Frases - Humor e ingenio",
+                "argumentación": "Frases - Humor e ingenio",
+            }
+
+            # ── 4. Find orphaned quotes and assign to MOCs ──
+            all_moc_refs: set[str] = set()
+            for refs in moc_files.values():
+                all_moc_refs.update(refs)
+
+            # Group additions by MOC
+            additions: dict[str, list[str]] = {}
+            orphaned: list[dict] = []
+            for q in quotes:
+                if q["block_id"] in all_moc_refs:
+                    continue
+                # Determine target MOC from first matching tema
+                target_moc = None
+                for tema in q["temas"]:
+                    if tema in tema_to_moc:
+                        target_moc = tema_to_moc[tema]
+                        break
+                if target_moc is None and q["temas"]:
+                    # Default: first tema gets mapped to most relevant MOC
+                    target_moc = "Frases - Filosofía y sabiduría"
+                elif target_moc is None:
+                    target_moc = "Frases - Filosofía y sabiduría"
+
+                ref_line = f'\n![[{q["entity"]}#^{q["block_id"]}]]'
+                additions.setdefault(target_moc, []).append(ref_line)
+                orphaned.append(q)
+
+            # ── 5. Report ──
+            console.print(f"\n[bold]Frases sync report[/bold]")
+            console.print(f"  Total quotes found: {len(quotes)}")
+            console.print(f"  Already in MOCs: {len(quotes) - len(orphaned)}")
+            console.print(f"  Orphaned (to add): {len(orphaned)}")
+            console.print(f"  MOC files: {len(moc_files)}")
+
+            if not orphaned:
+                console.print("\n[green]All quotes are synced. Nothing to do.[/green]")
+                return
+
+            console.print(f"\n[bold]Additions:[/bold]")
+            for moc_name, refs in sorted(additions.items()):
+                console.print(f"  [cyan]{moc_name}[/cyan]: +{len(refs)} quotes")
+
+            if dry_run:
+                console.print("\n[yellow][dry-run] No files modified.[/yellow]")
+                for q in orphaned:
+                    console.print(f"  {q['entity']}#^{q['block_id']} → {tema_to_moc.get(q['temas'][0] if q['temas'] else '', 'Filosofía')}")
+                return
+
+            # ── 6. Write additions to MOC files ──
+            for moc_name, refs in additions.items():
+                moc_path = maps_path / f"{moc_name}.md"
+                if moc_path.exists():
+                    text = moc_path.read_text(encoding="utf-8")
+                    # Append before the end
+                    text = text.rstrip() + "\n" + "\n".join(refs) + "\n"
+                    moc_path.write_text(text, encoding="utf-8")
+                else:
+                    # Create new MOC
+                    header = f"""---
+type: moc
+subtype: quote_collection
+created: '2026-04-11'
+tags: [frases]
+---
+
+# {moc_name}
+
+Colección temática de frases célebres.
+"""
+                    content = header + "\n".join(refs) + "\n"
+                    moc_path.write_text(content, encoding="utf-8")
+                    console.print(f"  [green]Created new MOC: {moc_name}.md[/green]")
+
+            console.print(f"\n[green]Synced {len(orphaned)} quotes to {len(additions)} MOC files.[/green]")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+
 __all__ = ["register_note_and_knowledge_commands"]
