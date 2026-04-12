@@ -158,6 +158,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "sync-quotes",
                 "check-books",
                 "cross-enrich",
+                "semantic-relations",
             },
         )
 

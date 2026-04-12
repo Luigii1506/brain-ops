@@ -159,6 +159,39 @@ This single command does everything: emits event, creates source note, saves ext
 
 If multiple entities were edited, run `brain reconcile` instead (bulk sync without per-entity traceability).
 
+### Semantic relationship workflow
+
+Use semantic relationship review when the user asks why cross-enrichment did not create a graph edge, when a new myth/person/concept note mentions important entities in prose, or after adding a cluster of related knowledge notes.
+
+`cross-enrich` is for explicit wikilink cleanup. `semantic-relations` is for contextual graph reasoning:
+
+```bash
+# Inspect likely existing relationships and missing entity candidates
+brain semantic-relations "Entity Name" --config config/vault.yaml
+
+# Add high-confidence semantic links in the analyzed note
+brain semantic-relations "Entity Name" --fix --config config/vault.yaml
+
+# Add the analyzed-note links and reciprocal links in destination notes
+brain semantic-relations "Entity Name" --fix --bidirectional --config config/vault.yaml
+```
+
+When using `--bidirectional`, act as a domain expert for the entity's subject before accepting the result. Read the analyzed note and the destination notes that will receive backlinks. The relation should make sense from both sides, not only because a name appears in text.
+
+For each accepted relation:
+- The source note should explain why the destination matters in its own context.
+- The destination note should receive a reciprocal relation only when the source is meaningful to that destination's identity, mythology, argument, or narrative role.
+- Prefer contextual predicates and reasons over generic graph edges when editing manually.
+- Preserve each note's preferred prose style and language.
+- Do not create missing entities automatically from this command; use the "Missing entity candidates" list as a creation queue and create those entities through `brain create-entity` or direct-enrich workflow.
+
+After semantic relation edits, run:
+
+```bash
+brain cross-enrich --fix --config config/vault.yaml
+brain reconcile --config config/vault.yaml
+```
+
 **For long sources (Wikipedia, long articles) when the agent is the LLM:** Use the direct planning pipeline:
 ```bash
 brain plan-direct-enrich "Entity Name" --url "https://..." --config config/vault.yaml

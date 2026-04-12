@@ -1894,5 +1894,92 @@ Colección temática de frases célebres.
         except BrainOpsError as error:
             handle_error(error)
 
+    @app.command("semantic-relations")
+    def semantic_relations_command(
+        entity_name: str = typer.Argument(..., help="Entity to analyze."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        fix: bool = typer.Option(False, "--fix", help="Auto-add high-confidence existing relation suggestions."),
+        bidirectional: bool = typer.Option(False, "--bidirectional", help="Also add reciprocal links in destination entity notes."),
+        min_confidence: float = typer.Option(0.7, "--min-confidence", help="Minimum confidence for --fix."),
+    ) -> None:
+        """Suggest semantic relationships and missing entity candidates for an entity."""
+        try:
+            import re
+            from brain_ops.domains.knowledge.semantic_relations import (
+                add_semantic_related_links,
+                build_reciprocal_semantic_suggestion,
+                suggest_semantic_relations,
+            )
+            from brain_ops.frontmatter import split_frontmatter
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            knowledge_path = vault.config.folder_path("knowledge")
+            note_path = knowledge_path / f"{entity_name}.md"
+            if not note_path.exists():
+                console.print(f"[red]Entity '{entity_name}' not found.[/red]")
+                return
+
+            entity_notes = {}
+            for path in knowledge_path.glob("*.md"):
+                text = path.read_text(encoding="utf-8")
+                if not re.search(r"^entity:\s*true", text, re.MULTILINE):
+                    continue
+                fm, body = split_frontmatter(text)
+                entity_notes[path.stem] = (path, fm, body)
+
+            text = note_path.read_text(encoding="utf-8")
+            suggestions = suggest_semantic_relations(entity_name, text, entity_notes)
+            existing = [s for s in suggestions if s.exists]
+            missing = [s for s in suggestions if not s.exists]
+
+            console.print(f"\n[bold]Semantic relation report[/bold]: {entity_name}")
+            console.print(f"  Existing relation suggestions: {len(existing)}")
+            console.print(f"  Missing entity candidates: {len(missing)}")
+
+            if existing:
+                console.print("\n  [cyan]Existing entities to relate:[/cyan]")
+                for s in existing[:20]:
+                    console.print(f"    + [[{s.name}]] — {s.predicate} ({s.confidence:.2f}) — {s.reason}")
+
+            if missing:
+                console.print("\n  [yellow]Candidate entities to create:[/yellow]")
+                for s in missing[:20]:
+                    console.print(f"    + [[{s.name}]] ({s.confidence:.2f}) — {s.reason}")
+
+            if fix:
+                updated, applied = add_semantic_related_links(text, suggestions, min_confidence=min_confidence)
+                if applied:
+                    note_path.write_text(updated, encoding="utf-8")
+                    console.print(f"\n[green]Applied {len(applied)} semantic relation links.[/green]")
+
+                    if bidirectional:
+                        reciprocal_count = 0
+                        for suggestion in applied:
+                            target = entity_notes.get(suggestion.name)
+                            if target is None:
+                                continue
+                            target_path = target[0]
+                            target_text = target_path.read_text(encoding="utf-8")
+                            reciprocal = build_reciprocal_semantic_suggestion(entity_name, suggestion)
+                            target_updated, target_applied = add_semantic_related_links(
+                                target_text,
+                                [reciprocal],
+                                min_confidence=min_confidence,
+                            )
+                            if target_applied:
+                                target_path.write_text(target_updated, encoding="utf-8")
+                                reciprocal_count += len(target_applied)
+                        console.print(f"[green]Applied {reciprocal_count} reciprocal semantic links.[/green]")
+                elif bidirectional:
+                    console.print("\n[yellow]No high-confidence links to apply, so no reciprocal links were added.[/yellow]")
+                else:
+                    console.print("\n[yellow]No high-confidence existing relation links to apply.[/yellow]")
+            elif existing:
+                console.print("\n[yellow]Run with --fix to add high-confidence existing relation links.[/yellow]")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
 
 __all__ = ["register_note_and_knowledge_commands"]
