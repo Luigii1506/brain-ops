@@ -50,9 +50,15 @@ _STOP_CANDIDATES = {
     "Barco",
     "Ayuda",
     "En",
+    "Importa",
+    "Frente",
+    "Después",
+    "Cómo",
+    "Cuando",
+    "Olímpicos",
 }
 
-_BROAD_EXISTING_NAMES = {"Amor", "Grecia"}
+_BROAD_EXISTING_NAMES = {"Amor", "Grecia", "Tierra"}
 _CONNECTORS = {"y", "de", "del", "la", "el", "los", "las"}
 
 
