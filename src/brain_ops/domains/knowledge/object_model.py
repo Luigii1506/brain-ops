@@ -24,7 +24,7 @@ OBJECT_KINDS: dict[str, str] = {
 SUBTYPES: dict[str, list[str]] = {
     "entity": [
         "person", "animal", "plant", "celestial_body", "civilization",
-        "deity", "artifact", "technology", "programming_language",
+        "deity", "myth", "symbol", "artifact", "technology", "programming_language",
     ],
     "concept": [
         "abstract_concept", "emotion", "value", "theory", "discipline",
@@ -266,6 +266,8 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     "celestial_body": ("Identity", "Key Facts", "Physical Characteristics", "Orbit & Position", "Atmosphere & Composition", "Exploration", "Relationships", "Related notes"),
     "civilization": ("Identity", "Key Facts", "Timeline", "Territory", "Achievements", "Decline", "Relationships", "Related notes"),
     "deity": ("Identity", "Key Facts", "Mythology", "Symbolism", "Worship", "Relationships", "Related notes"),
+    "myth": ("Identity", "Key Facts", "Narrative", "Characters", "Themes & Symbolism", "Cultural Impact", "Versions & Sources", "Relationships", "Related notes"),
+    "symbol": ("Identity", "Key Facts", "Origin", "Meaning", "Appearances", "Cultural Impact", "Relationships", "Related notes"),
     "technology": ("Identity", "Key Facts", "How It Works", "Applications", "Impact", "Timeline", "Relationships", "Related notes"),
     "programming_language": ("Identity", "Key Facts", "Design Philosophy", "Key Features", "Common Use Cases", "Ecosystem", "Relationships", "Related notes"),
     # Concept subtypes

@@ -1719,4 +1719,119 @@ Colección temática de frases célebres.
             handle_error(error)
 
 
+    # ── cross-enrich ─────────────────────────────────────────────────
+
+    @app.command("cross-enrich")
+    def cross_enrich_command(
+        entity_name: str | None = typer.Argument(None, help="Entity to check. If omitted, checks all."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        fix: bool = typer.Option(False, "--fix", help="Auto-add missing links to Related notes."),
+    ) -> None:
+        """Find entities mentioned in text but missing from Related notes, and optionally fix them."""
+        try:
+            import re
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+
+            vault = load_validated_vault(config_path, dry_run=False)
+            knowledge_path = vault.config.folder_path("knowledge")
+
+            # ── 1. Load all entity names ──
+            entity_names: set[str] = set()
+            for f in knowledge_path.glob("*.md"):
+                text = f.read_text(encoding="utf-8")
+                if re.search(r"^entity:\s*true", text, re.MULTILINE):
+                    entity_names.add(f.stem)
+
+            # ── 2. Select files to check ──
+            if entity_name:
+                targets = [knowledge_path / f"{entity_name}.md"]
+                if not targets[0].exists():
+                    console.print(f"[red]Entity '{entity_name}' not found.[/red]")
+                    return
+            else:
+                targets = sorted(knowledge_path.glob("*.md"))
+
+            # ── 3. Analyze each entity ──
+            total_gaps = 0
+            total_fixed = 0
+            results: list[tuple[str, set[str]]] = []
+
+            for note_path in targets:
+                text = note_path.read_text(encoding="utf-8")
+                if not re.search(r"^entity:\s*true", text, re.MULTILINE):
+                    continue
+
+                name = note_path.stem
+
+                # Find all wikilinks in the full text
+                all_links = {l.strip() for l in re.findall(r"\[\[([^\]|]+)", text)}
+
+                # Find links only in Related notes section
+                related_links: set[str] = set()
+                in_related = False
+                for line in text.split("\n"):
+                    if line.strip() == "## Related notes":
+                        in_related = True
+                        continue
+                    if in_related:
+                        if line.startswith("## "):
+                            break
+                        for link in re.findall(r"\[\[([^\]|]+)", line):
+                            related_links.add(link.strip())
+
+                # Find entities mentioned in body but NOT in Related notes
+                body_entity_links = all_links & entity_names
+                missing_from_related = body_entity_links - related_links - {name}
+
+                if missing_from_related:
+                    results.append((name, missing_from_related))
+                    total_gaps += len(missing_from_related)
+
+            # ── 4. Report ──
+            console.print(f"\n[bold]Cross-enrichment report[/bold]")
+            console.print(f"  Entities checked: {len(targets)}")
+            console.print(f"  With gaps: {len(results)}")
+            console.print(f"  Total missing links: {total_gaps}")
+
+            if not results:
+                console.print("\n[green]All entities are properly cross-linked.[/green]")
+                return
+
+            for name, missing in sorted(results, key=lambda x: -len(x[1])):
+                console.print(f"\n  [cyan]{name}[/cyan] — missing {len(missing)} from Related notes:")
+                for m in sorted(missing):
+                    console.print(f"    + [[{m}]]")
+
+            # ── 5. Fix if requested ──
+            if fix:
+                for name, missing in results:
+                    note_path = knowledge_path / f"{name}.md"
+                    text = note_path.read_text(encoding="utf-8")
+
+                    # Find the Related notes section and append
+                    lines = text.split("\n")
+                    insert_idx = None
+                    for i, line in enumerate(lines):
+                        if line.strip() == "## Related notes":
+                            # Find last line of the section
+                            j = i + 1
+                            while j < len(lines) and not lines[j].startswith("## "):
+                                j += 1
+                            insert_idx = j
+                            break
+
+                    if insert_idx is not None:
+                        new_lines = [f"- [[{m}]]" for m in sorted(missing)]
+                        lines = lines[:insert_idx] + new_lines + lines[insert_idx:]
+                        note_path.write_text("\n".join(lines), encoding="utf-8")
+                        total_fixed += len(missing)
+
+                console.print(f"\n[green]Fixed {total_fixed} missing links across {len(results)} entities.[/green]")
+            else:
+                console.print(f"\n[yellow]Run with --fix to auto-add missing links.[/yellow]")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+
 __all__ = ["register_note_and_knowledge_commands"]
