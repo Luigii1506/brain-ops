@@ -844,6 +844,67 @@ entity: false
             )
             actions.append("knowledge compiled")
 
+            # 6. Auto cross-enrich: fix Related notes for this entity AND entities it mentions
+            try:
+                import re as _re
+                knowledge_path = vault.config.folder_path("knowledge")
+                _entity_names: set[str] = set()
+                for _f in knowledge_path.glob("*.md"):
+                    _t = _f.read_text(encoding="utf-8")
+                    if _re.search(r"^entity:\s*true", _t, _re.MULTILINE):
+                        _entity_names.add(_f.stem)
+
+                cross_fixed = 0
+                # Check this entity + all entities it mentions
+                _this_note = knowledge_path / f"{name}.md"
+                _notes_to_check = [_this_note]
+                if _this_note.exists():
+                    _this_text = _this_note.read_text(encoding="utf-8")
+                    _mentioned = {l.strip() for l in _re.findall(r"\[\[([^\]|]+)", _this_text)} & _entity_names
+                    for _m in _mentioned:
+                        _mp = knowledge_path / f"{_m}.md"
+                        if _mp.exists() and _mp != _this_note:
+                            _notes_to_check.append(_mp)
+
+                for _np in _notes_to_check:
+                    _text = _np.read_text(encoding="utf-8")
+                    if not _re.search(r"^entity:\s*true", _text, _re.MULTILINE):
+                        continue
+                    _all_links = {l.strip() for l in _re.findall(r"\[\[([^\]|]+)", _text)}
+                    _body_entities = _all_links & _entity_names
+                    _related_links: set[str] = set()
+                    _in_rel = False
+                    for _line in _text.split("\n"):
+                        if _line.strip() == "## Related notes":
+                            _in_rel = True
+                            continue
+                        if _in_rel:
+                            if _line.startswith("## "):
+                                break
+                            for _lk in _re.findall(r"\[\[([^\]|]+)", _line):
+                                _related_links.add(_lk.strip())
+                    _missing = _body_entities - _related_links - {_np.stem}
+                    if _missing:
+                        _lines = _text.split("\n")
+                        _idx = None
+                        for _i, _ln in enumerate(_lines):
+                            if _ln.strip() == "## Related notes":
+                                _j = _i + 1
+                                while _j < len(_lines) and not _lines[_j].startswith("## "):
+                                    _j += 1
+                                _idx = _j
+                                break
+                        if _idx is not None:
+                            _new = [f"- [[{_m}]]" for _m in sorted(_missing)]
+                            _lines = _lines[:_idx] + _new + _lines[_idx:]
+                            _np.write_text("\n".join(_lines), encoding="utf-8")
+                            cross_fixed += len(_missing)
+
+                if cross_fixed > 0:
+                    actions.append(f"cross-enriched ({cross_fixed} links)")
+            except Exception:
+                pass
+
             result = {"entity": name, "actions": actions}
             if as_json:
                 console.print_json(data=result)
