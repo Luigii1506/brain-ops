@@ -30,9 +30,11 @@ SUBTYPES: dict[str, list[str]] = {
         "abstract_concept", "emotion", "value", "theory", "discipline",
         "school_of_thought", "scientific_concept", "philosophical_concept",
         "religious_concept", "process", "classification",
+        "algorithm", "metric", "technical_concept", "architecture_pattern",
     ],
     "work": [
         "book", "paper", "poem", "play", "artwork", "dataset", "software_project",
+        "case_study",
     ],
     "event": [
         "war", "battle", "revolution", "treaty", "discovery", "historical_event",
@@ -68,6 +70,12 @@ LEGACY_TYPE_MAP: dict[str, tuple[str, str]] = {
     "place": ("place", "country"),
     "organization": ("organization", "institution"),
     "country": ("place", "country"),
+    "algorithm": ("concept", "algorithm"),
+    "metric": ("concept", "metric"),
+    "technical_concept": ("concept", "technical_concept"),
+    "pattern": ("concept", "architecture_pattern"),
+    "architecture_pattern": ("concept", "architecture_pattern"),
+    "case_study": ("work", "case_study"),
 }
 
 
@@ -284,6 +292,7 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     "paper": ("Identity", "Key Facts", "Authors", "Abstract", "Methodology", "Findings", "Impact", "Relationships", "Related notes"),
     "artwork": ("Identity", "Key Facts", "Artist", "Context", "Interpretation", "Influence", "Relationships", "Related notes"),
     "software_project": ("Identity", "Key Facts", "Stack", "Architecture", "Setup & Commands", "Current Status", "Relationships", "Related notes"),
+    "case_study": ("Identity", "Key Facts", "Problem", "Approach", "Architecture", "Results", "Lessons Learned", "Relationships", "Related notes"),
     # Event subtypes
     "war": ("Identity", "Key Facts", "Causes", "Participants", "Timeline", "Major Battles", "Outcome", "Consequences", "Relationships", "Related notes"),
     "battle": ("Identity", "Key Facts", "Context", "Participants", "Timeline", "Outcome", "Significance", "Relationships", "Related notes"),
@@ -291,6 +300,11 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     "discovery": ("Identity", "Key Facts", "Context", "How It Happened", "Impact", "Relationships", "Related notes"),
     "historical_event": ("Identity", "Key Facts", "Context", "Timeline", "Impact", "Relationships", "Contradictions & Uncertainties", "Related notes"),
     "phenomenon": ("Identity", "Key Facts", "What Happens", "When & Where", "Causes", "Observable Effects", "Scale & Frequency", "Significance", "Relationships", "Related notes"),
+    # Concept subtypes (ML / technical)
+    "algorithm": ("Definition", "Key Facts", "Intuition", "Mathematical Formulation", "Pseudocode", "Complexity", "When to Use", "Limitations", "Implementation Notes", "Relationships", "Related notes"),
+    "metric": ("Definition", "Key Facts", "Formula", "Interpretation", "When to Use", "Pitfalls", "Variants", "Relationships", "Related notes"),
+    "technical_concept": ("Definition", "Key Facts", "How It Works", "When to Use", "Tradeoffs", "Examples", "Relationships", "Related notes"),
+    "architecture_pattern": ("Definition", "Key Facts", "Components", "Data Flow", "Tradeoffs", "When to Use", "Examples", "Relationships", "Related notes"),
     # Concept subtypes (science)
     "process": ("Definition", "Key Facts", "Stages", "Driving Forces", "Conditions", "Outcome", "Where It Occurs", "Relationships", "Related notes"),
     "classification": ("Definition", "Key Facts", "Criteria", "Categories", "Comparison Table", "Exceptions & Edge Cases", "Relationships", "Related notes"),
@@ -440,6 +454,42 @@ SUBTYPE_WRITING_GUIDES: dict[str, str] = {
         "In Structure, describe internal composition and layers if applicable. "
         "In Types, distinguish subtypes with examples (e.g., shield vs stratovolcano). "
         "In Distribution, describe where on Earth (or other planets) this feature is found."
+    ),
+    "algorithm": (
+        "In Intuition, explain the core idea in plain language before any math. "
+        "In Mathematical Formulation, give the formal definition with variable explanations. "
+        "In Pseudocode, provide clear step-by-step pseudocode. "
+        "In Complexity, state time and space complexity with Big-O notation. "
+        "In When to Use, list concrete scenarios and data characteristics where this algorithm excels. "
+        "In Limitations, be specific about failure modes and edge cases. "
+        "In Implementation Notes, mention practical tips, common libraries, and hyperparameters."
+    ),
+    "metric": (
+        "In Formula, give the mathematical formula with variable definitions. "
+        "In Interpretation, explain what values mean — what is good, bad, or suspicious. "
+        "In When to Use, specify which tasks, datasets, and evaluation contexts fit this metric. "
+        "In Pitfalls, describe common misinterpretations and gaming scenarios. "
+        "In Variants, list related metrics and how they differ (e.g., micro vs macro averaging)."
+    ),
+    "technical_concept": (
+        "In How It Works, explain the mechanism or technique step by step. "
+        "In When to Use, describe practical scenarios where this concept applies. "
+        "In Tradeoffs, cover pros, cons, and alternatives. "
+        "In Examples, give concrete instances from real systems or well-known applications."
+    ),
+    "architecture_pattern": (
+        "In Components, list each component with its role and responsibilities. "
+        "In Data Flow, describe how data moves through the system end to end. "
+        "In Tradeoffs, cover latency, throughput, complexity, and cost considerations. "
+        "In When to Use, specify scale requirements and problem characteristics. "
+        "In Examples, reference real-world systems or papers that use this pattern."
+    ),
+    "case_study": (
+        "In Problem, describe the real-world problem being solved with specific constraints. "
+        "In Approach, explain the chosen strategy and why alternatives were rejected. "
+        "In Architecture, describe the system design with components and data flow. "
+        "In Results, include concrete outcomes — metrics, performance, lessons. "
+        "In Lessons Learned, capture what you would do differently and reusable insights."
     ),
 }
 

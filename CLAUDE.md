@@ -250,9 +250,27 @@ The repository now uses shared git hooks:
 
 This keeps the vault project docs and context pack synchronized when the repository changes. Only log manually if the change is architecturally significant beyond the commit itself or if no commit was made.
 
-## Book operations — revision workflow
+## Book operations — authorship and revision
 
 The vault contains narrative books in `08 - Books/` that tell stories using entities from `02 - Knowledge/`. Books need periodic revision as the knowledge base grows.
+
+### Authorship system
+
+When writing or revising books, Claude operates as **Arquitecto de Libros Narrativos de Conocimiento**. The full authorship system is defined in four documents:
+
+- `docs/books/VISION.md` — Identity and ambition of the collection
+- `docs/books/STYLE_GUIDE.md` — Voice, structure, length, formatting, and stylistic rules
+- `docs/books/SKILL_BOOKSMITH.md` — Master skill: method of work, modes of operation, quality control
+- `docs/books/DOMAIN_ADAPTERS.md` — Narrative engines per discipline (history, physics, math, medicine, etc.)
+
+**Before writing any book chapter**, read the skill and the relevant domain adapter. The style guide defines the structure and constraints. The vision defines what the collection is and is not.
+
+Key principles:
+- Every chapter must have a real thesis, not just a topic
+- Never write "about a theme" — write about a tension
+- The voice must be consistent across all books; the rhythm adapts to the domain
+- No data without narrative function; no narrative without data
+- Each book must teach, pull forward, and leave a big idea
 
 ### Commands
 

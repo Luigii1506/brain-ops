@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from brain_ops.core.events import EventSink
+from brain_ops.errors import ConfigError
 from brain_ops.domains.knowledge.entities import plan_entity_note
 from brain_ops.models import CreateNoteRequest
 from brain_ops.services.apply_links_service import apply_link_suggestions
@@ -149,6 +150,19 @@ def execute_enrich_note_workflow(
     return publish_result_events("enrich-note", source="application.notes", result=result, event_sink=event_sink)
 
 
+def _find_existing_entity(vault: Vault, name: str) -> Path | None:
+    """Search all vault folders for an existing note with this name."""
+    from brain_ops.vault import sanitize_note_title
+
+    safe_name = sanitize_note_title(name)
+    filename = f"{safe_name}.md"
+    for folder in vault.config.folders.model_dump().values():
+        candidate = vault.root / folder / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def execute_create_entity_workflow(
     vault: Vault,
     *,
@@ -158,6 +172,13 @@ def execute_create_entity_workflow(
     extra_frontmatter: dict[str, object] | None = None,
     event_sink: EventSink | None = None,
 ):
+    existing = _find_existing_entity(vault, name)
+    if existing:
+        raise ConfigError(
+            f"Entity '{name}' already exists at {existing}. "
+            "Use enrich-entity or edit the note directly instead."
+        )
+
     plan = plan_entity_note(name, entity_type=entity_type, extra_frontmatter=extra_frontmatter)
     merged_frontmatter = dict(plan.frontmatter)
     result = create_note(

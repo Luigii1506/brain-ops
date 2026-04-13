@@ -115,6 +115,26 @@ DEFAULT_TYPE_FOLDER_MAP = {
     "religion": DEFAULT_FOLDER_MAP["knowledge"],
     "military_unit": DEFAULT_FOLDER_MAP["knowledge"],
     "academic_school": DEFAULT_FOLDER_MAP["knowledge"],
+    # Entity subtypes (additional)
+    "myth": DEFAULT_FOLDER_MAP["knowledge"],
+    "symbol": DEFAULT_FOLDER_MAP["knowledge"],
+    # Concept subtypes (ML / technical)
+    "algorithm": DEFAULT_FOLDER_MAP["knowledge"],
+    "metric": DEFAULT_FOLDER_MAP["knowledge"],
+    "technical_concept": DEFAULT_FOLDER_MAP["knowledge"],
+    "architecture_pattern": DEFAULT_FOLDER_MAP["knowledge"],
+    # Work subtypes (additional)
+    "case_study": DEFAULT_FOLDER_MAP["knowledge"],
+    # Organization subtypes (additional)
+    "government": DEFAULT_FOLDER_MAP["knowledge"],
+    # Source subtypes
+    "article": DEFAULT_FOLDER_MAP["sources"],
+    "encyclopedia": DEFAULT_FOLDER_MAP["sources"],
+    "book_chapter": DEFAULT_FOLDER_MAP["sources"],
+    "video_transcript": DEFAULT_FOLDER_MAP["sources"],
+    "research_paper": DEFAULT_FOLDER_MAP["sources"],
+    "documentation": DEFAULT_FOLDER_MAP["sources"],
+    "notes": DEFAULT_FOLDER_MAP["sources"],
     # Other
     "author": DEFAULT_FOLDER_MAP["knowledge"],
     "topic": DEFAULT_FOLDER_MAP["knowledge"],
