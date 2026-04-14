@@ -999,6 +999,17 @@ entity: false
 
             save_entity_registry(registry_path, registry)
 
+            # Detect potential disambiguation conflicts
+            from brain_ops.domains.knowledge.registry import extract_base_name
+            ambiguous: dict[str, list[str]] = {}
+            for canonical_name in registry.entities:
+                base = extract_base_name(canonical_name).lower()
+                ambiguous.setdefault(base, []).append(canonical_name)
+            disambiguation_warnings = {
+                base: names for base, names in ambiguous.items()
+                if len(names) > 1 and all(extract_base_name(n) == n for n in names)
+            }
+
             # Compile knowledge
             execute_compile_knowledge_workflow(
                 config_path=config_path, db_path=None, load_vault=load_validated_vault,
@@ -1008,6 +1019,7 @@ entity: false
                 "registry_synced": synced,
                 "registry_created": created,
                 "total_registry": len(registry.entities),
+                "disambiguation_warnings": len(disambiguation_warnings),
             }
 
             if as_json:
@@ -1015,6 +1027,11 @@ entity: false
                 return
             console.print(f"Reconciled: {synced} synced, {created} new in registry. Total: {len(registry.entities)} entities.")
             console.print("Knowledge compiled to SQLite.")
+            if disambiguation_warnings:
+                console.print(f"\n[yellow]⚠ {len(disambiguation_warnings)} potential name collision(s) detected:[/yellow]")
+                for base, names in sorted(disambiguation_warnings.items()):
+                    console.print(f"  [cyan]{base}[/cyan]: {', '.join(names)}")
+                console.print("[yellow]  Use `brain create-entity` with the same name + different type to auto-disambiguate.[/yellow]")
         except BrainOpsError as error:
             handle_error(error)
 

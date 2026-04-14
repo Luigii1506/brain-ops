@@ -103,11 +103,14 @@ class EntityPlan:
 
 
 def validate_entity_type(entity_type: str) -> str:
-    from .object_model import SUBTYPES, LEGACY_TYPE_MAP
+    from .object_model import SUBTYPES, LEGACY_TYPE_MAP, OBJECT_KINDS
 
     normalized = entity_type.strip().lower()
     # Accept legacy types
     if normalized in ENTITY_TYPES:
+        return normalized
+    # Accept object kind names (e.g. "disambiguation")
+    if normalized in OBJECT_KINDS:
         return normalized
     # Accept any known subtype
     for _kind, subtypes in SUBTYPES.items():

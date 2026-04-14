@@ -134,8 +134,13 @@ class PromotionRulesTestCase(TestCase):
 
 
 class DisambiguationTestCase(TestCase):
-    def test_build_disambiguated_name(self) -> None:
-        self.assertEqual(build_disambiguated_name("Mercurio", "planet"), "Mercurio (planet)")
+    def test_build_disambiguated_name_uses_spanish_label(self) -> None:
+        self.assertEqual(build_disambiguated_name("Mercurio", "deity"), "Mercurio (dios)")
+        self.assertEqual(build_disambiguated_name("Mercurio", "celestial_body"), "Mercurio (planeta)")
+        self.assertEqual(build_disambiguated_name("Troya", "city"), "Troya (ciudad)")
+
+    def test_build_disambiguated_name_unknown_subtype_passes_through(self) -> None:
+        self.assertEqual(build_disambiguated_name("X", "alien"), "X (alien)")
 
     def test_needs_disambiguation(self) -> None:
         self.assertTrue(needs_disambiguation("Mercurio", ["planet", "deity"]))

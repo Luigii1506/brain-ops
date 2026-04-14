@@ -256,8 +256,79 @@ class DisambiguationCandidate:
         }
 
 
+# Spanish labels for disambiguation suffixes — human-readable in Obsidian
+DISAMBIGUATION_LABELS: dict[str, str] = {
+    # Entity subtypes
+    "person": "persona",
+    "animal": "animal",
+    "plant": "planta",
+    "celestial_body": "planeta",
+    "civilization": "civilización",
+    "deity": "dios",
+    "myth": "mito",
+    "symbol": "símbolo",
+    "artifact": "artefacto",
+    "technology": "tecnología",
+    "programming_language": "lenguaje",
+    # Concept subtypes
+    "abstract_concept": "concepto",
+    "emotion": "emoción",
+    "value": "valor",
+    "theory": "teoría",
+    "discipline": "disciplina",
+    "school_of_thought": "escuela",
+    "scientific_concept": "concepto científico",
+    "philosophical_concept": "concepto filosófico",
+    "religious_concept": "concepto religioso",
+    "process": "proceso",
+    "classification": "clasificación",
+    "algorithm": "algoritmo",
+    "metric": "métrica",
+    "technical_concept": "concepto técnico",
+    "architecture_pattern": "patrón",
+    # Work subtypes
+    "book": "libro",
+    "paper": "artículo",
+    "poem": "poema",
+    "play": "obra",
+    "artwork": "obra de arte",
+    "dataset": "dataset",
+    "software_project": "software",
+    "case_study": "caso de estudio",
+    # Event subtypes
+    "war": "guerra",
+    "battle": "batalla",
+    "revolution": "revolución",
+    "treaty": "tratado",
+    "discovery": "descubrimiento",
+    "historical_event": "evento",
+    "phenomenon": "fenómeno",
+    # Place subtypes
+    "country": "país",
+    "city": "ciudad",
+    "region": "región",
+    "empire": "imperio",
+    "continent": "continente",
+    "landmark": "monumento",
+    "geological_feature": "formación geológica",
+    # Organization subtypes
+    "company": "empresa",
+    "institution": "institución",
+    "government": "gobierno",
+    "religion": "religión",
+    "military_unit": "unidad militar",
+    "academic_school": "escuela académica",
+}
+
+
+def disambiguation_label(subtype: str) -> str:
+    """Return the Spanish label for a subtype, or the subtype itself as fallback."""
+    return DISAMBIGUATION_LABELS.get(subtype, subtype)
+
+
 def build_disambiguated_name(name: str, subtype: str) -> str:
-    return f"{name} ({subtype})"
+    label = disambiguation_label(subtype)
+    return f"{name} ({label})"
 
 
 def needs_disambiguation(name: str, existing_types: list[str]) -> bool:
@@ -590,8 +661,10 @@ __all__ = [
     "SUBTYPES",
     "SUBTYPE_SECTIONS",
     "SUBTYPE_WRITING_GUIDES",
+    "DISAMBIGUATION_LABELS",
     "build_disambiguated_name",
     "detect_role",
+    "disambiguation_label",
     "get_writing_guide",
     "needs_disambiguation",
     "normalize_predicate",
