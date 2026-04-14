@@ -35,30 +35,42 @@ def inject_backlinks(
     Only replaces the first occurrence per note (avoids over-linking).
     Skips the entity's own note.
     Updates the `related` frontmatter field in notes that get linked.
+
+    Disambiguation-aware: for entities like "Urano (deity)", searches for the
+    base name ("Urano") and replaces with ``[[Urano (deity)|Urano]]``.
     """
     if excluded_parts is None:
         excluded_parts = {".git", ".obsidian", ".brain-ops", "Templates"}
 
     from brain_ops.frontmatter import dump_frontmatter, split_frontmatter
+    from brain_ops.domains.knowledge.registry import extract_base_name
 
     notes_scanned = 0
     linked_files: list[str] = []
 
-    # Build regex: match entity name NOT already inside [[ ]]
-    # Negative lookbehind for [[ and negative lookahead for ]]
-    escaped = re.escape(entity_name)
+    # Determine search term and wikilink format for disambiguated entities
+    base_name = extract_base_name(entity_name)
+    is_disambiguated = base_name != entity_name
+    search_term = base_name if is_disambiguated else entity_name
+    wikilink = f"[[{entity_name}|{base_name}]]" if is_disambiguated else f"[[{entity_name}]]"
+
+    # Build regex: match search term NOT already inside [[ ]]
+    escaped = re.escape(search_term)
     pattern = re.compile(
         rf"(?<!\[\[)(?<!\|)\b({escaped})\b(?!\]\])(?!\|)",
         re.IGNORECASE,
     )
+
+    # Skip stems: both the entity's own note and the disambiguation page
+    skip_stems = {entity_name.lower(), base_name.lower()}
 
     for md_file in sorted(vault_path.rglob("*.md")):
         # Skip excluded directories
         if any(part in md_file.parts for part in excluded_parts):
             continue
 
-        # Skip the entity's own note
-        if md_file.stem.lower() == entity_name.lower():
+        # Skip the entity's own note and disambiguation page
+        if md_file.stem.lower() in skip_stems:
             continue
 
         try:
@@ -83,11 +95,11 @@ def inject_backlinks(
             continue
 
         # Replace first occurrence in body only
-        new_body, count = pattern.subn(f"[[{entity_name}]]", body, count=1)
+        new_body, count = pattern.subn(wikilink, body, count=1)
         if count == 0:
             continue
 
-        # Update related field in frontmatter
+        # Update related field in frontmatter (use canonical name)
         related = fm.get("related")
         if related is None:
             fm["related"] = [entity_name]

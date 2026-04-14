@@ -435,6 +435,49 @@ def add_alias_to_frontmatter(
     return False
 
 
+def format_wikilink(name: str, registry: object | None = None) -> str:
+    """Return the correct wikilink string for an entity name, with disambiguation if needed.
+
+    If the entity has a disambiguated canonical name (e.g. "Urano (deity)"),
+    returns ``[[Urano (deity)|Urano]]`` so it displays cleanly in Obsidian.
+    If the name is already the canonical form or no registry is available,
+    returns ``[[name]]``.
+    """
+    if registry is None:
+        return f"[[{name}]]"
+
+    from .registry import extract_base_name
+
+    # Try to resolve via alias (e.g. "Urano" → "Urano (deity)")
+    resolved = registry.resolve(name)
+    if resolved != name:
+        # The name was an alias; the canonical name differs
+        base = extract_base_name(resolved)
+        if base != resolved:
+            # Canonical has disambiguator → use display alias
+            return f"[[{resolved}|{name}]]"
+        return f"[[{resolved}]]"
+
+    # The name IS canonical — check if it has a disambiguator itself
+    base = extract_base_name(name)
+    if base != name:
+        # Name like "Urano (deity)" — display as "Urano"
+        return f"[[{name}|{base}]]"
+
+    return f"[[{name}]]"
+
+
+def resolve_entity_name(name: str, registry: object | None = None) -> str:
+    """Resolve an entity name to its canonical form using the registry.
+
+    Returns the canonical name if found, otherwise the original name.
+    Useful for frontmatter ``related`` fields where we want canonical names.
+    """
+    if registry is None:
+        return name
+    return registry.resolve(name)
+
+
 __all__ = [
     "ALL_SAFE_ALIASES",
     "LinkFixResult",
@@ -443,5 +486,7 @@ __all__ = [
     "SPELLING_VARIANTS",
     "add_alias_to_frontmatter",
     "fix_ambiguous_links",
+    "format_wikilink",
     "resolve_alias",
+    "resolve_entity_name",
 ]

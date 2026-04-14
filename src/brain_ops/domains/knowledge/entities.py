@@ -189,6 +189,43 @@ def plan_entity_note(
     )
 
 
+def build_disambiguation_page(
+    base_name: str,
+    candidates: list[tuple[str, str]],
+) -> EntityPlan:
+    """Build a disambiguation page linking to entities sharing a base name.
+
+    Args:
+        base_name: the shared name (e.g. "Urano")
+        candidates: list of (canonical_name, subtype) pairs
+    """
+    lines = [
+        f"**{base_name}** puede referirse a:\n",
+    ]
+    for canonical_name, subtype in candidates:
+        lines.append(f"- [[{canonical_name}]] — {subtype}")
+    lines.append("")
+    lines.append("## Related notes")
+    lines.append("")
+
+    frontmatter: dict[str, object] = {
+        "type": "disambiguation",
+        "object_kind": "disambiguation",
+        "subtype": "disambiguation_page",
+        "name": base_name,
+        "entity": False,
+        "status": "canonical",
+        "disambiguates": [cn for cn, _ in candidates],
+    }
+
+    return EntityPlan(
+        title=base_name,
+        entity_type="disambiguation",
+        frontmatter=frontmatter,
+        body="\n".join(lines),
+    )
+
+
 def extract_entity_relations(frontmatter: dict[str, object]) -> list[str]:
     related = frontmatter.get("related")
     if isinstance(related, list):
@@ -207,6 +244,7 @@ __all__ = [
     "ENTITY_TYPES",
     "EntityPlan",
     "EntitySchema",
+    "build_disambiguation_page",
     "build_entity_body",
     "build_entity_frontmatter",
     "extract_entity_relations",

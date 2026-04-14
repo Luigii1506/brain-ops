@@ -163,6 +163,83 @@ def _find_existing_entity(vault: Vault, name: str) -> Path | None:
     return None
 
 
+def _rename_entity_for_disambiguation(
+    vault: Vault,
+    registry: "EntityRegistry",
+    entity: "RegisteredEntity",
+    registry_path: Path,
+) -> None:
+    """Rename an existing entity note to its disambiguated form."""
+    from brain_ops.domains.knowledge.object_model import build_disambiguated_name
+    from brain_ops.domains.knowledge.link_aliases import add_alias_to_frontmatter
+    from brain_ops.domains.knowledge.registry import extract_base_name, save_entity_registry
+    from brain_ops.frontmatter import split_frontmatter, dump_frontmatter
+
+    old_name = entity.canonical_name
+    subtype = entity.subtype or entity.entity_type
+    new_name = build_disambiguated_name(old_name, subtype)
+
+    # Find the old file
+    old_path = _find_existing_entity(vault, old_name)
+    if old_path is None:
+        return
+
+    # Read, update frontmatter with new name, write to new path
+    content = old_path.read_text(encoding="utf-8")
+    fm, body = split_frontmatter(content)
+    fm["name"] = new_name
+    fm["base_name"] = old_name
+    if "aliases" not in fm or not isinstance(fm.get("aliases"), list):
+        fm["aliases"] = []
+    if old_name not in fm["aliases"]:
+        fm["aliases"].append(old_name)
+
+    # Determine folder for the entity type
+    folder = vault.config.folder_for_note_type(entity.entity_type) or vault.config.folders.knowledge
+    new_path = vault.note_path(folder, new_name)
+
+    vault.write_text(new_path, dump_frontmatter(fm, body))
+
+    # Remove old file (only if write succeeded)
+    if not vault.dry_run:
+        old_path.unlink()
+
+    # Update registry
+    old_entry = registry.entities.pop(old_name, None)
+    if old_entry:
+        old_entry.canonical_name = new_name
+        if old_name not in old_entry.aliases:
+            old_entry.aliases.append(old_name)
+        registry.register(old_entry)
+
+    save_entity_registry(registry_path, registry)
+
+
+def _create_or_update_disambiguation_page(
+    vault: Vault,
+    base_name: str,
+    candidates: list[tuple[str, str]],
+) -> None:
+    """Create or overwrite a disambiguation page for the given base name."""
+    from brain_ops.domains.knowledge.entities import build_disambiguation_page
+
+    plan = build_disambiguation_page(base_name, candidates)
+    try:
+        create_note(
+            vault,
+            CreateNoteRequest(
+                title=plan.title,
+                note_type=plan.entity_type,
+                tags=["disambiguation"],
+                extra_frontmatter=plan.frontmatter,
+                body_override=plan.body,
+                overwrite=True,
+            ),
+        )
+    except Exception:
+        pass
+
+
 def execute_create_entity_workflow(
     vault: Vault,
     *,
@@ -172,6 +249,16 @@ def execute_create_entity_workflow(
     extra_frontmatter: dict[str, object] | None = None,
     event_sink: EventSink | None = None,
 ):
+    from brain_ops.domains.knowledge.object_model import build_disambiguated_name, resolve_object_kind
+    from brain_ops.domains.knowledge.registry import (
+        EntityRegistry,
+        RegisteredEntity,
+        extract_base_name,
+        load_entity_registry,
+        save_entity_registry,
+    )
+
+    # Phase 1: Check for exact file collision (same name, same file)
     existing = _find_existing_entity(vault, name)
     if existing:
         raise ConfigError(
@@ -179,8 +266,43 @@ def execute_create_entity_workflow(
             "Use enrich-entity or edit the note directly instead."
         )
 
-    plan = plan_entity_note(name, entity_type=entity_type, extra_frontmatter=extra_frontmatter)
+    # Phase 2: Check registry for base-name collisions (same name, different subtype)
+    registry_path = vault.config.data_dir / "entity_registry.json"
+    registry = load_entity_registry(registry_path)
+
+    _obj_kind, new_subtype = resolve_object_kind(entity_type)
+    collisions = registry.find_collisions(name)
+
+    actual_name = name
+    disambiguation_needed = False
+
+    if collisions:
+        # Only collisions with a different subtype are real collisions
+        real_collisions = [c for c in collisions if c.subtype != new_subtype]
+        if real_collisions:
+            disambiguation_needed = True
+            actual_name = build_disambiguated_name(name, new_subtype)
+
+            # Check the disambiguated name doesn't also collide
+            existing_disambig = _find_existing_entity(vault, actual_name)
+            if existing_disambig:
+                raise ConfigError(
+                    f"Disambiguated entity '{actual_name}' already exists at {existing_disambig}."
+                )
+
+            # Rename existing colliders if they lack disambiguation suffix
+            for collision in real_collisions:
+                if extract_base_name(collision.canonical_name) == collision.canonical_name:
+                    _rename_entity_for_disambiguation(vault, registry, collision, registry_path)
+                    # Reload registry after rename
+                    registry = load_entity_registry(registry_path)
+
+    # Phase 3: Create the entity note (with possibly disambiguated name)
+    plan = plan_entity_note(actual_name, entity_type=entity_type, extra_frontmatter=extra_frontmatter)
     merged_frontmatter = dict(plan.frontmatter)
+    if disambiguation_needed:
+        merged_frontmatter["base_name"] = name
+
     result = create_note(
         vault,
         CreateNoteRequest(
@@ -192,15 +314,25 @@ def execute_create_entity_workflow(
         ),
     )
 
+    # Phase 4: Register alias and create disambiguation page
+    if disambiguation_needed:
+        registry = load_entity_registry(registry_path)
+        registry.add_alias(actual_name, name)
+        save_entity_registry(registry_path, registry)
+
+        # Create/update disambiguation page
+        all_collisions = registry.find_collisions(name)
+        candidates = [
+            (c.canonical_name, c.subtype or c.entity_type)
+            for c in all_collisions
+        ]
+        _create_or_update_disambiguation_page(vault, name, candidates)
+
     # Auto-backlink: scan existing notes and convert plain mentions to [[wikilinks]]
-    backlink_result = None
     try:
         from brain_ops.domains.knowledge.backlinking import inject_backlinks
 
-        backlink_result = inject_backlinks(
-            vault.config.vault_path,
-            name,
-        )
+        inject_backlinks(vault.config.vault_path, actual_name)
     except Exception:
         pass
 

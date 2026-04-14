@@ -19,6 +19,7 @@ OBJECT_KINDS: dict[str, str] = {
     "organization": "A group: company, religion, government, school",
     "source": "An ingested reference: article, video, documentation",
     "topic": "A knowledge grouping: research area, study track",
+    "disambiguation": "A disambiguation page listing entities with the same name",
 }
 
 SUBTYPES: dict[str, list[str]] = {
@@ -54,6 +55,9 @@ SUBTYPES: dict[str, list[str]] = {
     ],
     "topic": [
         "umbrella_topic", "research_area", "study_track",
+    ],
+    "disambiguation": [
+        "disambiguation_page",
     ],
 }
 
@@ -318,6 +322,8 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     "company": ("Identity", "Key Facts", "Founded", "Products & Services", "Leadership", "Impact", "Relationships", "Related notes"),
     "institution": ("Identity", "Key Facts", "Founded", "Mission", "Structure", "Impact", "Relationships", "Related notes"),
     "religion": ("Identity", "Key Facts", "Origins", "Core Beliefs", "Practices", "Sacred Texts", "Denominations", "Relationships", "Related notes"),
+    # Disambiguation
+    "disambiguation_page": ("Disambiguation", "Related notes"),
 }
 
 

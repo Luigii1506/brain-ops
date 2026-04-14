@@ -747,6 +747,13 @@ def register_note_and_knowledge_commands(app: typer.Typer, console: Console, han
             if source_url:
                 try:
                     from urllib.parse import urlparse
+                    from brain_ops.domains.knowledge.link_aliases import format_wikilink
+                    from brain_ops.domains.knowledge.registry import load_entity_registry as _load_reg
+
+                    _reg_path = vault_path / ".brain-ops" / "entity_registry.json"
+                    _reg = _load_reg(_reg_path)
+                    _entity_link = format_wikilink(name, _reg)
+
                     domain = urlparse(source_url).netloc.replace("www.", "").split(".")[0].title()
                     source_title = f"{name} - {domain}"
                     source_path = vault_path / "01 - Sources" / f"{source_title}.md"
@@ -767,12 +774,12 @@ source_confidence: 0.9
 entity: false
 ---
 
-> Source used to enrich [[{name}]]
+> Source used to enrich {_entity_link}
 
 ## Source
 
 - URL: [{source_title}]({source_url})
-- Enriched: [[{name}]]
+- Enriched: {_entity_link}
 
 ## Related notes
 """
@@ -847,6 +854,12 @@ entity: false
             # 6. Auto cross-enrich: fix Related notes for this entity AND entities it mentions
             try:
                 import re as _re
+                from brain_ops.domains.knowledge.link_aliases import format_wikilink as _fmt_wl
+                from brain_ops.domains.knowledge.registry import load_entity_registry as _load_reg2
+
+                _pp_reg_path = vault_path / ".brain-ops" / "entity_registry.json"
+                _pp_reg = _load_reg2(_pp_reg_path)
+
                 knowledge_path = vault.config.folder_path("knowledge")
                 _entity_names: set[str] = set()
                 for _f in knowledge_path.glob("*.md"):
@@ -895,7 +908,7 @@ entity: false
                                 _idx = _j
                                 break
                         if _idx is not None:
-                            _new = [f"- [[{_m}]]" for _m in sorted(_missing)]
+                            _new = [f"- {_fmt_wl(_m, _pp_reg)}" for _m in sorted(_missing)]
                             _lines = _lines[:_idx] + _new + _lines[_idx:]
                             _np.write_text("\n".join(_lines), encoding="utf-8")
                             cross_fixed += len(_missing)
@@ -1792,11 +1805,17 @@ Colección temática de frases célebres.
         try:
             import re
             from brain_ops.interfaces.cli.runtime import load_validated_vault
+            from brain_ops.domains.knowledge.link_aliases import format_wikilink
+            from brain_ops.domains.knowledge.registry import load_entity_registry
 
             vault = load_validated_vault(config_path, dry_run=False)
             knowledge_path = vault.config.folder_path("knowledge")
 
-            # ── 1. Load all entity names ──
+            # Load registry for disambiguation
+            registry_path = vault.config.data_dir / "entity_registry.json"
+            registry = load_entity_registry(registry_path)
+
+            # ── 1. Load all entity names (use stem, which includes disambiguator) ──
             entity_names: set[str] = set()
             for f in knowledge_path.glob("*.md"):
                 text = f.read_text(encoding="utf-8")
@@ -1861,7 +1880,7 @@ Colección temática de frases célebres.
             for name, missing in sorted(results, key=lambda x: -len(x[1])):
                 console.print(f"\n  [cyan]{name}[/cyan] — missing {len(missing)} from Related notes:")
                 for m in sorted(missing):
-                    console.print(f"    + [[{m}]]")
+                    console.print(f"    + {format_wikilink(m, registry)}")
 
             # ── 5. Fix if requested ──
             if fix:
@@ -1882,7 +1901,7 @@ Colección temática de frases célebres.
                             break
 
                     if insert_idx is not None:
-                        new_lines = [f"- [[{m}]]" for m in sorted(missing)]
+                        new_lines = [f"- {format_wikilink(m, registry)}" for m in sorted(missing)]
                         lines = lines[:insert_idx] + new_lines + lines[insert_idx:]
                         note_path.write_text("\n".join(lines), encoding="utf-8")
                         total_fixed += len(missing)

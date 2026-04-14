@@ -242,7 +242,15 @@ def suggest_semantic_relations(
     return sorted(suggestions.values(), key=lambda s: (s.exists, s.confidence, s.name), reverse=True)
 
 
-def add_semantic_related_links(text: str, suggestions: list[SemanticRelationSuggestion], *, min_confidence: float = 0.7) -> tuple[str, list[SemanticRelationSuggestion]]:
+def add_semantic_related_links(
+    text: str,
+    suggestions: list[SemanticRelationSuggestion],
+    *,
+    min_confidence: float = 0.7,
+    registry: object | None = None,
+) -> tuple[str, list[SemanticRelationSuggestion]]:
+    from .link_aliases import format_wikilink
+
     frontmatter, body = split_frontmatter(text)
     related = _extract_related(frontmatter, body)
     relationship_links = _extract_section_links(body, "Relationships")
@@ -279,7 +287,7 @@ def add_semantic_related_links(text: str, suggestions: list[SemanticRelationSugg
         relationship_insert_idx = len(lines)
 
     relationship_new_lines = [
-        f"- [[{s.name}]] — {s.predicate} — {s.reason} *(semantic)*"
+        f"- {format_wikilink(s.name, registry)} — {s.predicate} — {s.reason} *(semantic)*"
         for s in applied
         if s.name not in relationship_links
     ]
@@ -297,16 +305,24 @@ def add_semantic_related_links(text: str, suggestions: list[SemanticRelationSugg
         lines.extend(["", "## Related notes"])
         insert_idx = len(lines)
 
-    new_lines = [f"- [[{s.name}]]" for s in applied if s.name not in related]
+    new_lines = [f"- {format_wikilink(s.name, registry)}" for s in applied if s.name not in related]
     body = "\n".join(lines[:insert_idx] + new_lines + lines[insert_idx:])
     return dump_frontmatter(frontmatter, body), applied
 
 
-def build_reciprocal_semantic_suggestion(source_name: str, suggestion: SemanticRelationSuggestion) -> SemanticRelationSuggestion:
+def build_reciprocal_semantic_suggestion(
+    source_name: str,
+    suggestion: SemanticRelationSuggestion,
+    *,
+    registry: object | None = None,
+) -> SemanticRelationSuggestion:
+    from .link_aliases import format_wikilink
+
+    source_link = format_wikilink(source_name, registry)
     return SemanticRelationSuggestion(
         name=source_name,
         predicate=suggestion.predicate,
-        reason=f"relación recíproca inferida desde [[{source_name}]]: {suggestion.reason}",
+        reason=f"relación recíproca inferida desde {source_link}: {suggestion.reason}",
         confidence=suggestion.confidence,
         exists=True,
         action="link",

@@ -135,6 +135,9 @@ DEFAULT_TYPE_FOLDER_MAP = {
     "research_paper": DEFAULT_FOLDER_MAP["sources"],
     "documentation": DEFAULT_FOLDER_MAP["sources"],
     "notes": DEFAULT_FOLDER_MAP["sources"],
+    # Disambiguation
+    "disambiguation": DEFAULT_FOLDER_MAP["knowledge"],
+    "disambiguation_page": DEFAULT_FOLDER_MAP["knowledge"],
     # Other
     "author": DEFAULT_FOLDER_MAP["knowledge"],
     "topic": DEFAULT_FOLDER_MAP["knowledge"],

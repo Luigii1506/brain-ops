@@ -181,8 +181,11 @@ def apply_cross_enrichment(
     candidates: list[CrossEnrichmentCandidate],
     *,
     auto_only: bool = True,
+    registry: object | None = None,
 ) -> tuple[str, list[CrossEnrichmentCandidate]]:
     """Apply cross-enrichment candidates to a target entity body. Returns updated body and applied candidates."""
+    from .link_aliases import format_wikilink
+
     applied: list[CrossEnrichmentCandidate] = []
 
     for candidate in candidates:
@@ -204,7 +207,8 @@ def apply_cross_enrichment(
 
         # Add the new content as a bullet point at the end of the section
         insert_point = section_end
-        new_line = f"\n- {candidate.text} *(cross-enriched from [[{candidate.source_entity}]])*"
+        source_link = format_wikilink(candidate.source_entity, registry)
+        new_line = f"\n- {candidate.text} *(cross-enriched from {source_link})*"
         target_body = target_body[:insert_point] + new_line + target_body[insert_point:]
         applied.append(candidate)
 

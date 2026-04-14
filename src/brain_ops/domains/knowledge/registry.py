@@ -3,8 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+_DISAMBIG_PATTERN = re.compile(r'^(.+?)\s*\(([^)]+)\)$')
+
+
+def extract_base_name(canonical_name: str) -> str:
+    """Strip parenthetical disambiguator: 'Mercurio (deity)' -> 'Mercurio'."""
+    m = _DISAMBIG_PATTERN.match(canonical_name.strip())
+    return m.group(1).strip() if m else canonical_name.strip()
 
 
 @dataclass(slots=True)
@@ -60,6 +70,7 @@ class RegisteredEntity:
 class EntityRegistry:
     entities: dict[str, RegisteredEntity] = field(default_factory=dict)
     alias_index: dict[str, str] = field(default_factory=dict)
+    base_name_index: dict[str, list[str]] = field(default_factory=dict)
 
     def resolve(self, name: str) -> str:
         normalized = name.strip()
@@ -71,6 +82,67 @@ class EntityRegistry:
         self.entities[entity.canonical_name] = entity
         for alias in entity.aliases:
             self.alias_index[alias.lower()] = entity.canonical_name
+        # Populate base_name_index for disambiguation lookups
+        base = extract_base_name(entity.canonical_name).lower()
+        if base not in self.base_name_index:
+            self.base_name_index[base] = []
+        if entity.canonical_name not in self.base_name_index[base]:
+            self.base_name_index[base].append(entity.canonical_name)
+
+    def find_collisions(self, name: str) -> list[RegisteredEntity]:
+        """Find all registered entities sharing the same base name."""
+        base = extract_base_name(name).lower()
+        canonical_names = self.base_name_index.get(base, [])
+        return [self.entities[cn] for cn in canonical_names if cn in self.entities]
+
+    def resolve_with_context(
+        self, name: str, *, subtype: str | None = None, domain: str | None = None,
+    ) -> str | list["DisambiguationCandidate"]:
+        """Resolve a name, using subtype/domain to disambiguate if multiple matches exist.
+
+        Returns:
+            str: the resolved canonical name (unambiguous)
+            list[DisambiguationCandidate]: candidates when ambiguous
+        """
+        from .object_model import DisambiguationCandidate
+
+        # Try exact match first
+        normalized = name.strip()
+        if normalized in self.entities:
+            return normalized
+        # Try alias
+        via_alias = self.alias_index.get(normalized.lower())
+        if via_alias and via_alias in self.entities:
+            return via_alias
+
+        # Check base name collisions
+        collisions = self.find_collisions(name)
+        if not collisions:
+            return normalized  # unknown entity, pass through
+        if len(collisions) == 1:
+            return collisions[0].canonical_name
+
+        # Multiple matches — try to narrow by subtype
+        if subtype:
+            for entity in collisions:
+                if entity.subtype == subtype:
+                    return entity.canonical_name
+        # Try to narrow by domain
+        if domain:
+            for entity in collisions:
+                if domain in entity.domains:
+                    return entity.canonical_name
+
+        # Still ambiguous — return candidates
+        return [
+            DisambiguationCandidate(
+                canonical_name=e.canonical_name,
+                display_name=e.canonical_name,
+                subtype=e.subtype or e.entity_type,
+                disambiguation_key=e.subtype or e.entity_type,
+            )
+            for e in collisions
+        ]
 
     def add_alias(self, canonical_name: str, alias: str) -> None:
         entity = self.entities.get(canonical_name)
@@ -239,6 +311,7 @@ def learn_from_ingest(
 __all__ = [
     "EntityRegistry",
     "RegisteredEntity",
+    "extract_base_name",
     "learn_from_ingest",
     "load_entity_registry",
     "save_entity_registry",

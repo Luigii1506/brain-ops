@@ -24,6 +24,7 @@ from brain_ops.domains.knowledge.object_model import (
 from brain_ops.domains.knowledge.registry import (
     EntityRegistry,
     RegisteredEntity,
+    extract_base_name,
     learn_from_ingest,
     load_entity_registry,
     save_entity_registry,
@@ -328,6 +329,200 @@ class DeduplicateTestCase(TestCase):
         result = deduplicate_note_content(body)
         self.assertIn("## Identity", result)
         self.assertIn("## Key Facts", result)
+
+
+class ExtractBaseNameTestCase(TestCase):
+    def test_strips_disambiguator(self) -> None:
+        self.assertEqual(extract_base_name("Mercurio (deity)"), "Mercurio")
+        self.assertEqual(extract_base_name("Urano (celestial_body)"), "Urano")
+
+    def test_passthrough_without_disambiguator(self) -> None:
+        self.assertEqual(extract_base_name("Alejandro Magno"), "Alejandro Magno")
+
+    def test_handles_whitespace(self) -> None:
+        self.assertEqual(extract_base_name("  Marte (deity) "), "Marte")
+
+
+class RegistryFindCollisionsTestCase(TestCase):
+    def test_finds_collisions_by_base_name(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Mercurio (celestial_body)", entity_type="celestial_body", subtype="celestial_body")
+        e2 = RegisteredEntity(canonical_name="Mercurio (deity)", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        registry.register(e2)
+        collisions = registry.find_collisions("Mercurio")
+        self.assertEqual(len(collisions), 2)
+
+    def test_finds_collision_with_bare_name(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Urano", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        collisions = registry.find_collisions("Urano")
+        self.assertEqual(len(collisions), 1)
+        self.assertEqual(collisions[0].canonical_name, "Urano")
+
+    def test_no_collisions_returns_empty(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Jupiter", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        collisions = registry.find_collisions("Saturn")
+        self.assertEqual(len(collisions), 0)
+
+
+class ResolveWithContextTestCase(TestCase):
+    def test_exact_match_returns_directly(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Mercurio (deity)", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        result = registry.resolve_with_context("Mercurio (deity)")
+        self.assertEqual(result, "Mercurio (deity)")
+
+    def test_single_collision_resolves(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Urano", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        result = registry.resolve_with_context("Urano")
+        self.assertEqual(result, "Urano")
+
+    def test_ambiguous_returns_candidates(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Mercurio (celestial_body)", entity_type="celestial_body", subtype="celestial_body")
+        e2 = RegisteredEntity(canonical_name="Mercurio (deity)", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        registry.register(e2)
+        result = registry.resolve_with_context("Mercurio")
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 2)
+
+    def test_narrows_by_subtype(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Mercurio (celestial_body)", entity_type="celestial_body", subtype="celestial_body")
+        e2 = RegisteredEntity(canonical_name="Mercurio (deity)", entity_type="deity", subtype="deity")
+        registry.register(e1)
+        registry.register(e2)
+        result = registry.resolve_with_context("Mercurio", subtype="deity")
+        self.assertEqual(result, "Mercurio (deity)")
+
+    def test_narrows_by_domain(self) -> None:
+        registry = EntityRegistry()
+        e1 = RegisteredEntity(canonical_name="Mercurio (celestial_body)", entity_type="celestial_body", subtype="celestial_body", domains=["astronomía"])
+        e2 = RegisteredEntity(canonical_name="Mercurio (deity)", entity_type="deity", subtype="deity", domains=["mitología"])
+        registry.register(e1)
+        registry.register(e2)
+        result = registry.resolve_with_context("Mercurio", domain="mitología")
+        self.assertEqual(result, "Mercurio (deity)")
+
+    def test_unknown_name_passes_through(self) -> None:
+        registry = EntityRegistry()
+        result = registry.resolve_with_context("Desconocido")
+        self.assertEqual(result, "Desconocido")
+
+
+class BaseNameIndexPersistenceTestCase(TestCase):
+    def test_base_name_index_rebuilt_on_load(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "registry.json"
+            registry = EntityRegistry()
+            e1 = RegisteredEntity(canonical_name="Mercurio (deity)", entity_type="deity", subtype="deity")
+            e2 = RegisteredEntity(canonical_name="Mercurio (celestial_body)", entity_type="celestial_body", subtype="celestial_body")
+            registry.register(e1)
+            registry.register(e2)
+            save_entity_registry(path, registry)
+
+            loaded = load_entity_registry(path)
+            collisions = loaded.find_collisions("Mercurio")
+            self.assertEqual(len(collisions), 2)
+
+
+class DisambiguationPageTestCase(TestCase):
+    def test_builds_disambiguation_page(self) -> None:
+        from brain_ops.domains.knowledge.entities import build_disambiguation_page
+
+        plan = build_disambiguation_page("Urano", [
+            ("Urano (deity)", "deity"),
+            ("Urano (celestial_body)", "celestial_body"),
+        ])
+        self.assertEqual(plan.title, "Urano")
+        self.assertEqual(plan.entity_type, "disambiguation")
+        self.assertFalse(plan.frontmatter["entity"])
+        self.assertIn("[[Urano (deity)]]", plan.body)
+        self.assertIn("[[Urano (celestial_body)]]", plan.body)
+        self.assertEqual(plan.frontmatter["disambiguates"], ["Urano (deity)", "Urano (celestial_body)"])
+
+
+class FormatWikilinkTestCase(TestCase):
+    def test_no_registry_returns_plain_link(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        self.assertEqual(format_wikilink("Urano"), "[[Urano]]")
+
+    def test_alias_resolves_to_disambiguated(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        e = RegisteredEntity(canonical_name="Urano (deity)", entity_type="deity", subtype="deity", aliases=["Urano"])
+        registry.register(e)
+        result = format_wikilink("Urano", registry)
+        self.assertEqual(result, "[[Urano (deity)|Urano]]")
+
+    def test_canonical_disambiguated_shows_base(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        e = RegisteredEntity(canonical_name="Urano (deity)", entity_type="deity", subtype="deity")
+        registry.register(e)
+        result = format_wikilink("Urano (deity)", registry)
+        self.assertEqual(result, "[[Urano (deity)|Urano]]")
+
+    def test_non_disambiguated_entity_plain(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        e = RegisteredEntity(canonical_name="Alejandro Magno", entity_type="person", subtype="person")
+        registry.register(e)
+        result = format_wikilink("Alejandro Magno", registry)
+        self.assertEqual(result, "[[Alejandro Magno]]")
+
+    def test_unknown_entity_returns_plain(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        result = format_wikilink("Desconocido", registry)
+        self.assertEqual(result, "[[Desconocido]]")
+
+
+class ResolveEntityNameTestCase(TestCase):
+    def test_resolves_alias_to_canonical(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import resolve_entity_name
+        registry = EntityRegistry()
+        e = RegisteredEntity(canonical_name="Urano (deity)", entity_type="deity", aliases=["Urano"])
+        registry.register(e)
+        self.assertEqual(resolve_entity_name("Urano", registry), "Urano (deity)")
+
+    def test_no_registry_passes_through(self) -> None:
+        from brain_ops.domains.knowledge.link_aliases import resolve_entity_name
+        self.assertEqual(resolve_entity_name("Urano"), "Urano")
+
+
+class CrossEnrichDisambiguationTestCase(TestCase):
+    def test_apply_cross_enrichment_uses_disambiguated_link(self) -> None:
+        from brain_ops.domains.knowledge.cross_enrichment import (
+            CrossEnrichmentCandidate,
+            apply_cross_enrichment,
+        )
+        registry = EntityRegistry()
+        e = RegisteredEntity(canonical_name="Urano (deity)", entity_type="deity", subtype="deity", aliases=["Urano"])
+        registry.register(e)
+
+        body = "## Key Facts\n- fact 1\n\n## Timeline\n"
+        candidate = CrossEnrichmentCandidate(
+            source_entity="Urano (deity)",
+            target_entity="Cronos",
+            content_type="fact",
+            text="Cronos castró a Urano",
+            target_section="Key Facts",
+            confidence=0.8,
+            review_level="auto",
+        )
+        new_body, applied = apply_cross_enrichment(body, [candidate], registry=registry)
+        self.assertEqual(len(applied), 1)
+        self.assertIn("[[Urano (deity)|Urano]]", new_body)
+        self.assertNotIn("[[Urano (deity)]])*", new_body)
 
 
 if __name__ == "__main__":
