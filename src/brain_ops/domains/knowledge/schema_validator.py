@@ -223,12 +223,19 @@ def validate_note(
     *,
     new_note: bool = False,
     gated_domains: Iterable[str] = (),
+    entity_index: dict[str, str] | None = None,
 ) -> list[SchemaViolation]:
     """Return schema violations for a single note.
 
     If `new_note` is True and the note's domain is in `gated_domains`, missing
     required fields become 'error' instead of 'warning'. Existing notes always
     get 'warning' for missing required fields.
+
+    If `entity_index` is provided (mapping entity name → subtype), cross-
+    referential typed-relation checks run (object_missing, object_is_disambig_page).
+    Without it, only local typed-relation checks run (predicate_unknown,
+    duplicate, self). This split lets `validate_vault_notes` enrich the checks
+    for the full vault while keeping single-note validation callable.
     """
     subtype = frontmatter.get("subtype")
     if not isinstance(subtype, str):
@@ -265,7 +272,198 @@ def validate_note(
                 message=f"recommended field '{f}' missing",
             ))
 
+    # Campaña 2.0: typed relations validation
+    violations.extend(_validate_typed_relations(
+        note_path=note_path,
+        note_name=note_name,
+        subtype=subtype,
+        frontmatter=frontmatter,
+        entity_index=entity_index,
+    ))
+
     return violations
+
+
+def _validate_typed_relations(
+    *,
+    note_path: str,
+    note_name: str,
+    subtype: str | None,
+    frontmatter: dict[str, object],
+    entity_index: dict[str, str] | None,
+) -> list[SchemaViolation]:
+    """Check `relationships:` frontmatter for the 6 typed-relation rules.
+
+    Rules implemented:
+    - relation_predicate_unknown (error)    — predicate not in CANONICAL_PREDICATES
+    - relation_duplicate (info)              — same (predicate, object) twice
+    - relation_self (warning)                — object equals source
+    - relation_object_missing (warning)      — object is not a known entity [needs entity_index]
+    - relation_object_is_disambig_page (warning) — object is a disambig_page [needs entity_index]
+
+    `relation_body_divergent` is a separate check (body text is not available
+    at this layer); see `validate_body_relations_divergence` below.
+    """
+    from .relations_typed import parse_relationships
+
+    # Skip entirely if no `relationships:` field present
+    if "relationships" not in frontmatter:
+        return []
+
+    result = parse_relationships(note_name, frontmatter)
+    out: list[SchemaViolation] = []
+
+    # Rule: relation_predicate_unknown (and generic parse errors)
+    for err in result.errors:
+        if err.kind == "unknown_predicate":
+            severity = "error"
+        elif err.kind == "invalid_confidence":
+            severity = "info"
+        else:
+            # missing_field, invalid_shape — structural errors
+            severity = "warning"
+        out.append(SchemaViolation(
+            note_path=note_path,
+            note_name=note_name,
+            subtype=subtype,
+            severity=severity,
+            field=f"relation_{err.kind}",
+            message=f"relationships[{err.index}]: {err.message}",
+        ))
+
+    # Rule: relation_duplicate (info, non-blocking)
+    for dup in result.duplicates:
+        out.append(SchemaViolation(
+            note_path=note_path,
+            note_name=note_name,
+            subtype=subtype,
+            severity="info",
+            field="relation_duplicate",
+            message=(
+                f"duplicate relation: ({dup.predicate}, {dup.object}) appears "
+                f"more than once"
+            ),
+        ))
+
+    # Rule: relation_self (warning)
+    for rel in result.self_references:
+        out.append(SchemaViolation(
+            note_path=note_path,
+            note_name=note_name,
+            subtype=subtype,
+            severity="warning",
+            field="relation_self",
+            message=(
+                f"self-reference: {rel.predicate} → {rel.object} "
+                f"(subject equals object)"
+            ),
+        ))
+
+    # Cross-note rules — only if we have the entity index
+    if entity_index is not None:
+        for rel in result.typed:
+            target_subtype = entity_index.get(rel.object)
+            if target_subtype is None:
+                # Rule: relation_object_missing
+                out.append(SchemaViolation(
+                    note_path=note_path,
+                    note_name=note_name,
+                    subtype=subtype,
+                    severity="warning",
+                    field="relation_object_missing",
+                    message=(
+                        f"{rel.predicate} → '{rel.object}' — object is not a "
+                        f"known entity in the vault"
+                    ),
+                ))
+            elif target_subtype == "disambiguation_page":
+                # Rule: relation_object_is_disambig_page
+                out.append(SchemaViolation(
+                    note_path=note_path,
+                    note_name=note_name,
+                    subtype=subtype,
+                    severity="warning",
+                    field="relation_object_is_disambig_page",
+                    message=(
+                        f"{rel.predicate} → '{rel.object}' — object is a "
+                        f"disambiguation_page; use a specific variant instead"
+                    ),
+                ))
+
+    return out
+
+
+def validate_body_relations_divergence(
+    note_path: str,
+    note_name: str,
+    frontmatter: dict[str, object],
+    body: str,
+) -> list[SchemaViolation]:
+    """Check `## Relationships` body section against frontmatter `relationships:`.
+
+    Detects entities wikilinked in the body section that don't appear as the
+    `object` of any entry in the frontmatter relationships. Detection is
+    intentionally simple: regex-based over the markdown section. Not part of
+    `validate_note` because it requires body text.
+
+    Severity: info (non-blocking; §3 of RELATIONS_FORMAT says this is
+    informational only).
+    """
+    import re
+
+    # Frontmatter side
+    from .relations_typed import parse_relationships
+    parsed = parse_relationships(note_name, frontmatter)
+    frontmatter_objects = {r.object for r in parsed.typed}
+
+    # Body side — locate `## Relationships` (or Spanish variant) section
+    section_pat = re.compile(
+        r"^##\s+Relationships?\s*\n(.*?)(?=\n##\s|\Z)",
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+    m = section_pat.search(body)
+    if not m:
+        return []
+
+    section_body = m.group(1)
+    # Extract wikilinks from section (ignore aliases)
+    wl_pat = re.compile(r"\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]")
+    body_objects = set(wl_pat.findall(section_body))
+
+    # Self-references to the note itself don't count
+    body_objects.discard(note_name)
+
+    out: list[SchemaViolation] = []
+
+    # Body has X, frontmatter doesn't
+    for obj in sorted(body_objects - frontmatter_objects):
+        out.append(SchemaViolation(
+            note_path=note_path,
+            note_name=note_name,
+            subtype=(frontmatter.get("subtype") if isinstance(frontmatter.get("subtype"), str) else None),
+            severity="info",
+            field="relation_body_divergent",
+            message=(
+                f"body `## Relationships` references [[{obj}]] but frontmatter "
+                f"`relationships:` does not list it"
+            ),
+        ))
+
+    # Frontmatter has X, body doesn't (only flag if body section exists)
+    for obj in sorted(frontmatter_objects - body_objects):
+        out.append(SchemaViolation(
+            note_path=note_path,
+            note_name=note_name,
+            subtype=(frontmatter.get("subtype") if isinstance(frontmatter.get("subtype"), str) else None),
+            severity="info",
+            field="relation_body_divergent",
+            message=(
+                f"frontmatter `relationships:` lists {obj} but body "
+                f"`## Relationships` does not reference it"
+            ),
+        ))
+
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +512,22 @@ def validate_vault_notes(
     `gated_domains` is informational here (existing notes always get 'warning').
     """
     report = ValidationReport()
-    for note_path, note_name, fm in notes:
+    # Materialize notes so we can iterate twice: first for the entity index,
+    # then for the validation pass that uses it for cross-references.
+    notes_list = list(notes)
+
+    # Build entity index: name → subtype. Used for relation_object_missing
+    # and relation_object_is_disambig_page checks.
+    entity_index: dict[str, str] = {}
+    for _path, name, fm in notes_list:
+        st = fm.get("subtype")
+        if isinstance(st, str):
+            entity_index[name] = st
+        else:
+            # Subtype unknown; still register name as existing entity
+            entity_index[name] = ""
+
+    for note_path, note_name, fm in notes_list:
         report.total_notes += 1
         subtype = fm.get("subtype")
         subtype_key = subtype if isinstance(subtype, str) else "(none)"
@@ -342,6 +555,7 @@ def validate_vault_notes(
             note_path, note_name, fm,
             new_note=False,
             gated_domains=gated_domains,
+            entity_index=entity_index,
         )
         if note_violations:
             subtype_stats["violations"] += 1
