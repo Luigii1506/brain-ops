@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import sqlite3
 from pathlib import Path
+
+
+class _DateSafeEncoder(json.JSONEncoder):
+    """JSON encoder that converts date/datetime objects to ISO strings."""
+
+    def default(self, o: object) -> object:
+        if isinstance(o, (datetime.date, datetime.datetime)):
+            return o.isoformat()
+        return super().default(o)
 
 from brain_ops.domains.knowledge.compile import CompileResult, CompiledEntity, CompiledRelation
 
@@ -79,6 +89,19 @@ ENTITY_SCHEMA_STATEMENTS = [
 
 
 def initialize_entity_tables(db_path: Path) -> None:
+    """Initialise the knowledge DB schema for a fresh or current DB.
+
+    Runs `CREATE TABLE IF NOT EXISTS` for every base table. The DDL already
+    contains the full current schema (including `predicate` and `confidence`
+    columns on `entity_relations`), so fresh DBs get the correct shape.
+
+    This function does NOT migrate pre-existing tables with outdated shapes.
+    For legacy DBs that lack columns added by migrations, run the explicit
+    CLI command `brain migrate-knowledge-db`. That is the only path by which
+    migrations are applied to the production DB.
+
+    See `docs/operations/MIGRATIONS.md`.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     try:
@@ -88,6 +111,38 @@ def initialize_entity_tables(db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def check_schema_is_current(db_path: Path) -> None:
+    """Raise SchemaOutOfDateError if entity_relations lacks migration columns.
+
+    Call at the entry of any write path that depends on post-Campaña-0 columns
+    (`predicate`, `confidence`). A fresh DB (no table yet) and a fully-migrated
+    DB both pass silently. A legacy DB with the old shape raises with an
+    actionable message telling the user to run `brain migrate-knowledge-db`.
+    """
+    from brain_ops.errors import SchemaOutOfDateError
+
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='entity_relations'"
+        ).fetchone()
+        if row is None:
+            return
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(entity_relations)")}
+    finally:
+        conn.close()
+
+    missing = {"predicate", "confidence"} - cols
+    if missing:
+        raise SchemaOutOfDateError(
+            f"Knowledge DB at {db_path} is missing columns {sorted(missing)} "
+            f"in entity_relations. Run `brain migrate-knowledge-db --config <path>` "
+            f"to upgrade the schema."
+        )
 
 
 def write_compiled_entities(db_path: Path, result: CompileResult) -> int:
@@ -103,7 +158,7 @@ def write_compiled_entities(db_path: Path, result: CompileResult) -> int:
         for entity in result.entities:
             cursor.execute(
                 "INSERT OR REPLACE INTO entities (name, entity_type, relative_path, metadata_json) VALUES (?, ?, ?, ?)",
-                (entity.name, entity.entity_type, entity.relative_path, json.dumps(entity.metadata, ensure_ascii=False)),
+                (entity.name, entity.entity_type, entity.relative_path, json.dumps(entity.metadata, ensure_ascii=False, cls=_DateSafeEncoder)),
             )
         for relation in result.relations:
             cursor.execute(
@@ -120,10 +175,16 @@ def write_extraction_intelligence(
     db_path: Path,
     extractions: list[dict[str, object]],
 ) -> int:
-    """Write facts, timeline, and insights from extraction records into SQLite."""
+    """Write facts, timeline, and insights from extraction records into SQLite.
+
+    Requires a post-migration schema (columns `predicate` and `confidence` on
+    `entity_relations`). Raises SchemaOutOfDateError on a legacy DB with a
+    clear message telling the user to run the CLI migration.
+    """
     from brain_ops.domains.knowledge.object_model import normalize_predicate
 
     initialize_entity_tables(db_path)
+    check_schema_is_current(db_path)
     conn = sqlite3.connect(str(db_path))
     total = 0
     try:
@@ -320,6 +381,7 @@ def traverse_entity_graph(db_path: Path, start_name: str, max_depth: int = 2) ->
 
 __all__ = [
     "ENTITY_SCHEMA_STATEMENTS",
+    "check_schema_is_current",
     "initialize_entity_tables",
     "read_compiled_entities",
     "read_compiled_entity",

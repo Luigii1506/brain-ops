@@ -430,12 +430,506 @@ def present_replay_extractions_command(
     console.print(table)
 
 
+def present_lint_schemas_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    subtype: str | None,
+    domain: str | None,
+    as_json: bool,
+    naming: bool,
+    strict: bool,
+) -> int:
+    """Report schema + naming violations across the vault. Never mutates anything."""
+    from brain_ops.domains.knowledge.epistemology import EPISTEMIC_GATED_DOMAINS
+    from brain_ops.domains.knowledge.naming_rules import check_vault_naming
+    from brain_ops.domains.knowledge.schema_validator import (
+        load_frontmatter_from_vault,
+        validate_vault_notes,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=False)
+    vault_path = Path(vault.config.vault_path)
+    notes = load_frontmatter_from_vault(vault_path)
+
+    # Optional filters (applied before validation for efficient JSON output)
+    if subtype:
+        notes = [n for n in notes if n[2].get("subtype") == subtype]
+    if domain:
+        notes = [n for n in notes if n[2].get("domain") == domain]
+
+    report = validate_vault_notes(notes, gated_domains=EPISTEMIC_GATED_DOMAINS)
+
+    naming_violations = []
+    if naming:
+        naming_violations = check_vault_naming(
+            (name, fm) for (_, name, fm) in notes
+        )
+
+    payload: dict[str, object] = {
+        "schema": report.to_dict(),
+        "naming_violations": [v.to_dict() for v in naming_violations],
+    }
+
+    if as_json:
+        console.print_json(data=payload)
+    else:
+        console.print(f"[bold]Schema lint[/bold] — {report.total_notes} notes checked")
+        console.print(
+            f"  errors: {report.error_count}   "
+            f"warnings: {report.warning_count}   "
+            f"info: {report.info_count}"
+        )
+        if report.per_subtype:
+            console.print("\n[bold]Per subtype[/bold]")
+            table = Table()
+            table.add_column("Subtype")
+            table.add_column("Notes", justify="right")
+            table.add_column("With violations", justify="right")
+            for st, stats in sorted(
+                report.per_subtype.items(),
+                key=lambda kv: -kv[1]["total"],
+            ):
+                table.add_row(st, str(stats["total"]), str(stats["violations"]))
+            console.print(table)
+        if naming:
+            console.print(f"\n[bold]Naming violations[/bold]: {len(naming_violations)}")
+            for v in naming_violations[:30]:
+                console.print(f"  [{v.severity}] {v.note_name} — {v.rule}: {v.message}")
+            if len(naming_violations) > 30:
+                console.print(f"  ... ({len(naming_violations) - 30} more)")
+
+    if strict and report.error_count > 0:
+        return 1
+    return 0
+
+
+def present_normalize_domain_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    apply: bool,
+    only_transition: list[str] | None,
+    exclude_file: Path | None,
+    report_path: Path | None,
+    as_json: bool,
+) -> None:
+    """Subfase 1.1 / 1.2 — normalize non-canonical domain aliases.
+
+    Default mode is DRY-RUN. Pass --apply to actually write changes.
+    """
+    import json as _json
+
+    from brain_ops.domains.knowledge.consolidation import (
+        apply_normalize_domain,
+        plan_normalize_domain,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=not apply)
+    vault_path = Path(vault.config.vault_path)
+
+    report = plan_normalize_domain(vault_path)
+
+    if report_path:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            _json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    if as_json and not apply:
+        console.print_json(data=report.to_dict())
+        return
+
+    # Human-readable summary
+    console.print(
+        f"[bold]Normalize domain[/bold] — vault: {vault_path}"
+    )
+    console.print(
+        f"  scanned: {report.total_notes_scanned}   "
+        f"already canonical: {report.notes_already_canonical}   "
+        f"without domain: {report.notes_without_domain}"
+    )
+    console.print(f"  [bold]proposed changes: {report.total_changes}[/bold]")
+
+    transitions = report.counts_by_transition()
+    if transitions:
+        console.print("\n[bold]Transitions[/bold]")
+        tbl = Table()
+        tbl.add_column("From → To")
+        tbl.add_column("Count", justify="right")
+        for t, c in sorted(transitions.items(), key=lambda kv: -kv[1]):
+            tbl.add_row(t, str(c))
+        console.print(tbl)
+
+    if not apply:
+        console.print(
+            "\n[yellow]DRY-RUN[/yellow] — no files modified. "
+            "Pass --apply to write changes."
+        )
+        if report_path:
+            console.print(f"Full report written to: {report_path}")
+        return
+
+    # APPLY path
+    exclude: list[str] = []
+    if exclude_file and exclude_file.exists():
+        exclude = [
+            line.strip() for line in exclude_file.read_text().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+
+    transitions_filter = only_transition if only_transition else None
+
+    result = apply_normalize_domain(
+        vault_path, report,
+        exclude=exclude,
+        transitions_filter=transitions_filter,
+    )
+    console.print(
+        f"\n[green]APPLIED[/green] — "
+        f"wrote {result['applied_count']} notes   "
+        f"skipped (excluded): {len(result['skipped_excluded'])}   "
+        f"skipped (filter): {len(result['skipped_filter'])}"
+    )
+
+    if as_json:
+        console.print_json(data=result)
+
+
+def present_fill_domain_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    apply: bool,
+    exclude: list[str] | None,
+    report_path: Path | None,
+    as_json: bool,
+) -> None:
+    """Subfase 1.4a — fill missing `domain:` using high-confidence heuristics."""
+    import json as _json
+
+    from brain_ops.domains.knowledge.consolidation import (
+        apply_fill_domain,
+        plan_fill_domain,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=not apply)
+    vault_path = Path(vault.config.vault_path)
+
+    report = plan_fill_domain(vault_path)
+
+    if report_path:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            _json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    if as_json and not apply:
+        console.print_json(data=report.to_dict())
+        return
+
+    console.print(
+        f"[bold]Fill domain (Subfase 1.4a)[/bold] — vault: {vault_path}\n"
+        f"  scanned: {report.total_notes_scanned}   "
+        f"already have domain: {report.notes_already_have_domain}   "
+        f"[bold]auto-apply: {report.auto_apply_count}[/bold]   "
+        f"deferred: {report.deferred_count}   "
+        f"skipped: {report.skipped_count}"
+    )
+
+    counts_rule = report.counts_by_rule()
+    if counts_rule:
+        console.print("\n[bold]Counts by rule[/bold]")
+        for r, c in sorted(counts_rule.items(), key=lambda kv: -kv[1]):
+            console.print(f"  {c:4d}  {r}")
+
+    by_sub = report.counts_by_subtype(auto_only=True)
+    if by_sub:
+        console.print("\n[bold]Auto-apply: subtype → domain[/bold]")
+        tbl = Table()
+        tbl.add_column("Subtype")
+        tbl.add_column("Domain")
+        tbl.add_column("Count", justify="right")
+        for st in sorted(by_sub):
+            for dm, cnt in sorted(by_sub[st].items()):
+                tbl.add_row(st, dm, str(cnt))
+        console.print(tbl)
+
+    if not apply:
+        console.print(
+            "\n[yellow]DRY-RUN[/yellow] — no files modified. "
+            "Pass --apply to write changes."
+        )
+        if report_path:
+            console.print(f"Report: {report_path}")
+        return
+
+    result = apply_fill_domain(vault_path, report, exclude=exclude or [])
+    console.print(
+        f"\n[green]APPLIED[/green]\n"
+        f"  Filled:  {result['applied_count']}\n"
+        f"  Skipped: {len(result['skipped'])}"
+    )
+
+
+def present_fix_capitalization_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    apply: bool,
+    exclude: list[str] | None,
+    report_path: Path | None,
+    as_json: bool,
+) -> None:
+    """Subfase 1.3 — fix capitalization violations in entity names."""
+    import json as _json
+
+    from brain_ops.domains.knowledge.consolidation import (
+        apply_fix_capitalization,
+        plan_fix_capitalization,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=not apply)
+    vault_path = Path(vault.config.vault_path)
+
+    report = plan_fix_capitalization(vault_path)
+
+    if report_path:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            _json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    if as_json and not apply:
+        console.print_json(data=report.to_dict())
+        return
+
+    console.print(
+        f"[bold]Fix capitalization[/bold] — vault: {vault_path}\n"
+        f"  scanned: {report.total_notes_scanned}   "
+        f"applicable: {report.applicable_count}   "
+        f"blocked: {report.blocked_count}"
+    )
+
+    if report.fixes:
+        tbl = Table()
+        tbl.add_column("Current")
+        tbl.add_column("Proposed")
+        tbl.add_column("Body refs", justify="right")
+        tbl.add_column("Related", justify="right")
+        tbl.add_column("Status")
+        for f in report.fixes:
+            status = "ok" if f.can_apply else f"BLOCKED: {f.error_message}"
+            tbl.add_row(
+                f.old_name,
+                f.new_name,
+                str(f.body_wikilink_mentions),
+                str(len(f.related_entries)),
+                status,
+            )
+        console.print(tbl)
+
+    if not apply:
+        console.print(
+            "\n[yellow]DRY-RUN[/yellow] — no files modified. "
+            "Pass --apply to write changes."
+        )
+        if report_path:
+            console.print(f"Report: {report_path}")
+        return
+
+    result = apply_fix_capitalization(vault_path, report, exclude=exclude or [])
+    console.print(
+        f"\n[green]APPLIED[/green]\n"
+        f"  Fixes applied: {len(result['applied'])}\n"
+        f"  Skipped:       {len(result['skipped'])}"
+    )
+    for a in result["applied"]:
+        console.print(
+            f"  {a['old_name']} → {a['new_name']}  "
+            f"(body: {a['body_files_updated']}, related: {a['related_files_updated']})"
+        )
+    for s in result["skipped"]:
+        console.print(f"  [yellow]skip[/yellow] {s}")
+
+
+def present_disambiguate_bare_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    bare_name: str,
+    discriminator: str,
+    apply: bool,
+    report_path: Path | None,
+    as_json: bool,
+) -> None:
+    """Subfase 1.5 — convert a bare-name entity into a disambiguation_page.
+
+    Dry-run by default. Pass --apply to actually write changes.
+    """
+    import json as _json
+
+    from brain_ops.domains.knowledge.consolidation import (
+        apply_disambiguate_bare,
+        plan_disambiguate_bare,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=not apply)
+    vault_path = Path(vault.config.vault_path)
+
+    report = plan_disambiguate_bare(vault_path, bare_name, discriminator)
+
+    if report_path:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            _json.dumps(report.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    if as_json and not apply:
+        console.print_json(data=report.to_dict())
+        return
+
+    console.print(
+        f"[bold]Disambiguate bare name[/bold]\n"
+        f"  Bare:          [cyan]{report.bare_name}[/cyan]\n"
+        f"  New canonical: [green]{report.new_canonical_name}[/green]\n"
+        f"  Vault:         {vault_path}"
+    )
+
+    if not report.can_apply:
+        console.print(f"[red]Cannot apply: {report.error_message}[/red]")
+        return
+
+    console.print(f"\n[bold]Variants after change:[/bold]")
+    for v in report.existing_variants:
+        console.print(f"  - {v}")
+
+    console.print(
+        f"\n[bold]Incoming references:[/bold]\n"
+        f"  body wikilinks:         {report.body_wikilink_mentions} in "
+        f"{len(report.body_wikilink_files)} files\n"
+        f"  frontmatter `related:`  {len(report.related_entries)} files"
+    )
+
+    if report.sample_body_changes:
+        console.print(f"\n[bold]Sample body contexts (first 8):[/bold]")
+        for s in report.sample_body_changes:
+            console.print(f"  {s}")
+
+    console.print(f"\n[bold]Disambig page preview:[/bold]")
+    console.print(report.disambig_page_preview)
+
+    if not apply:
+        console.print(
+            "\n[yellow]DRY-RUN[/yellow] — no files modified. "
+            "Pass --apply to write changes."
+        )
+        if report_path:
+            console.print(f"Report: {report_path}")
+        return
+
+    result = apply_disambiguate_bare(vault_path, report)
+    if not result.get("applied"):
+        console.print(f"[red]Apply failed: {result.get('error')}[/red]")
+        return
+    console.print(
+        f"\n[green]APPLIED[/green]\n"
+        f"  Renamed:                {result['counts']['renamed']}\n"
+        f"  Body wikilinks updated: {result['counts']['body_wikilinks_updated']}\n"
+        f"  Related entries updated:{result['counts']['related_entries_updated']}\n"
+        f"  Disambig page created:  {result['counts']['disambig_page_created']}"
+    )
+
+
+def present_migrate_knowledge_db_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    dry_run: bool,
+    status: bool,
+    skip_backup: bool,
+    as_json: bool,
+    force_migrate: bool = False,
+) -> None:
+    """Apply pending schema migrations to knowledge.db. Creates an automatic backup.
+
+    --force-migrate bypasses the test-runner / env var guards. It still
+    creates a backup unless --skip-backup. Exceptional use only — the normal
+    user flow never needs this flag. See docs/operations/MIGRATIONS.md.
+    """
+    from brain_ops.storage.sqlite.migrations import (
+        migrate_knowledge_db_with_backup,
+        migration_status,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=False)
+    db_path = Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db"
+
+    if status:
+        result = migration_status(db_path)
+        if as_json:
+            console.print_json(data=result.to_dict())
+            return
+        console.print(f"DB path: {db_path}")
+        console.print(f"Applied: {list(result.applied) or '(none)'}")
+        if result.pending:
+            console.print("\nPending:")
+            for version, description in result.pending:
+                console.print(f"  {version:>3}  {description}")
+        else:
+            console.print("Pending: (none)")
+        return
+
+    result = migrate_knowledge_db_with_backup(
+        db_path,
+        dry_run=dry_run,
+        skip_backup=skip_backup,
+        force=force_migrate,
+    )
+    if as_json:
+        console.print_json(data=result)
+        return
+
+    console.print(f"DB path: {db_path}")
+    console.print(f"Status: [bold]{result['status']}[/bold]")
+    if result.get("backup_path"):
+        console.print(f"Backup: {result['backup_path']}")
+    if result["status"] == "blocked":
+        console.print(
+            f"[yellow]Blocked by safety guard: {result.get('block_reason')}.[/yellow]"
+        )
+        console.print(
+            "Unset BRAIN_OPS_NO_MIGRATE or pass --force-migrate to override."
+        )
+        console.print("\nPending migrations (not applied):")
+        for p in result["pending"]:
+            console.print(f"  {p['version']:>3}  {p['description']}")
+    elif result["status"] == "dry-run":
+        console.print("\nPending migrations (not applied):")
+        for p in result["pending"]:
+            console.print(f"  {p['version']:>3}  {p['description']}")
+    elif result["status"] == "migrated":
+        console.print("\nApplied migrations:")
+        for a in result["applied"]:
+            console.print(f"  {a['version']:>3}  {a['description']}  @ {a['applied_at']}")
+
+
 __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
     "present_enrich_entity_command",
     "present_entity_index_command",
     "present_ingest_source_command",
+    "present_disambiguate_bare_command",
+    "present_fill_domain_command",
+    "present_fix_capitalization_command",
+    "present_lint_schemas_command",
+    "present_migrate_knowledge_db_command",
+    "present_normalize_domain_command",
     "present_registry_lint_command",
     "present_replay_extractions_command",
     "present_query_knowledge_command",

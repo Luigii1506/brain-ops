@@ -129,6 +129,7 @@ def build_entity_frontmatter(
     *,
     extra: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    from .epistemology import apply_epistemic_default
     from .object_model import resolve_object_kind
 
     object_kind, subtype = resolve_object_kind(entity_type)
@@ -147,6 +148,11 @@ def build_entity_frontmatter(
                 frontmatter[field] = None
     if extra:
         frontmatter.update(extra)
+
+    # Campaña 0 — apply subtype-default epistemic_mode if not explicitly set.
+    # Never overwrites; respects user input in `extra`.
+    frontmatter, _changed = apply_epistemic_default(frontmatter, subtype)
+
     return frontmatter
 
 

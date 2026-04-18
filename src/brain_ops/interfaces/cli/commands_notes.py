@@ -12,10 +12,16 @@ from brain_ops.errors import BrainOpsError
 from .knowledge import (
     present_audit_vault_command,
     present_compile_knowledge_command,
+    present_disambiguate_bare_command,
     present_entity_index_command,
     present_entity_relations_command,
     present_enrich_entity_command,
+    present_fill_domain_command,
+    present_fix_capitalization_command,
     present_ingest_source_command,
+    present_lint_schemas_command,
+    present_migrate_knowledge_db_command,
+    present_normalize_domain_command,
     present_normalize_frontmatter_command,
     present_process_inbox_command,
     present_query_knowledge_command,
@@ -851,7 +857,16 @@ entity: false
             )
             actions.append("knowledge compiled")
 
-            # 6. Auto cross-enrich: fix Related notes for this entity AND entities it mentions
+            # 6. Wikify: convert plain-text mentions of this entity to [[wikilinks]] across the vault
+            try:
+                from brain_ops.domains.knowledge.backlinking import inject_backlinks
+                bl_result = inject_backlinks(vault.config.vault_path, name)
+                if bl_result.notes_linked > 0:
+                    actions.append(f"wikified ({bl_result.notes_linked} notes)")
+            except Exception:
+                pass
+
+            # 7. Auto cross-enrich: fix Related notes for this entity AND entities it mentions
             try:
                 import re as _re
                 from brain_ops.domains.knowledge.link_aliases import format_wikilink as _fmt_wl
@@ -931,8 +946,16 @@ entity: false
     def reconcile_command(
         config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
         as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+        skip_wikify: bool = typer.Option(False, "--skip-wikify", help="Do not auto-convert plain-text mentions to [[wikilinks]]. Body-safe mode."),
+        skip_cross_enrich: bool = typer.Option(False, "--skip-cross-enrich", help="Do not auto-add missing entities to 'Related notes' sections. Body-safe mode."),
     ) -> None:
-        """Reconcile direct edits — sync registry, compile, and detect issues after manual changes."""
+        """Reconcile direct edits — sync registry, compile, and detect issues after manual changes.
+
+        By default runs: registry sync → compile to SQLite → wikify → cross-enrich.
+        With both --skip-wikify and --skip-cross-enrich, no note bodies are modified
+        — only frontmatter-read paths and SQLite writes run. Use the skip flags
+        during bulk consolidation campaigns (see docs/operations/CAMPAIGN_1_OPERATIONS.md).
+        """
         try:
             from brain_ops.application.knowledge import execute_compile_knowledge_workflow
             from brain_ops.domains.knowledge.registry import RegisteredEntity, load_entity_registry, save_entity_registry
@@ -945,10 +968,15 @@ entity: false
             registry_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
             registry = load_entity_registry(registry_path)
 
-            # Scan vault and sync registry
+            # Scan vault and sync registry.
+            # Exclude dot-directories including .brain-ops (contains snapshot
+            # backups that would otherwise re-register stale entity names
+            # after renames/disambiguations).
             synced = 0
             created = 0
-            for note_path in list_vault_markdown_notes(vault, excluded_parts={".git", ".obsidian"}):
+            for note_path in list_vault_markdown_notes(
+                vault, excluded_parts={".git", ".obsidian", ".brain-ops"},
+            ):
                 _safe, rel, text = read_note_text(vault, note_path)
                 try:
                     fm, body = split_frontmatter(text)
@@ -1015,11 +1043,92 @@ entity: false
                 config_path=config_path, db_path=None, load_vault=load_validated_vault,
             )
 
+            # Wikify: convert plain-text mentions to [[wikilinks]] for all entities (2+ word names)
+            # Skipped when --skip-wikify is passed (body-safe mode).
+            wikified_total = 0
+            if not skip_wikify:
+                try:
+                    import re as _wk_re
+                    from brain_ops.domains.knowledge.backlinking import inject_backlinks
+
+                    knowledge_path = vault.config.folder_path("knowledge")
+                    _wk_entities = []
+                    for _f in sorted(knowledge_path.glob("*.md")):
+                        _t = _f.read_text(encoding="utf-8")
+                        if _wk_re.search(r"^entity:\s*true", _t, _wk_re.MULTILINE):
+                            _name = _f.stem
+                            if len(_name.split()) >= 2:
+                                _wk_entities.append(_name)
+
+                    for _name in _wk_entities:
+                        _bl = inject_backlinks(vault.config.vault_path, _name)
+                        wikified_total += _bl.notes_linked
+                except Exception:
+                    pass
+
+            # Cross-enrich: fix Related notes for all entities
+            # Skipped when --skip-cross-enrich is passed (body-safe mode).
+            cross_fixed_total = 0
+            if not skip_cross_enrich:
+                try:
+                    import re as _ce_re
+                    from brain_ops.domains.knowledge.link_aliases import format_wikilink as _ce_fmt
+
+                    _ce_reg_path = Path(vault.config.vault_path) / ".brain-ops" / "entity_registry.json"
+                    _ce_reg = load_entity_registry(_ce_reg_path)
+
+                    knowledge_path = vault.config.folder_path("knowledge")
+                    _ce_entity_names: set[str] = set()
+                    for _f in knowledge_path.glob("*.md"):
+                        _t = _f.read_text(encoding="utf-8")
+                        if _ce_re.search(r"^entity:\s*true", _t, _ce_re.MULTILINE):
+                            _ce_entity_names.add(_f.stem)
+
+                    for _np in sorted(knowledge_path.glob("*.md")):
+                        _text = _np.read_text(encoding="utf-8")
+                        if not _ce_re.search(r"^entity:\s*true", _text, _ce_re.MULTILINE):
+                            continue
+                        _all_links = {l.strip() for l in _ce_re.findall(r"\[\[([^\]|]+)", _text)}
+                        _body_entities = _all_links & _ce_entity_names
+                        _related_links: set[str] = set()
+                        _in_rel = False
+                        for _line in _text.split("\n"):
+                            if _line.strip() == "## Related notes":
+                                _in_rel = True
+                                continue
+                            if _in_rel:
+                                if _line.startswith("## "):
+                                    break
+                                for _lk in _ce_re.findall(r"\[\[([^\]|]+)", _line):
+                                    _related_links.add(_lk.strip())
+                        _missing = _body_entities - _related_links - {_np.stem}
+                        if _missing:
+                            _lines = _text.split("\n")
+                            _idx = None
+                            for _i, _ln in enumerate(_lines):
+                                if _ln.strip() == "## Related notes":
+                                    _j = _i + 1
+                                    while _j < len(_lines) and not _lines[_j].startswith("## "):
+                                        _j += 1
+                                    _idx = _j
+                                    break
+                            if _idx is not None:
+                                _new = [f"- {_ce_fmt(_m, _ce_reg)}" for _m in sorted(_missing)]
+                                _lines = _lines[:_idx] + _new + _lines[_idx:]
+                                _np.write_text("\n".join(_lines), encoding="utf-8")
+                                cross_fixed_total += len(_missing)
+                except Exception:
+                    pass
+
             result = {
                 "registry_synced": synced,
                 "registry_created": created,
                 "total_registry": len(registry.entities),
                 "disambiguation_warnings": len(disambiguation_warnings),
+                "wikified": wikified_total,
+                "wikify_skipped": skip_wikify,
+                "cross_enriched": cross_fixed_total,
+                "cross_enrich_skipped": skip_cross_enrich,
             }
 
             if as_json:
@@ -1027,6 +1136,14 @@ entity: false
                 return
             console.print(f"Reconciled: {synced} synced, {created} new in registry. Total: {len(registry.entities)} entities.")
             console.print("Knowledge compiled to SQLite.")
+            if skip_wikify:
+                console.print("[dim]Wikify skipped (--skip-wikify).[/dim]")
+            elif wikified_total > 0:
+                console.print(f"Wikified: {wikified_total} plain-text mentions converted to wikilinks.")
+            if skip_cross_enrich:
+                console.print("[dim]Cross-enrich skipped (--skip-cross-enrich).[/dim]")
+            elif cross_fixed_total > 0:
+                console.print(f"Cross-enriched: {cross_fixed_total} missing links added to Related notes.")
             if disambiguation_warnings:
                 console.print(f"\n[yellow]⚠ {len(disambiguation_warnings)} potential name collision(s) detected:[/yellow]")
                 for base, names in sorted(disambiguation_warnings.items()):
@@ -1186,6 +1303,142 @@ entity: false
         """Run health checks on the entity registry."""
         try:
             present_registry_lint_command(console, config_path=config_path, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("fill-domain")
+    def fill_domain_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        apply: bool = typer.Option(False, "--apply", help="Actually write changes. Default is dry-run."),
+        exclude: list[str] = typer.Option(None, "--exclude", help="Entity name (or relative path) to skip. Repeatable."),
+        report_path: Path | None = typer.Option(None, "--report", help="Write the full JSON report to this path."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Subfase 1.4a — auto-fill missing `domain:` (high-confidence rules only)."""
+        try:
+            present_fill_domain_command(
+                console,
+                config_path=config_path,
+                apply=apply,
+                exclude=exclude if exclude else None,
+                report_path=report_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("fix-capitalization")
+    def fix_capitalization_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        apply: bool = typer.Option(False, "--apply", help="Actually write changes. Default is dry-run."),
+        exclude: list[str] = typer.Option(None, "--exclude", help="Entity old-name to skip. Repeatable."),
+        report_path: Path | None = typer.Option(None, "--report", help="Write the full JSON report to this path."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Subfase 1.3 — rename entities with wrong capitalization (dry-run by default)."""
+        try:
+            present_fix_capitalization_command(
+                console,
+                config_path=config_path,
+                apply=apply,
+                exclude=exclude if exclude else None,
+                report_path=report_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("disambiguate-bare")
+    def disambiguate_bare_command(
+        bare_name: str = typer.Argument(..., help="The bare entity name to convert (e.g. 'Tebas')."),
+        discriminator: str = typer.Option(..., "--discriminator", help="The suffix for the renamed entity (e.g. 'Grecia' → 'Tebas (Grecia)')."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        apply: bool = typer.Option(False, "--apply", help="Actually write changes. Default is dry-run."),
+        report_path: Path | None = typer.Option(None, "--report", help="Write the full JSON report to this path."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Subfase 1.5 — convert a bare-name entity into a disambiguation page (dry-run by default)."""
+        try:
+            present_disambiguate_bare_command(
+                console,
+                config_path=config_path,
+                bare_name=bare_name,
+                discriminator=discriminator,
+                apply=apply,
+                report_path=report_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("normalize-domain")
+    def normalize_domain_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        apply: bool = typer.Option(False, "--apply", help="Actually write changes. Default is dry-run."),
+        only_transition: list[str] = typer.Option(None, "--only", help="Apply only this transition. Repeatable. Example: --only 'philosophy → filosofia'"),
+        exclude_file: Path | None = typer.Option(None, "--exclude", help="File with one note_path per line to skip."),
+        report_path: Path | None = typer.Option(None, "--report", help="Write the full JSON report to this path."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Subfase 1.1/1.2 — normalize non-canonical domain aliases (dry-run by default)."""
+        try:
+            present_normalize_domain_command(
+                console,
+                config_path=config_path,
+                apply=apply,
+                only_transition=only_transition if only_transition else None,
+                exclude_file=exclude_file,
+                report_path=report_path,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("lint-schemas")
+    def lint_schemas_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        subtype: str | None = typer.Option(None, "--subtype", help="Filter by entity subtype."),
+        domain: str | None = typer.Option(None, "--domain", help="Filter by entity domain."),
+        naming: bool = typer.Option(False, "--naming", help="Include naming-rule violations."),
+        strict: bool = typer.Option(False, "--strict", help="Exit code 1 if errors found."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Report schema and naming violations across Knowledge notes (read-only)."""
+        try:
+            exit_code = present_lint_schemas_command(
+                console,
+                config_path=config_path,
+                subtype=subtype,
+                domain=domain,
+                naming=naming,
+                strict=strict,
+                as_json=as_json,
+            )
+            if exit_code:
+                raise typer.Exit(code=exit_code)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("migrate-knowledge-db")
+    def migrate_knowledge_db_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="List pending migrations without applying."),
+        status: bool = typer.Option(False, "--status", help="Show applied and pending migrations."),
+        skip_backup: bool = typer.Option(False, "--skip-backup", help="Skip automatic backup (not recommended)."),
+        force_migrate: bool = typer.Option(False, "--force-migrate", help="Bypass env var / test runner guards. Still creates backup. Exceptional use only."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Apply pending schema migrations to the knowledge.db with automatic backup."""
+        try:
+            present_migrate_knowledge_db_command(
+                console,
+                config_path=config_path,
+                dry_run=dry_run,
+                status=status,
+                skip_backup=skip_backup,
+                force_migrate=force_migrate,
+                as_json=as_json,
+            )
         except BrainOpsError as error:
             handle_error(error)
 
@@ -1926,6 +2179,86 @@ Colección temática de frases célebres.
                 console.print(f"\n[green]Fixed {total_fixed} missing links across {len(results)} entities.[/green]")
             else:
                 console.print(f"\n[yellow]Run with --fix to auto-add missing links.[/yellow]")
+
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("wikify")
+    def wikify_command(
+        entity_name: str | None = typer.Argument(None, help="Entity to wikify. If omitted, processes all entities."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing files."),
+        min_words: int = typer.Option(2, "--min-words", help="Minimum words in entity name for batch mode (avoids false positives with common words like 'Poder'). Set to 1 to include all."),
+    ) -> None:
+        """Convert plain-text mentions of entity names to [[wikilinks]] across the vault.
+
+        Scans all notes for plain-text mentions of entity names and converts the
+        first occurrence in each note to a wikilink.  Handles disambiguated
+        entities (e.g. 'Urano (planeta)' matches plain 'Urano').
+
+        Without arguments, processes every registered entity in the vault.
+        By default, only processes entities whose names have 2+ words to avoid
+        false positives with common single words. Use --min-words 1 for all.
+        """
+        try:
+            import re
+            from brain_ops.interfaces.cli.runtime import load_validated_vault
+            from brain_ops.domains.knowledge.backlinking import inject_backlinks
+
+            vault = load_validated_vault(config_path, dry_run=dry_run)
+            knowledge_path = vault.config.folder_path("knowledge")
+            vault_path = vault.config.vault_path
+
+            if entity_name:
+                # Single entity mode — always process regardless of min_words
+                note_path = knowledge_path / f"{entity_name}.md"
+                if not note_path.exists():
+                    console.print(f"[red]Entity '{entity_name}' not found.[/red]")
+                    return
+                entities = [entity_name]
+            else:
+                # Batch mode: all entities, filtered by min_words
+                entities = []
+                for f in sorted(knowledge_path.glob("*.md")):
+                    text = f.read_text(encoding="utf-8")
+                    if re.search(r"^entity:\s*true", text, re.MULTILINE):
+                        name = f.stem
+                        word_count = len(name.split())
+                        if word_count >= min_words:
+                            entities.append(name)
+
+            total_linked = 0
+            total_notes = 0
+            results: list[tuple[str, int, tuple[str, ...]]] = []
+
+            console.print(f"\n[bold]Wikify: scanning {len(entities)} entities (min-words={min_words})...[/bold]")
+
+            for name in entities:
+                result = inject_backlinks(
+                    vault_path,
+                    name,
+                    dry_run=dry_run,
+                )
+                if result.notes_linked > 0:
+                    results.append((name, result.notes_linked, result.linked_files))
+                    total_linked += result.notes_linked
+                    total_notes = max(total_notes, result.notes_scanned)
+
+            if not results:
+                console.print("[green]All entity mentions are already wikilinked.[/green]")
+                return
+
+            # Report
+            action = "Would link" if dry_run else "Linked"
+            console.print(f"\n[bold]{action} {total_linked} plain-text mentions across {len(results)} entities:[/bold]")
+            for name, count, files in sorted(results, key=lambda x: -x[1]):
+                console.print(f"  [cyan]{name}[/cyan] → {count} notes")
+                if entity_name:  # Show details only for single-entity mode
+                    for f in files:
+                        console.print(f"    {f}")
+
+            if dry_run:
+                console.print(f"\n[yellow]Dry run — no files changed. Run without --dry-run to apply.[/yellow]")
 
         except BrainOpsError as error:
             handle_error(error)

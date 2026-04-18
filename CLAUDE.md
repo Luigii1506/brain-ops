@@ -76,7 +76,99 @@ brain audit-knowledge --config config/vault.yaml
 
 # Suggestions
 brain suggest-entities --config config/vault.yaml
+
+# Schema + naming lint (Campaña 0 — read-only)
+brain lint-schemas --config config/vault.yaml
+brain lint-schemas --naming --json --config config/vault.yaml
+brain lint-schemas --subtype person --config config/vault.yaml
+
+# Schema migrations for knowledge.db (automatic backup)
+brain migrate-knowledge-db --status --config config/vault.yaml
+brain migrate-knowledge-db --dry-run --config config/vault.yaml
+brain migrate-knowledge-db --config config/vault.yaml
+# Exceptional: bypass test-runner / env var guards. Still creates backup.
+brain migrate-knowledge-db --force-migrate --config config/vault.yaml
+
+# Reconcile with body-safe skip flags (Campaña 1 operations)
+brain reconcile --skip-wikify --skip-cross-enrich --config config/vault.yaml
 ```
+
+### Body-safety rules for bulk operations (Campaña 1)
+
+During bulk consolidation campaigns, the default `brain reconcile` can
+introduce semantic errors (e.g. wikify linking `la Ética kantiana` to
+`[[Ética (Spinoza)|Ética]]` — the book, not the discipline). To prevent
+this, Campaña 1 uses these rules:
+
+- **Frontmatter-only subfases (domain aliases, fill-domain, epistemic_mode,
+  subtype re-classification):** post-step is `brain compile-knowledge`.
+  Never modifies `.md` bodies.
+- **Rename / disambiguation subfases (capitalization fixes, bare-name
+  disambiguation):** post-step is `brain reconcile --skip-wikify
+  --skip-cross-enrich`. Registry syncs and SQLite compiles without body
+  edits.
+- **Default `brain reconcile`** (with wikify + cross-enrich) is unsafe
+  during Campaña 1 operations. Do not use it until Campaña 1 completes.
+- Every bulk `--apply` is preceded by a manual snapshot of `02 - Knowledge`
+  at `<vault>/.brain-ops/backups/02-knowledge-pre-<subfase>-<timestamp>`.
+- Every `--apply` is followed by a full-tree byte hash check to detect
+  unintended body changes.
+
+See `docs/operations/CAMPAIGN_1_OPERATIONS.md`.
+
+### Safety guards (Campaña 0.5)
+
+The production `knowledge.db` is NEVER modified as a side effect of
+imports, tests, or workflow execution. Migrations only run when the user
+explicitly invokes `brain migrate-knowledge-db`.
+
+- `initialize_entity_tables` only runs idempotent DDL — it does NOT migrate.
+- `apply_migrations` is guarded by `BRAIN_OPS_NO_MIGRATE=1` and by
+  `sys.modules` detection of test runners.
+- `load_validated_vault` refuses to open the user's real vault under
+  `BRAIN_OPS_BLOCK_REAL_VAULT=1` or a detected test runner.
+- Tests set both env vars via `tests/__init__.py` and `tests/conftest.py`.
+- Legacy DBs trigger `SchemaOutOfDateError` with a clear message when a
+  write path depends on post-migration columns.
+
+Verification after a test run:
+
+```bash
+sha256sum "<vault>/.brain-ops/knowledge.db" > /tmp/db-pre.sha
+python -m unittest discover tests
+sha256sum "<vault>/.brain-ops/knowledge.db" > /tmp/db-post.sha
+diff /tmp/db-pre.sha /tmp/db-post.sha  # must be empty
+```
+
+See `docs/operations/MIGRATIONS.md` for the full policy.
+
+### Taxonomy, naming and epistemology (Campaña 0)
+
+- Canonical domain slugs: `historia`, `filosofia`, `ciencia`, `religion`,
+  `esoterismo`, `machine_learning`. English / accented variants are accepted
+  as aliases and reported by `brain lint-schemas --naming`.
+- New subtypes available: `historical_period`, `dynasty`, `historical_process`,
+  `organism`, `species`, `language`, `script`, `gene`, `cell`, `chemical_element`,
+  `compound`, `molecule`, `disease`, `theorem`, `constant`,
+  `mathematical_object`, `mathematical_function`, `mathematical_field`,
+  `proof_method`, `sacred_text`, `esoteric_text`, `esoteric_tradition`,
+  `occult_movement`, `ritual`, `symbolic_system`, `divination_system`,
+  `mystical_concept`.
+- New relations: `reacted_against`, `developed`, `extended`, `synthesized`,
+  `refuted`, `criticized`, `inspired`, `derived_from`, `belongs_to_period`,
+  `contemporary_of`, `emerged_from`, `transformed_into`, `ruled_by`,
+  `centered_on`, `continuation_of`, `worshipped`, `worshipped_by`,
+  `associated_with`, `symbolizes`, `used_in`, `practiced_by`,
+  `interpreted_as`, `appears_in`, `depicts`, `describes`, `argues_for`,
+  `argues_against`, `written_in`, `based_on`, `explains`, `measured_by`,
+  `studied_in`, `part_of_system`, `precedes_in_process`, `depends_on`,
+  `participated_in`.
+- Epistemic layer: notes in `ciencia`, `religion`, `filosofia`, `esoterismo`
+  should carry `epistemic_mode`. `create-entity` auto-applies sensible defaults.
+  See `docs/operations/EPISTEMOLOGY.md`.
+- See also: `docs/operations/NAMING_RULES.md`,
+  `docs/operations/CAMPAIGN_0_SUMMARY.md`,
+  `MASTER_KNOWLEDGE_GRAPH_BLUEPRINT.md`.
 
 ### When Claude writes directly (as the LLM):
 

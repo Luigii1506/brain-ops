@@ -37,6 +37,13 @@ class KnowledgeAuditResult:
     entities_needing_enrichment: list[str] = field(default_factory=list)
     weak_entities: list[str] = field(default_factory=list)
 
+    # Campaña 0 — coverage metrics (informational, not "issues")
+    missing_domain: list[str] = field(default_factory=list)
+    non_canonical_domain: list[str] = field(default_factory=list)
+    missing_epistemic_mode_gated: list[str] = field(default_factory=list)
+    schema_errors_count: int = 0
+    schema_warnings_count: int = 0
+
     def to_dict(self) -> dict[str, object]:
         return {
             "total_entities": self.total_entities,
@@ -56,6 +63,11 @@ class KnowledgeAuditResult:
             "unmaterialized_candidates": list(self.unmaterialized_candidates),
             "entities_needing_enrichment": list(self.entities_needing_enrichment),
             "weak_entities": list(self.weak_entities),
+            "missing_domain": list(self.missing_domain),
+            "non_canonical_domain": list(self.non_canonical_domain),
+            "missing_epistemic_mode_gated": list(self.missing_epistemic_mode_gated),
+            "schema_errors_count": self.schema_errors_count,
+            "schema_warnings_count": self.schema_warnings_count,
         }
 
     @property
@@ -86,16 +98,29 @@ OLD_SECTIONS = {"Context", "What happened", "Consequences", "Biography", "Key co
 
 NEW_REQUIRED_SECTIONS = {"Identity", "Key Facts"}
 
+# Equivalent section names across languages (English / Spanish)
+_SECTION_ALIASES: dict[str, list[str]] = {
+    "Identity": ["Identity", "Identidad", "Definition", "Definición"],
+    "Key Facts": ["Key Facts", "Datos clave"],
+    "Timeline": ["Timeline", "Cronología", "Línea temporal"],
+    "Relationships": ["Relationships", "Relaciones"],
+}
+
 
 def _section_is_empty(body: str, section_name: str) -> bool:
-    marker = f"## {section_name}"
-    idx = body.find(marker)
-    if idx == -1:
-        return True
-    after = body[idx + len(marker):]
-    next_heading = after.find("\n## ")
-    content = after[:next_heading] if next_heading > 0 else after
-    return len(content.strip()) < 10
+    aliases = _SECTION_ALIASES.get(section_name, [section_name])
+    for alias in aliases:
+        marker = f"## {alias}"
+        idx = body.find(marker)
+        if idx == -1:
+            continue
+        after = body[idx + len(marker):]
+        next_heading = after.find("\n## ")
+        content = after[:next_heading] if next_heading > 0 else after
+        if len(content.strip()) >= 10:
+            return False
+    # No alias found, or all found aliases had <10 chars
+    return True
 
 
 def _extract_sections(body: str) -> set[str]:
@@ -140,6 +165,36 @@ def audit_knowledge(
             result.missing_object_kind.append(name)
         if not fm.get("subtype"):
             result.missing_subtype.append(name)
+
+        # Campaña 0 — coverage checks (domain, epistemic_mode, schema)
+        from .epistemology import EPISTEMIC_GATED_DOMAINS, is_valid_epistemic_mode
+        from .naming_rules import canonical_domain, is_canonical_domain
+        from .schema_validator import validate_note
+
+        raw_domain = fm.get("domain")
+        if not raw_domain:
+            result.missing_domain.append(name)
+        elif isinstance(raw_domain, str) and not is_canonical_domain(raw_domain):
+            canonical = canonical_domain(raw_domain)
+            suffix = f" → should be '{canonical}'" if canonical else ""
+            result.non_canonical_domain.append(f"{name}: '{raw_domain}'{suffix}")
+
+        if isinstance(raw_domain, str) and raw_domain in EPISTEMIC_GATED_DOMAINS:
+            if not is_valid_epistemic_mode(fm.get("epistemic_mode") if isinstance(fm.get("epistemic_mode"), str) else None):
+                result.missing_epistemic_mode_gated.append(name)
+
+        schema_violations = validate_note(
+            note_path=_path if isinstance(_path, str) else str(_path),
+            note_name=name,
+            frontmatter=fm,
+            new_note=False,
+            gated_domains=EPISTEMIC_GATED_DOMAINS,
+        )
+        for v in schema_violations:
+            if v.severity == "error":
+                result.schema_errors_count += 1
+            elif v.severity == "warning":
+                result.schema_warnings_count += 1
 
         # Old model detection
         sections = _extract_sections(body)

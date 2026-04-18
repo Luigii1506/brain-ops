@@ -155,6 +155,28 @@ La regla: misma inteligencia narrativa, distinto ritmo según la naturaleza del 
 
 ---
 
+## Filosofía
+
+**Motor**: crisis de certezas, choque entre sistemas de pensamiento, decisión personal ante el abismo, consecuencias de tomar una idea en serio
+
+**Pregunta base**: ¿Qué certeza se rompió, qué intentó cada pensador construir en su lugar, y qué precio pagó por ello?
+
+**Cómo genera tensión**: La filosofía engancha cuando el lector siente el problema antes que la solución — y descubre que la solución genera un problema nuevo. Los filósofos no son comentaristas neutrales: son personas que apuestan su vida intelectual a una idea y enfrentan las consecuencias. El arco típico es: certeza heredada → crisis que la rompe → intento de reconstrucción → nueva visión del mundo → lo que esa visión no puede resolver.
+
+**Ritmo**: lento y denso cuando se explica una idea difícil (el lector necesita tiempo para procesar), acelerado cuando dos sistemas chocan o cuando una vida personal encarna una contradicción filosófica. Alternar entre zoom macro (tradiciones, épocas, corrientes) y zoom micro (un pensador concreto, una frase, una decisión de vida).
+
+**Peligros específicos**:
+- Convertir filosofía en cronología de pensadores y fechas
+- Olvidar que detrás de cada sistema hay una persona con una crisis real
+- Explicar ideas sin mostrar qué problema intentaban resolver
+- Heroificar filósofos sin mostrar sus contradicciones y fracasos
+- Usar jerga técnica sin haberla ganado narrativamente (no decir "fenomenología trascendental" sin que el lector entienda por qué importa)
+- Tratar las ideas como objetos de museo en vez de como respuestas urgentes a preguntas reales
+
+**Ejemplo de motor en acción**: No escribir "Nietzsche proclamó la muerte de Dios en 1882". Escribir "Nietzsche no estaba celebrando. El loco que anuncia la muerte de Dios en La gaya ciencia está aterrorizado: si el fundamento moral de Occidente desaparece, ¿qué impide que todo se derrumbe? Nietzsche pasó el resto de su vida intentando construir algo que pudiera sostenerse sin ese fundamento — y el intento lo destruyó."
+
+---
+
 ## Cómo usar estos adaptadores
 
 1. Antes de escribir, identificar el dominio del capítulo

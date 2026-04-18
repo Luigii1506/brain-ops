@@ -159,6 +159,13 @@ class CliCommandRegistrationTestCase(TestCase):
                 "check-books",
                 "cross-enrich",
                 "semantic-relations",
+                "wikify",
+                "lint-schemas",
+                "migrate-knowledge-db",
+                "normalize-domain",
+                "disambiguate-bare",
+                "fix-capitalization",
+                "fill-domain",
             },
         )
 
