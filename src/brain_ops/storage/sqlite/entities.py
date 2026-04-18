@@ -161,9 +161,19 @@ def write_compiled_entities(db_path: Path, result: CompileResult) -> int:
                 (entity.name, entity.entity_type, entity.relative_path, json.dumps(entity.metadata, ensure_ascii=False, cls=_DateSafeEncoder)),
             )
         for relation in result.relations:
+            # Campaña 2.0: typed relations populate `predicate` + `confidence`;
+            # legacy `related:` entries (predicate=None) keep those columns NULL/default.
             cursor.execute(
-                "INSERT INTO entity_relations (source_entity, target_entity, source_type) VALUES (?, ?, ?)",
-                (relation.source_entity, relation.target_entity, relation.source_type),
+                "INSERT INTO entity_relations "
+                "(source_entity, target_entity, predicate, confidence, source_type) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    relation.source_entity,
+                    relation.target_entity,
+                    relation.predicate,
+                    relation.confidence if relation.predicate is not None else None,
+                    relation.source_type,
+                ),
             )
         conn.commit()
         return len(result.entities)
