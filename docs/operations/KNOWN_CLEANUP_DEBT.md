@@ -319,6 +319,41 @@ notas de "formato ensayo histórico-filosófico" (prosa continua con
 subordinadas). Escalar 2.1 al resto del vault probablemente requiere
 una de las tres remediation paths como paso intermedio.
 
+### Addendum — patrón extendido al dominio historia
+
+Batch `Fase2-romanos-post-augusto` confirmó que el mismo problema
+afecta a emperadores romanos en registro narrativo-biográfico:
+
+| Nota | body_chars | Formulación con contenido semántico sin extraer |
+|---|---|---|
+| Adriano | 6,774 | *"Sucesor de [[Trajano]], abandonó las conquistas en Mesopotamia"* |
+| Tiberio | 5,775 | *"Hijastro y sucesor reluctante de [[Augusto]]"* |
+
+Ambos tienen wikilinks **correctamente colocados adyacentes a
+sustantivos relacionales** ("Sucesor de", "Hijastro de"), pero estos
+sustantivos no son triggers canónicos del extractor actual.
+
+**Candidatos concretos para la siguiente mini-subfase de triggers**:
+
+| Trigger a añadir | Predicado canónico | Desbloquea inmediatamente |
+|---|---|---|
+| `"sucesor de"`, `"sucesora de"` | `succeeded` | Adriano → Trajano; Tiberio → Augusto |
+| `"hijastro de"`, `"hijastra de"` | `adopted_by` (u `child_of` dependiendo de política) | Tiberio → Augusto (hijastro adoptado por Augusto en 4 d.C.) |
+
+Observación especial sobre `"hijastro de"`: mapearlo a `adopted_by`
+versus `child_of` es una decisión de política. En el caso romano
+"hijastro" en la prosa suele implicar adopción legal posterior. La
+mini-subfase debe decidir esto explícitamente antes de añadir el
+trigger. Alternativa: emitir como `adopted_by` con `confidence: medium`
+para forzar review humano caso por caso.
+
+**Observación adicional** — el predicado `adopted_by` / `adoptive_parent_of`
+que introdujimos en Paso 1 no tiene triggers en `_BODY_TRIGGERS`. La prosa
+"adoptado por [X]" del body de Nerón (adoptado por Claudio) no disparó
+en Fase 2. Añadir `"adoptado por"`, `"adoptada por"`, `"adopted by"`
+como triggers de `adopted_by` es otro candidato fuerte para la próxima
+mini-subfase.
+
 **Priority**: alta para 2.2 (bloquea el avance real del edge count);
 baja para 2.1 actual (no bloquea el cierre).
 
