@@ -3,8 +3,8 @@
 Spec for how typed relationships between entities are represented in the vault,
 queried from SQLite, and migrated from the legacy untyped `related:` field.
 
-**Status**: design approved, implementation scheduled for Campaña 2.
-**Last updated**: 2026-04-18.
+**Status**: Campaña 2.0 implemented (parser, compile, linter, CLI, pilot).
+**Last updated**: 2026-04-18 (post-pilot).
 
 ---
 
@@ -51,14 +51,20 @@ related:
 Each entry is a YAML dict with two required keys (`predicate`, `object`).
 Optional keys can be added per entry as needed:
 
-| Key         | Required | Type   | Purpose                                          |
-|-------------|----------|--------|--------------------------------------------------|
-| `predicate` | yes      | string | One of `CANONICAL_PREDICATES`                    |
-| `object`    | yes      | string | Canonical entity name (must exist or be mention) |
-| `reason`    | no       | string | One-line justification                           |
-| `date`      | no       | string | When the relation holds                          |
-| `confidence`| no       | string | `high` / `medium` / `low`                        |
-| `source_id` | no       | string | Pointer to ingested source                       |
+| Key         | Required | Type   | Persisted in SQLite | Purpose                                          |
+|-------------|----------|--------|---------------------|--------------------------------------------------|
+| `predicate` | yes      | string | **yes** (`predicate` column)          | One of `CANONICAL_PREDICATES`                    |
+| `object`    | yes      | string | **yes** (`target_entity` column)      | Canonical entity name (must exist or be mention) |
+| `confidence`| no       | string | **yes** (`confidence` column)         | `high` / `medium` (default) / `low`              |
+| `reason`    | no       | string | no — frontmatter only                 | One-line justification                           |
+| `date`      | no       | string | no — frontmatter only                 | When the relation holds                          |
+| `source_id` | no       | string | no — frontmatter only                 | Pointer to ingested source                       |
+
+> **Persistence note (2.0)**: SQLite today stores `predicate` and `confidence`
+> alongside `source_entity` / `target_entity`. The annotation fields (`reason`,
+> `date`, `source_id`) live in the frontmatter and are not mirrored to SQLite.
+> They are available to any tool that reads the YAML directly. Promoting any
+> of them to SQLite columns is a 2.x decision, not in scope for 2.0.
 
 The short inline-dict form `- {predicate: X, object: Y}` is preferred for
 compactness; expand to multi-line when extra keys are added:
@@ -334,8 +340,9 @@ Workflow per note:
 4. Leave uncertain entries in `related:` (fallback remains valid).
 5. Optionally write or expand the `## Relationships` body section.
 
-Tooling for this is the scope of **Campaña 2.0** (infrastructure) and
-**Campaña 2.1/2.2** (guided migration).
+Tooling for this is the scope of **Campaña 2.0** (infrastructure —
+delivered) and **Campaña 2.1+** (guided migration — see
+[`CAMPAIGN_2_0_SUMMARY.md`](CAMPAIGN_2_0_SUMMARY.md) §7).
 
 ### Coexistence rule
 
@@ -367,14 +374,21 @@ CREATE TABLE entity_relations (
 )
 ```
 
-`compile-knowledge` behavior (to be implemented in Campaña 2.0):
+`compile-knowledge` behavior (implemented in Campaña 2.0):
 
 - For each entry in frontmatter `relationships:`, write a row with
-  `predicate` populated.
-- For each entry in `related:` NOT already covered by `relationships:`, write
-  a row with `predicate = NULL` (legacy).
+  `predicate` populated and `confidence` copied from the frontmatter (default
+  `medium` if absent).
+- For each entry in `related:` whose target does NOT already appear as a
+  typed target in `relationships:`, write a row with `predicate = NULL` and
+  `confidence = NULL` (legacy). Deduplication is by **target**: if the same
+  target appears both typed and legacy, only the typed row is written.
+- Multiple typed edges between the same source and target are allowed as
+  long as the predicates differ. Dedup key is `(source, predicate, object)`.
+- `reason` / `date` / `source_id` are read by the parser for linting purposes
+  but **not written** to `entity_relations`. They stay in the YAML.
 
-Query example (once populated):
+Query example (populated):
 ```sql
 -- Who did Aristóteles teach?
 SELECT target_entity FROM entity_relations
@@ -387,20 +401,26 @@ WHERE target_entity = 'Tomás de Aquino' AND predicate = 'influenced';
 
 ---
 
-## 10. Linter rules for typed relations (to implement in Campaña 2.0)
+## 10. Linter rules for typed relations (implemented — Campaña 2.0)
 
-The schema validator will add:
+Active in `schema_validator._validate_typed_relations` and surfaced via
+`brain lint-schemas`:
 
-| Rule                                | Severity | Check                                                       |
-|-------------------------------------|----------|-------------------------------------------------------------|
-| `relation_predicate_unknown`        | error    | Predicate not in `CANONICAL_PREDICATES`                     |
-| `relation_object_missing`           | warning  | Object is not an existing entity (pure mention)             |
-| `relation_object_is_disambig_page`  | warning  | Object points to a disambiguation_page (should use variant) |
-| `relation_duplicate`                | info     | Same `(predicate, object)` appears twice in one note        |
-| `relation_body_divergent`           | info     | `## Relationships` section references entity not in frontmatter (or vice versa) |
-| `relation_self`                     | warning  | Subject references itself (should be exceptional)           |
+| Rule                                 | Severity | Check                                                                   |
+|--------------------------------------|----------|-------------------------------------------------------------------------|
+| `relation_unknown_predicate`         | error    | Predicate not in `CANONICAL_PREDICATES`                                 |
+| `relation_missing_field`             | warning  | Entry is missing `predicate` or `object`                                |
+| `relation_invalid_shape`             | warning  | Entry is not a mapping                                                  |
+| `relation_invalid_confidence`        | info     | `confidence` value not in `{high, medium, low}`                         |
+| `relation_self`                      | warning  | Subject references itself                                               |
+| `relation_duplicate`                 | info     | Same `(source, predicate, object)` triple appears twice in one note     |
+| `relation_object_missing`            | warning  | Object is not an existing entity nor a known mention (needs entity_index) |
+| `relation_object_is_disambig_page`   | warning  | Object points to a disambiguation_page (needs entity_index)             |
+| `relation_body_divergent` (separate) | info     | Body `## Relationships` section references an entity not in frontmatter (or vice versa). Checked by `validate_body_relations_divergence` — not emitted by the standard validator loop. |
 
-None of these block compilation — they surface in `brain lint-schemas`.
+None of these block compilation. Entity-resolution checks
+(`relation_object_missing`, `relation_object_is_disambig_page`) require
+`validate_vault_notes` to build the entity index in the first pass.
 
 ---
 
@@ -421,6 +441,57 @@ None of these block compilation — they surface in `brain lint-schemas`.
 
 ---
 
-## 12. Changelog
+## 12. Known semantic debt (2.0)
 
-- **2026-04-18** — initial spec approved. Implementation pending Campaña 2.0.
+Campaña 2.0 ships a usable typed-graph infrastructure, but leaves the
+following refinements **unresolved**. They are intentionally deferred and
+tracked here so future campañas pick them up from the same source of truth.
+
+### 12.1 Adoption is conflated with biological parentage
+
+The canonical vocabulary has `parent_of` / `child_of` but no dedicated
+adoption predicate. The pilot ships three adoptive edges using the
+biological predicates:
+
+- `Augusto       → child_of  → Julio César`   *(adoptivo)*
+- `Julio César   → parent_of → Augusto`       *(adoptivo)*
+- `Marco Aurelio → child_of  → Antonino Pío`  *(adoptivo)*
+
+Each of these triples carries the annotation
+`reason: adoptive — refinar con predicado específico de adopción si se introduce`
+in the frontmatter. This annotation is **not persisted to SQLite** (see §2.1
+persistence note) — it lives in the YAML and is discoverable by any tool
+that reads the note directly.
+
+If a future campaña introduces a dedicated predicate (e.g. `adopted_by` /
+`adopted_child_of` / a structured `relation_subtype` field), these edges can
+be migrated deterministically by matching the `reason` marker in frontmatter.
+Until then, treat adoption as an annotation on the biological predicate, not
+a distinct edge type in SQLite.
+
+### 12.2 Annotation fields are not queryable from SQLite
+
+`reason`, `date`, `source_id` are defined in the format but do not reach the
+relational store. Any query that needs "all edges where `reason` mentions X"
+must go through the YAML, not `entity_relations`. Promoting these to columns
+(or to a sidecar `entity_relation_annotations` table) is a 2.x decision.
+
+### 12.3 Body-frontmatter divergence is not enforced
+
+The linter has the check (`relation_body_divergent` / 
+`validate_body_relations_divergence`) but it's informational only. A note
+can have a typed frontmatter and a legacy body `## Relationships` that
+diverges, and compilation proceeds. The pilot of 15 notes is
+frontmatter-only (no body `## Relationships` section in Campaña 2.0), so
+this gap is not exercised yet.
+
+---
+
+## 13. Changelog
+
+- **2026-04-18 (post-pilot)** — Campaña 2.0 infrastructure shipped: parser
+  (`relations_typed.py`), compile/SQLite persistence of `predicate` +
+  `confidence`, schema linter rules, `brain query-relations`,
+  `brain show-entity-relations`. Pilot applied to 15 notes (71 typed
+  edges). Adoption flagged as semantic debt (§12.1).
+- **2026-04-18** — initial spec approved.

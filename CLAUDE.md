@@ -170,6 +170,70 @@ See `docs/operations/MIGRATIONS.md` for the full policy.
   `docs/operations/CAMPAIGN_0_SUMMARY.md`,
   `MASTER_KNOWLEDGE_GRAPH_BLUEPRINT.md`.
 
+### Typed relations — frontmatter `relationships:` (Campaña 2.0)
+
+The vault now supports typed edges in addition to the legacy `related:`
+list. Typed edges live in the frontmatter `relationships:` field; each
+entry is a YAML dict with `predicate` and `object` required, plus
+optional `confidence`, `reason`, `date`, `source_id`:
+
+```yaml
+relationships:
+  - predicate: studied_under
+    object: Platón
+    confidence: high
+  - predicate: reacted_against
+    object: Platón
+    confidence: high
+    reason: Crítica a la teoría de las Formas
+```
+
+**Persistence contract** (explicit):
+
+- SQLite `entity_relations` stores `predicate` and `confidence`
+  alongside `source_entity` / `target_entity`.
+- `reason`, `date`, `source_id` are **frontmatter only** — they are
+  parsed and linted but not mirrored to SQLite. Any query on them
+  must read the YAML directly.
+- Legacy `related:` entries coexist: they compile to
+  `predicate = NULL`. Dedup is by **target** — if a target is typed,
+  the legacy row for the same target is dropped.
+- Multiple typed edges between the same `(source, object)` pair are
+  allowed when the predicate differs. The dedup key is
+  `(source, predicate, object)`.
+
+**Post-step for frontmatter-only edits to `relationships:`** is
+`brain compile-knowledge --config config/vault.yaml`. Do not use
+`brain reconcile` for these operations — the pilot validated that
+compile-only keeps body bytes intact; reconcile does not.
+
+**Querying the typed graph**:
+
+```bash
+# All outgoing + incoming relations of an entity, typed + legacy
+brain show-entity-relations "Aristóteles" --config config/vault.yaml
+brain show-entity-relations "Aristóteles" --json                 # machine-readable
+brain show-entity-relations "Aristóteles" --only-typed           # hide legacy
+brain show-entity-relations "Aristóteles" --only-legacy          # hide typed
+
+# Filtered SQL-style query (at least one of --from / --to / --predicate)
+brain query-relations --from "Aristóteles" --predicate mentor_of --config config/vault.yaml
+brain query-relations --to "Aristóteles" --json
+brain query-relations --predicate studied_under --config config/vault.yaml
+```
+
+**Adoption is unresolved semantic debt in 2.0.** Adoptive filiations
+(e.g. Augusto → Julio César, Marco Aurelio → Antonino Pío) are stored
+with biological predicates (`child_of` / `parent_of`) and carry
+`reason: adoptive — refinar con predicado específico de adopción si
+se introduce` in the frontmatter. When a dedicated adoption predicate
+is introduced in a later campaña, these edges migrate deterministically
+by matching that marker.
+
+See `docs/operations/RELATIONS_FORMAT.md` for the full format spec
+and `docs/operations/CAMPAIGN_2_0_SUMMARY.md` for the delivery
+summary, pilot result, and Campaña 2.1 proposal.
+
 ### When Claude writes directly (as the LLM):
 
 This is allowed when the user says "enriquece X" or "crea entidad X" in conversation.
