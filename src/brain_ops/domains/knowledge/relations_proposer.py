@@ -285,17 +285,33 @@ def _find_trigger_in_window(trigger: str, window_lower: str) -> int | None:
     Returns the offset (within `window_lower`) of the match start, or None
     if the trigger does not appear.
 
-    Campaña 2.2A Paso 1: this is an exact `str.rfind` — a straight
-    extraction of the matching logic that previously lived inline in
-    `_extract_from_body`. Behavior is unchanged (same tests still pass).
-    Paso 3 will extend this helper to use regex for multi-word triggers
-    so adverbs/adjectives intercalated between tokens ("sucesor reluctante
-    de") become matchable.
+    Campaña 2.2A Paso 3: dispatch between two strategies:
+    - **Single-word triggers** (no whitespace): exact `str.rfind`.
+      Verbos como "fundó", "founded", "wrote" no admiten intercalación
+      útil — se quedan como están.
+    - **Multi-word triggers** (contienen espacio): regex-tolerant matching
+      construido por `_build_regex_for_trigger`. Acepta hasta
+      `_MAX_INTERMEDIATE_TOKENS` palabras intermedias (adverbios/
+      adjetivos) entre los tokens literales, con word boundaries en los
+      extremos y puntuación como cortador de cláusula.
 
-    `trigger` is assumed already lowercased; `window_lower` likewise. The
-    caller is responsible for the case normalization so this helper stays
-    pure and cheap per call.
+    Backwards compat: para cualquier trigger multi-palabra y un
+    `window_lower` donde los tokens aparecen contiguos (sin intercalación),
+    el regex produce la misma posición de match que `str.rfind`. Los
+    ~30 tests existentes de `_extract_from_body` siguen pasando sin
+    modificación.
+
+    `trigger` asumido lowercased por el caller; `window_lower` también.
+    El regex se construye case-insensitive por defecto (el caller podría
+    en el futuro pasar texto no-normalizado sin romper el matching).
     """
+    if " " in trigger:
+        regex = _build_regex_for_trigger(trigger, _MAX_INTERMEDIATE_TOKENS)
+        matches = list(regex.finditer(window_lower))
+        if not matches:
+            return None
+        return matches[-1].start()  # rightmost, semantic equivalente a rfind
+    # Single-word path (e.g. verbs): exact string search.
     idx = window_lower.rfind(trigger)
     return idx if idx >= 0 else None
 

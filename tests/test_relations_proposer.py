@@ -530,6 +530,99 @@ class RegexBuilderTestCase(TestCase):
         self.assertIsNotNone(regex.search("Sucesor reluctante De Augusto"))
 
 
+class MatcherIntegrationTestCase(TestCase):
+    """Paso 3 de Campaña 2.2A — integración del regex builder al proposer.
+
+    Estos 4 tests ejercitan el pipeline completo (`propose_relations_for_entity`)
+    con bodies diseñados para verificar comportamiento post-dispatch:
+    single-word triggers intactos, multi-word triggers tolerantes a
+    adverbios, word boundary preservado, límite de 3 tokens respetado.
+    """
+
+    def test_matcher_unlocks_tiberio_adverb_case(self) -> None:
+        """El caso-prueba central de 2.2A: `sucesor reluctante de [[Augusto]]`
+        ahora produce un triple `succeeded → Augusto` gracias al regex
+        tolerante a 1 adverbio intermedio."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Augusto")
+            _write_note(vault.root, "Tiberio", {
+                "name": "Tiberio",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Hijastro y sucesor reluctante de [[Augusto]], llegó al poder tarde.")
+            result = propose_relations_for_entity("Tiberio", vault)
+
+        succeeded = [p for p in result.proposal if p.predicate == "succeeded"]
+        self.assertEqual(len(succeeded), 1)
+        self.assertEqual(succeeded[0].object, "Augusto")
+        self.assertEqual(succeeded[0].confidence, "high")
+
+    def test_single_word_trigger_unchanged_after_paso3(self) -> None:
+        """Backwards compat: un verbo single-word (`fundó`) sigue
+        detectándose igual que antes de integrar el regex. El dispatch
+        lo envía al branch de str.rfind."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Academia platónica")
+            _write_note(vault.root, "Platón", {
+                "name": "Platón",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Platón fundó la [[Academia platónica]] en ~387 a.C.")
+            result = propose_relations_for_entity("Platón", vault)
+
+        founded = [p for p in result.proposal if p.predicate == "founded"]
+        self.assertEqual(len(founded), 1)
+        self.assertEqual(founded[0].object, "Academia platónica")
+
+    def test_known_fp_claudio_not_amplified(self) -> None:
+        """El FP conocido de Claudio cl-01 (body dice 'Augusto — fundador
+        de la dinastía - [[Guardia Pretoriana]]' y el pattern captura el
+        siguiente wikilink) debe permanecer exactamente igual tras el
+        dispatch: mismo FP, sin nuevos FPs de founded adicionales."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Augusto")
+            _canonical_entity(vault.root, "Guardia Pretoriana")
+            _canonical_entity(vault.root, "Britania")
+            _write_note(vault.root, "Claudio", {
+                "name": "Claudio",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, (
+                "Relationships: - [[Augusto]] — tío-abuelo, "
+                "fundador de la dinastía - [[Guardia Pretoriana]] — "
+                "lo proclamó emperador - [[Britania]] — provincia conquistada"
+            ))
+            result = propose_relations_for_entity("Claudio", vault)
+
+        founded = [p for p in result.proposal if p.predicate == "founded"]
+        # Esperado: exactamente 1 FP (el mismo de 2.1 con `fundador de`
+        # capturando Guardia Pretoriana como siguiente wikilink), ningún
+        # FP nuevo adicional por el dispatch a regex.
+        self.assertEqual(len(founded), 1)
+        self.assertEqual(founded[0].object, "Guardia Pretoriana")
+
+    def test_three_tokens_boundary_not_fired_in_integration(self) -> None:
+        """El límite `_MAX_INTERMEDIATE_TOKENS = 2` se respeta end-to-end:
+        una frase con 3 palabras intermedias no dispara proposal."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Trajano")
+            _write_note(vault.root, "Adriano", {
+                "name": "Adriano",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Adriano fue sucesor muy claramente directo de [[Trajano]] en 117.")
+            result = propose_relations_for_entity("Adriano", vault)
+
+        succeeded = [p for p in result.proposal if p.predicate == "succeeded"]
+        # 'sucesor muy claramente directo de' tiene 3 tokens intermedios
+        # entre 'sucesor' y 'de' — excede max_intermediate=2.
+        self.assertEqual(len(succeeded), 0)
+
+
 class YAMLContractTestCase(TestCase):
     def test_evidence_source_is_always_from_closed_set(self) -> None:
         with TemporaryDirectory() as td:
