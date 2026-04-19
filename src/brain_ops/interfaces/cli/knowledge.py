@@ -1052,6 +1052,93 @@ def present_show_entity_relations_command(
 import typer  # noqa: E402 — used above by present_query_relations_command
 
 
+def present_apply_relations_batch_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    batch_name: str,
+    apply: bool,
+    allow_mentions: bool,
+    as_json: bool,
+) -> None:
+    """Campaña 2.1 Paso 3 — apply a reviewed batch of typed-relation proposals.
+
+    Default is dry-run. Pass `--apply` to actually write. Frontmatter-only;
+    body is never mutated; MISSING_ENTITY targets are refused unless
+    `--allow-mentions` is explicit.
+    """
+    import json as _json
+
+    from brain_ops.domains.knowledge.relations_applier import (
+        BatchLoadError, apply_batch,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=not apply)
+    try:
+        report = apply_batch(
+            batch_name, vault,
+            dry_run=not apply,
+            allow_mentions=allow_mentions,
+        )
+    except BatchLoadError as exc:
+        console.print(f"[red]error[/red]: {exc}")
+        raise typer.Exit(code=2)
+
+    payload = report.to_dict()
+    if as_json:
+        console.print_json(data=payload)
+        return
+
+    mode = "DRY-RUN" if report.dry_run else "APPLIED"
+    banner_color = "yellow" if report.dry_run else "green"
+    console.print(
+        f"[bold {banner_color}]{mode}[/bold {banner_color}] "
+        f"batch={report.batch_name}  "
+        f"entities={len(report.entities)}  "
+        f"applied={report.total_applied}  "
+        f"skipped={report.total_skipped}"
+    )
+    if report.aborted:
+        console.print(f"[red]ABORTED:[/red] {report.abort_reason}")
+    if report.snapshot_path:
+        console.print(f"[dim]snapshot: {report.snapshot_path}[/dim]")
+
+    tbl = Table(title=f"Per-entity plan ({mode})")
+    tbl.add_column("entity")
+    tbl.add_column("baseline\ntyped", justify="right")
+    tbl.add_column("proposal\ntotal", justify="right")
+    tbl.add_column("to\napply", justify="right")
+    tbl.add_column("already\ntyped", justify="right")
+    tbl.add_column("missing\nentity", justify="right")
+    tbl.add_column("not\napproved", justify="right")
+    tbl.add_column("other\nskip", justify="right")
+    for e in report.entities:
+        tbl.add_row(
+            e.entity,
+            str(e.baseline_typed),
+            str(e.proposal_total),
+            str(len(e.applied_ids)),
+            str(len(e.skipped.get("already_typed", []))),
+            str(len(e.skipped.get("missing_entity", []))),
+            str(len(e.skipped.get("not_approved", []))),
+            str(sum(len(v) for k, v in e.skipped.items()
+                    if k not in ("already_typed", "missing_entity", "not_approved"))),
+        )
+    console.print(tbl)
+
+    if report.missing_entity_queue:
+        console.print(
+            f"\n[yellow]Missing entities (creation queue):[/yellow] "
+            f"{len(report.missing_entity_queue)}"
+        )
+        for name in report.missing_entity_queue[:15]:
+            console.print(f"  - {name}")
+        if len(report.missing_entity_queue) > 15:
+            console.print(
+                f"  [dim]... {len(report.missing_entity_queue) - 15} more[/dim]"
+            )
+
+
 def present_propose_relations_command(
     console: Console,
     *,
@@ -1124,6 +1211,7 @@ __all__ = [
     "present_lint_schemas_command",
     "present_migrate_knowledge_db_command",
     "present_normalize_domain_command",
+    "present_apply_relations_batch_command",
     "present_propose_relations_command",
     "present_query_relations_command",
     "present_show_entity_relations_command",

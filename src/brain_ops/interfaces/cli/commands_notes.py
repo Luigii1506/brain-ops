@@ -10,6 +10,7 @@ from rich.console import Console
 from brain_ops.errors import BrainOpsError
 
 from .knowledge import (
+    present_apply_relations_batch_command,
     present_audit_vault_command,
     present_compile_knowledge_command,
     present_disambiguate_bare_command,
@@ -1352,6 +1353,34 @@ entity: false
                 predicate=predicate,
                 include_legacy=include_legacy,
                 limit=limit,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("apply-relations-batch")
+    def apply_relations_batch_command(
+        batch_name: str = typer.Argument(..., help="Batch name (directory under .brain-ops/relations-proposals/batch-<name>/)."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        apply: bool = typer.Option(
+            False, "--apply",
+            help="Actually write changes. Default is dry-run.",
+        ),
+        allow_mentions: bool = typer.Option(
+            False, "--allow-mentions",
+            help="Also apply triples whose object is MISSING_ENTITY. "
+                 "Off by default (Campaña 2.1 clarification #1).",
+        ),
+        as_json: bool = typer.Option(False, "--json", help="Emit JSON report."),
+    ) -> None:
+        """Campaña 2.1 Paso 3 — apply a reviewed batch of typed-relation proposals."""
+        try:
+            present_apply_relations_batch_command(
+                console,
+                config_path=config_path,
+                batch_name=batch_name,
+                apply=apply,
+                allow_mentions=allow_mentions,
                 as_json=as_json,
             )
         except BrainOpsError as error:
