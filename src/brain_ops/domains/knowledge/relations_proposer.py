@@ -174,7 +174,12 @@ _BODY_TRIGGERS: list[tuple[str, tuple[str, ...], int]] = [
         "autor de", "autora de", "escribió",
         "author of", "wrote",
     ), 50),
-    ("founded", ("fundó", "founded", "established"), 40),
+    ("founded", (
+        "fundó", "founded", "established",
+        # Nominal forms — Campaña 2.1 mini-subfase trigger expansion.
+        # Cover biographical prose like "Parménides, fundador de la escuela eleática".
+        "fundador de", "fundadora de", "founder of",
+    ), 40),
     ("conquered", ("conquistó", "conquered"), 40),
     ("ruled", (
         "rey de", "reina de", "emperador de", "emperatriz de", "gobernó",

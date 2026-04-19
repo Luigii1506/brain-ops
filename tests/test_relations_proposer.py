@@ -140,6 +140,53 @@ class BodyExtractionTestCase(TestCase):
 
         self.assertEqual([p for p in result.proposal if p.object == "Aristóteles"], [])
 
+    def test_nominal_trigger_fundador_de_emits_founded(self) -> None:
+        """Campaña 2.1 mini-subfase: `fundador de [[X]]` should fire `founded`."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Escuela eleática")
+            _write_note(vault.root, "Parménides", {
+                "name": "Parménides",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Parménides, fundador de la [[Escuela eleática]].")
+            result = propose_relations_for_entity("Parménides", vault)
+
+        founded = [p for p in result.proposal if p.predicate == "founded"]
+        self.assertEqual(len(founded), 1)
+        self.assertEqual(founded[0].object, "Escuela eleática")
+        self.assertEqual(founded[0].confidence, "high")
+
+    def test_nominal_trigger_fundadora_de_emits_founded(self) -> None:
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Orden X")
+            _write_note(vault.root, "Teresa", {
+                "name": "Teresa",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Teresa fue fundadora de la [[Orden X]] en el siglo XVI.")
+            result = propose_relations_for_entity("Teresa", vault)
+
+        founded = [p for p in result.proposal if p.predicate == "founded"]
+        self.assertEqual(len(founded), 1)
+        self.assertEqual(founded[0].object, "Orden X")
+
+    def test_nominal_trigger_founder_of_english_emits_founded(self) -> None:
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Linnean Society")
+            _write_note(vault.root, "Linnaeus", {
+                "name": "Linnaeus",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "ciencia",
+            }, "Linnaeus was the founder of the [[Linnean Society]].")
+            result = propose_relations_for_entity("Linnaeus", vault)
+
+        founded = [p for p in result.proposal if p.predicate == "founded"]
+        self.assertEqual(len(founded), 1)
+        self.assertEqual(founded[0].object, "Linnean Society")
+
     def test_multiple_predicates_same_target_both_emitted(self) -> None:
         with TemporaryDirectory() as td:
             vault = _mk_vault(Path(td))
