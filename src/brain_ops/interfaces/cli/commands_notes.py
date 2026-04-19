@@ -12,6 +12,7 @@ from brain_ops.errors import BrainOpsError
 from .knowledge import (
     present_apply_relations_batch_command,
     present_audit_vault_command,
+    present_batch_propose_relations_command,
     present_compile_knowledge_command,
     present_disambiguate_bare_command,
     present_entity_index_command,
@@ -1353,6 +1354,45 @@ entity: false
                 predicate=predicate,
                 include_legacy=include_legacy,
                 limit=limit,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("batch-propose-relations")
+    def batch_propose_relations_command(
+        batch_name: str = typer.Option(..., "--batch-name", help="Batch directory name under .brain-ops/relations-proposals/batch-<name>/."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        subtype: str | None = typer.Option(None, "--subtype", help="Filter entities by subtype (e.g. person, deity)."),
+        domain: str | None = typer.Option(None, "--domain", help="Filter entities by domain (e.g. filosofia, historia)."),
+        include: list[str] = typer.Option(None, "--include", help="Include only these entity names (repeatable)."),
+        exclude: list[str] = typer.Option(None, "--exclude", help="Exclude these entity names (repeatable)."),
+        limit: int | None = typer.Option(None, "--limit", help="Cap number of entities processed."),
+        include_empty: bool = typer.Option(
+            False, "--include-empty",
+            help="Also emit proposals for notes where the proposer found no triples "
+                 "(normally skipped to keep the batch reviewable).",
+        ),
+        overwrite: bool = typer.Option(
+            False, "--overwrite",
+            help="Overwrite an existing batch directory with the same name. "
+                 "Off by default to avoid clobbering reviewer edits.",
+        ),
+        as_json: bool = typer.Option(False, "--json", help="Emit JSON report."),
+    ) -> None:
+        """Campaña 2.1 Paso 4 — build a batch of typed-relation proposals."""
+        try:
+            present_batch_propose_relations_command(
+                console,
+                config_path=config_path,
+                batch_name=batch_name,
+                subtype=subtype,
+                domain=domain,
+                include=include or [],
+                exclude=exclude or [],
+                limit=limit,
+                include_empty=include_empty,
+                overwrite=overwrite,
                 as_json=as_json,
             )
         except BrainOpsError as error:

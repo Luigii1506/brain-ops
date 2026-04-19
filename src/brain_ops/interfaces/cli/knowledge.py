@@ -1052,6 +1052,96 @@ def present_show_entity_relations_command(
 import typer  # noqa: E402 — used above by present_query_relations_command
 
 
+def present_batch_propose_relations_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    batch_name: str,
+    subtype: str | None,
+    domain: str | None,
+    include: list[str],
+    exclude: list[str],
+    limit: int | None,
+    include_empty: bool,
+    overwrite: bool,
+    as_json: bool,
+) -> None:
+    """Campaña 2.1 Paso 4 — materialise a batch of relation proposals.
+
+    Writes to `<vault>/.brain-ops/relations-proposals/batch-<name>/` only;
+    never mutates any vault note. Emits `manifest.yaml`, per-entity
+    `<entity>.yaml` proposals, `missing_entities.md`, and `summary.md`.
+    """
+    import json as _json
+
+    from brain_ops.domains.knowledge.relations_batch import (
+        BatchBuildError, BatchFilter, build_batch,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=True)
+    filter_ = BatchFilter(
+        subtype=subtype,
+        domain=domain,
+        include=tuple(include) if include else (),
+        exclude=tuple(exclude) if exclude else (),
+        limit=limit,
+    )
+    try:
+        result = build_batch(
+            vault, batch_name, filter_,
+            skip_empty=not include_empty,
+            overwrite=overwrite,
+        )
+    except BatchBuildError as exc:
+        console.print(f"[red]error[/red]: {exc}")
+        raise typer.Exit(code=2)
+
+    if as_json:
+        console.print_json(data=result.to_dict())
+        return
+
+    totals = result.totals
+    console.print(
+        f"[green]batch built[/green]  "
+        f"name={result.batch_name}  "
+        f"entities={totals['entities']}  "
+        f"triples={totals['triples_proposed']} "
+        f"(high={totals['triples_high']}, medium={totals['triples_medium']})  "
+        f"missing={totals['missing_entity_candidates']}"
+    )
+    console.print(f"[dim]{result.batch_dir}[/dim]")
+
+    tbl = Table(title=f"Batch {result.batch_name}")
+    tbl.add_column("entity")
+    tbl.add_column("baseline\ntyped", justify="right")
+    tbl.add_column("proposed", justify="right")
+    tbl.add_column("high", justify="right")
+    tbl.add_column("medium", justify="right")
+    tbl.add_column("missing", justify="right")
+    for e in result.entities:
+        tbl.add_row(
+            e.name,
+            str(e.baseline_typed),
+            str(e.proposed),
+            str(e.high),
+            str(e.medium),
+            str(e.missing_count),
+        )
+    console.print(tbl)
+
+    if result.skipped_empty:
+        console.print(
+            f"\n[dim]skipped (no proposals after filter): "
+            f"{', '.join(result.skipped_empty)}[/dim]"
+        )
+
+    console.print(
+        "\n[bold]Next:[/bold] edit the per-entity YAMLs, then run "
+        f"`brain apply-relations-batch {result.batch_name} --config config/vault.yaml` "
+        "(dry-run first)."
+    )
+
+
 def present_apply_relations_batch_command(
     console: Console,
     *,
@@ -1228,6 +1318,7 @@ __all__ = [
     "present_migrate_knowledge_db_command",
     "present_normalize_domain_command",
     "present_apply_relations_batch_command",
+    "present_batch_propose_relations_command",
     "present_propose_relations_command",
     "present_query_relations_command",
     "present_show_entity_relations_command",

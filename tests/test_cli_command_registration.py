@@ -170,6 +170,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "show-entity-relations",
                 "propose-relations",
                 "apply-relations-batch",
+                "batch-propose-relations",
             },
         )
 
