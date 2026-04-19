@@ -918,6 +918,70 @@ def present_migrate_knowledge_db_command(
             console.print(f"  {a['version']:>3}  {a['description']}  @ {a['applied_at']}")
 
 
+def present_query_relations_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    from_entity: str | None,
+    to_entity: str | None,
+    predicate: str | None,
+    include_legacy: bool,
+    limit: int | None,
+    as_json: bool,
+) -> None:
+    """Subfase 2.0 — query the typed-relations graph (SQLite)."""
+    import json as _json
+
+    from brain_ops.domains.knowledge.relations_query import query_relations
+
+    if from_entity is None and to_entity is None and predicate is None:
+        console.print(
+            "[red]error[/red]: pass at least one of --from, --to, or --predicate."
+        )
+        raise typer.Exit(code=2)
+
+    vault = load_validated_vault(config_path, dry_run=False)
+    db_path = Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db"
+
+    rows = query_relations(
+        db_path,
+        from_entity=from_entity,
+        to_entity=to_entity,
+        predicate=predicate,
+        include_legacy=include_legacy,
+        limit=limit,
+    )
+
+    if as_json:
+        console.print_json(data=[r.to_dict() for r in rows])
+        return
+
+    if not rows:
+        console.print("[yellow]No results.[/yellow]")
+        return
+
+    tbl = Table()
+    tbl.add_column("source")
+    tbl.add_column("predicate")
+    tbl.add_column("target")
+    tbl.add_column("confidence")
+    tbl.add_column("type")
+    for r in rows:
+        kind = "typed" if r.is_typed else "[dim]legacy[/dim]"
+        tbl.add_row(
+            r.source_entity,
+            r.predicate or "[dim]—[/dim]",
+            r.target_entity,
+            r.confidence or "[dim]—[/dim]",
+            kind,
+        )
+    console.print(tbl)
+    console.print(f"[dim]{len(rows)} result(s).[/dim]")
+
+
+import typer  # noqa: E402 — used above by present_query_relations_command
+
+
 __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
@@ -930,6 +994,7 @@ __all__ = [
     "present_lint_schemas_command",
     "present_migrate_knowledge_db_command",
     "present_normalize_domain_command",
+    "present_query_relations_command",
     "present_registry_lint_command",
     "present_replay_extractions_command",
     "present_query_knowledge_command",

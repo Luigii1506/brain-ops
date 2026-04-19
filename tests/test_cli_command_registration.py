@@ -166,6 +166,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "disambiguate-bare",
                 "fix-capitalization",
                 "fill-domain",
+                "query-relations",
             },
         )
 

@@ -17,6 +17,7 @@ from .knowledge import (
     present_entity_relations_command,
     present_enrich_entity_command,
     present_fill_domain_command,
+    present_query_relations_command,
     present_fix_capitalization_command,
     present_ingest_source_command,
     present_lint_schemas_command,
@@ -1303,6 +1304,31 @@ entity: false
         """Run health checks on the entity registry."""
         try:
             present_registry_lint_command(console, config_path=config_path, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("query-relations")
+    def query_relations_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        from_entity: str | None = typer.Option(None, "--from", help="Filter by source entity."),
+        to_entity: str | None = typer.Option(None, "--to", help="Filter by target entity."),
+        predicate: str | None = typer.Option(None, "--predicate", help="Filter by canonical predicate."),
+        include_legacy: bool = typer.Option(False, "--include-legacy", help="Include untyped `related:` rows."),
+        limit: int | None = typer.Option(None, "--limit", help="Cap number of results."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Subfase 2.0 — query the typed relations graph in knowledge.db."""
+        try:
+            present_query_relations_command(
+                console,
+                config_path=config_path,
+                from_entity=from_entity,
+                to_entity=to_entity,
+                predicate=predicate,
+                include_legacy=include_legacy,
+                limit=limit,
+                as_json=as_json,
+            )
         except BrainOpsError as error:
             handle_error(error)
 
