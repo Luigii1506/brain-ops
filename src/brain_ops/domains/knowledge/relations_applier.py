@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shlex
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -91,6 +92,11 @@ class ApplyReport:
     aborted: bool = False
     abort_reason: str | None = None
     missing_entity_queue: list[str] = field(default_factory=list)
+    # Planned entity list captured before the apply loop. Used to compute
+    # `not_processed_entities` when a batch aborts mid-run.
+    planned_entities: list[str] = field(default_factory=list)
+    vault_path: Path | None = None
+    knowledge_folder: str | None = None
 
     @property
     def total_applied(self) -> int:
@@ -103,6 +109,68 @@ class ApplyReport:
             for e in self.entities
         )
 
+    @property
+    def applied_entities(self) -> list[str]:
+        """Entities that successfully received at least one triple.
+
+        In abort scenarios (dry_run=False only), these are the notes that
+        were actually written before the applier halted. User should consult
+        this list before deciding whether to roll back the batch manually.
+        """
+        return [e.entity for e in self.entities if e.ok and e.applied_ids]
+
+    @property
+    def aborted_entity(self) -> str | None:
+        if not self.aborted:
+            return None
+        for e in reversed(self.entities):
+            if not e.ok:
+                return e.entity
+        return None
+
+    @property
+    def not_processed_entities(self) -> list[str]:
+        processed = {e.entity for e in self.entities}
+        return [name for name in self.planned_entities if name not in processed]
+
+    def rollback_instructions(self) -> list[str]:
+        """Shell commands (copy-pasteable) to restore the vault to the
+        pre-batch snapshot. Only meaningful when a non-dry-run apply has
+        taken a snapshot; returns an explanatory message otherwise.
+        """
+        if self.dry_run:
+            return ["# Dry-run: nothing was written. No rollback needed."]
+        if self.snapshot_path is None:
+            return ["# No snapshot recorded — cannot auto-generate rollback commands."]
+        if self.vault_path is None or self.knowledge_folder is None:
+            return ["# Vault context missing on report — restore snapshot manually."]
+
+        knowledge = self.vault_path / self.knowledge_folder
+        snapshot_knowledge = self.snapshot_path / self.knowledge_folder
+        renamed = str(knowledge) + ".pre-rollback"
+        qk = shlex.quote(str(knowledge))
+        qs = shlex.quote(str(snapshot_knowledge))
+        qr = shlex.quote(renamed)
+        return [
+            f"# Rollback protocol for batch {self.batch_name}",
+            f"# Entities already applied ({len(self.applied_entities)}):",
+            *[f"#   - {name}" for name in self.applied_entities],
+            f"# Entity that aborted: {self.aborted_entity or '(none)'}",
+            f"# Entities not processed ({len(self.not_processed_entities)}):",
+            *[f"#   - {name}" for name in self.not_processed_entities],
+            f"#",
+            f"# 1. Move current Knowledge folder aside (safety):",
+            f"mv {qk} {qr}",
+            f"# 2. Restore from snapshot:",
+            f"cp -R {qs} {qk}",
+            f"# 3. Rebuild SQLite from restored frontmatter:",
+            f"brain compile-knowledge --config config/vault.yaml",
+            f"# 4. Verify no stray writes (optional — should return nothing):",
+            f"diff -r {qk} {qs} | head",
+            f"# 5. After verifying, remove the renamed folder:",
+            f"# rm -rf {qr}",
+        ]
+
     def to_dict(self) -> dict:
         return {
             "batch_name": self.batch_name,
@@ -114,6 +182,11 @@ class ApplyReport:
             "abort_reason": self.abort_reason,
             "snapshot_path": str(self.snapshot_path) if self.snapshot_path else None,
             "missing_entity_queue": list(self.missing_entity_queue),
+            "planned_entities": list(self.planned_entities),
+            "applied_entities": self.applied_entities,
+            "aborted_entity": self.aborted_entity,
+            "not_processed_entities": self.not_processed_entities,
+            "rollback_instructions": self.rollback_instructions(),
             "entities": [
                 {
                     "entity": e.entity,
@@ -443,10 +516,13 @@ def apply_batch(
         batch_name=batch_name,
         dry_run=dry_run,
         allow_mentions=allow_mentions,
+        vault_path=Path(vault.config.vault_path),
+        knowledge_folder=vault.config.folders.knowledge,
     )
 
     batch_dir = resolve_batch_dir(vault, batch_name)
     proposals = load_batch(batch_dir)
+    report.planned_entities = [lp.entity for lp in proposals]
 
     # Phase 1: plan all entities (no writes yet).
     plans: list[tuple[LoadedProposal, Path, str, list[ProposalTriple], list, dict[SkipReason, list[str]]]] = []

@@ -465,6 +465,134 @@ class ApplyBatchNoFilesOutsideBatchTestCase(TestCase):
             self.assertEqual(other_path.read_bytes(), other_pre)
 
 
+class ApplyBatchAbortGuidanceTestCase(TestCase):
+    """When a batch aborts mid-run, the report must provide explicit
+    rollback guidance (applied, aborted, not-processed, commands)."""
+
+    def _build_batch_and_sabotage(self, td: Path) -> tuple[Vault, Path]:
+        root = td / "vault"
+        vault = _mk_vault(root)
+        _canonical_entity(root, "Platón")
+        _canonical_entity(root, "Sócrates")
+        # 3 entities scheduled: E1 (OK), E2 (will abort), E3 (never processed)
+        _write_note(root, "E1", {
+            "name": "E1", "entity": True, "type": "person",
+            "subtype": "person", "object_kind": "entity",
+            "domain": "filosofia",
+        }, "Body.\n")
+        _write_note(root, "E2", {
+            "name": "E2", "entity": True, "type": "person",
+            "subtype": "person", "object_kind": "entity",
+            "domain": "filosofia",
+        }, "Body.\n")
+        _write_note(root, "E3", {
+            "name": "E3", "entity": True, "type": "person",
+            "subtype": "person", "object_kind": "entity",
+            "domain": "filosofia",
+        }, "Body.\n")
+
+        batch_dir = resolve_batch_dir(vault, "abortdemo")
+        _write_proposal(batch_dir, "E1", [
+            {"id": "e1-01", "predicate": "studied_under", "object": "Platón",
+             "confidence": "high", "status": "approved",
+             "object_status": "canonical_entity_exists"},
+        ])
+        _write_proposal(batch_dir, "E2", [
+            {"id": "e2-01", "predicate": "studied_under", "object": "Sócrates",
+             "confidence": "high", "status": "approved",
+             "object_status": "canonical_entity_exists"},
+        ])
+        _write_proposal(batch_dir, "E3", [
+            {"id": "e3-01", "predicate": "mentor_of", "object": "Platón",
+             "confidence": "high", "status": "approved",
+             "object_status": "canonical_entity_exists"},
+        ])
+        return vault, batch_dir
+
+    def test_abort_stops_and_reports_applied_vs_not_processed(self) -> None:
+        import brain_ops.domains.knowledge.relations_applier as applier_mod
+
+        with TemporaryDirectory() as td:
+            vault, _ = self._build_batch_and_sabotage(Path(td))
+
+            # Sabotage the hash check so the SECOND entity's post-hash drifts.
+            # We monkeypatch _sha to return a bad value when called with the
+            # byte signature of E2's post-body.
+            original_sha = applier_mod._sha
+            call_counter = {"n": 0}
+
+            def sabotaged_sha(data: bytes) -> str:
+                call_counter["n"] += 1
+                # The order of _sha() calls per entity is:
+                #   1. body_sha_before, 2. fm_outside_sha_before,
+                #   3. body_sha_after,  4. fm_outside_sha_after
+                # So for entity 2 (calls 5-8), we sabotage call 7 (body_after).
+                if call_counter["n"] == 7:
+                    return "DRIFT-SENTINEL"
+                return original_sha(data)
+
+            applier_mod._sha = sabotaged_sha
+            try:
+                report = apply_batch("abortdemo", vault, dry_run=False)
+            finally:
+                applier_mod._sha = original_sha
+
+        self.assertTrue(report.aborted)
+        self.assertEqual(report.applied_entities, ["E1"])
+        self.assertEqual(report.aborted_entity, "E2")
+        self.assertEqual(report.not_processed_entities, ["E3"])
+        self.assertIn("E2: body drift", report.abort_reason)
+
+    def test_rollback_instructions_reference_snapshot_and_knowledge_path(self) -> None:
+        import brain_ops.domains.knowledge.relations_applier as applier_mod
+
+        with TemporaryDirectory() as td:
+            vault, _ = self._build_batch_and_sabotage(Path(td))
+
+            original_sha = applier_mod._sha
+            call_counter = {"n": 0}
+
+            def sabotaged_sha(data: bytes) -> str:
+                call_counter["n"] += 1
+                if call_counter["n"] == 7:
+                    return "DRIFT-SENTINEL"
+                return original_sha(data)
+
+            applier_mod._sha = sabotaged_sha
+            try:
+                report = apply_batch("abortdemo", vault, dry_run=False)
+            finally:
+                applier_mod._sha = original_sha
+
+        instructions = "\n".join(report.rollback_instructions())
+        self.assertIn("Entities already applied (1)", instructions)
+        self.assertIn("- E1", instructions)
+        self.assertIn("Entity that aborted: E2", instructions)
+        self.assertIn("- E3", instructions)  # not processed
+        self.assertIn("cp -R", instructions)
+        self.assertIn("brain compile-knowledge", instructions)
+        self.assertIn(str(report.snapshot_path), instructions)
+
+    def test_dry_run_rollback_is_noop_message(self) -> None:
+        with TemporaryDirectory() as td:
+            root = Path(td) / "vault"
+            vault = _mk_vault(root)
+            _canonical_entity(root, "Platón")
+            _write_note(root, "Aristóteles", {
+                "name": "Aristóteles", "entity": True, "type": "person",
+                "subtype": "person", "object_kind": "entity",
+                "domain": "filosofia",
+            }, "Body.\n")
+            batch_dir = resolve_batch_dir(vault, "dryrun1")
+            _write_proposal(batch_dir, "Aristóteles", [
+                {"id": "a-01", "predicate": "studied_under", "object": "Platón",
+                 "confidence": "high", "status": "approved",
+                 "object_status": "canonical_entity_exists"},
+            ])
+            report = apply_batch("dryrun1", vault, dry_run=True)
+        self.assertIn("Dry-run", report.rollback_instructions()[0])
+
+
 class ApplyBatchReportShapeTestCase(TestCase):
     def test_report_to_dict_is_serializable(self) -> None:
         import json

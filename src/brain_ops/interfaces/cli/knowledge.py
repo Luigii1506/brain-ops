@@ -1091,6 +1091,9 @@ def present_apply_relations_batch_command(
 
     mode = "DRY-RUN" if report.dry_run else "APPLIED"
     banner_color = "yellow" if report.dry_run else "green"
+    if report.aborted:
+        banner_color = "red"
+        mode = "ABORTED"
     console.print(
         f"[bold {banner_color}]{mode}[/bold {banner_color}] "
         f"batch={report.batch_name}  "
@@ -1099,7 +1102,7 @@ def present_apply_relations_batch_command(
         f"skipped={report.total_skipped}"
     )
     if report.aborted:
-        console.print(f"[red]ABORTED:[/red] {report.abort_reason}")
+        console.print(f"[red]ABORT REASON:[/red] {report.abort_reason}")
     if report.snapshot_path:
         console.print(f"[dim]snapshot: {report.snapshot_path}[/dim]")
 
@@ -1137,6 +1140,19 @@ def present_apply_relations_batch_command(
             console.print(
                 f"  [dim]... {len(report.missing_entity_queue) - 15} more[/dim]"
             )
+
+    if report.aborted:
+        console.print(
+            f"\n[bold red]ROLLBACK GUIDANCE[/bold red] — batch halted mid-run.\n"
+            f"No auto-restore performed. Review the state below and decide "
+            f"whether to keep the partial apply or roll back manually."
+        )
+        console.print(f"Entities applied before abort: {report.applied_entities}")
+        console.print(f"Entity that aborted: {report.aborted_entity}")
+        console.print(f"Entities not processed: {report.not_processed_entities}")
+        console.print("\n[bold]Manual rollback commands:[/bold]")
+        for line in report.rollback_instructions():
+            console.print(f"  {line}")
 
 
 def present_propose_relations_command(
