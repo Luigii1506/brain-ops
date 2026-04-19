@@ -208,6 +208,12 @@ _BODY_TRIGGERS: list[tuple[str, tuple[str, ...], int]] = [
     ("allied_with", ("aliado de", "aliada de", "alianza con", "allied with"), 40),
     ("member_of", ("miembro de", "member of"), 40),
     ("appears_in", ("aparece en", "appears in"), 40),
+    # Campaña 2.1 mini-subfase #2: nominal triggers for succession + adoption.
+    # Decided conservatively: only the unambiguous forms. `hijastro de` deferred
+    # because mapping to adopted_by vs child_of is a policy decision that needs
+    # its own round.
+    ("succeeded", ("sucesor de", "sucesora de"), 40),
+    ("adopted_by", ("adoptado por", "adoptada por"), 40),
 ]
 
 # Hedging words — presence in the same sentence downgrades HIGH to MEDIUM.

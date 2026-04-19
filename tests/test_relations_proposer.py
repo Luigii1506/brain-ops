@@ -187,6 +187,70 @@ class BodyExtractionTestCase(TestCase):
         self.assertEqual(len(founded), 1)
         self.assertEqual(founded[0].object, "Linnean Society")
 
+    def test_nominal_trigger_sucesor_de_emits_succeeded(self) -> None:
+        """Campaña 2.1 mini-subfase #2: `sucesor de [[X]]` fires `succeeded`."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Trajano")
+            _write_note(vault.root, "Adriano", {
+                "name": "Adriano",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Sucesor de [[Trajano]], abandonó las conquistas en Mesopotamia.")
+            result = propose_relations_for_entity("Adriano", vault)
+
+        succ = [p for p in result.proposal if p.predicate == "succeeded"]
+        self.assertEqual(len(succ), 1)
+        self.assertEqual(succ[0].object, "Trajano")
+        self.assertEqual(succ[0].confidence, "high")
+
+    def test_nominal_trigger_sucesora_de_emits_succeeded(self) -> None:
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Isabel I")
+            _write_note(vault.root, "María II", {
+                "name": "María II",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Sucesora de [[Isabel I]] en el trono inglés.")
+            result = propose_relations_for_entity("María II", vault)
+
+        succ = [p for p in result.proposal if p.predicate == "succeeded"]
+        self.assertEqual(len(succ), 1)
+        self.assertEqual(succ[0].object, "Isabel I")
+
+    def test_nominal_trigger_adoptado_por_emits_adopted_by(self) -> None:
+        """`adoptado por [[X]]` fires adopted_by (canonical predicate from Paso 1)."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Claudio")
+            _write_note(vault.root, "Nerón", {
+                "name": "Nerón",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Fue adoptado por [[Claudio]] en 50 d.C.")
+            result = propose_relations_for_entity("Nerón", vault)
+
+        adopt = [p for p in result.proposal if p.predicate == "adopted_by"]
+        self.assertEqual(len(adopt), 1)
+        self.assertEqual(adopt[0].object, "Claudio")
+        self.assertEqual(adopt[0].confidence, "high")
+
+    def test_nominal_trigger_adoptada_por_emits_adopted_by(self) -> None:
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Adriano Pater")
+            _write_note(vault.root, "Sabina", {
+                "name": "Sabina",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Adoptada por [[Adriano Pater]] tras la muerte de su padre biológico.")
+            result = propose_relations_for_entity("Sabina", vault)
+
+        adopt = [p for p in result.proposal if p.predicate == "adopted_by"]
+        self.assertEqual(len(adopt), 1)
+        self.assertEqual(adopt[0].object, "Adriano Pater")
+
     def test_multiple_predicates_same_target_both_emitted(self) -> None:
         with TemporaryDirectory() as td:
             vault = _mk_vault(Path(td))

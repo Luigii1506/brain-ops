@@ -364,6 +364,85 @@ baja para 2.1 actual (no bloquea el cierre).
 
 ---
 
+## 6. Tiberio skipped — exact string match insuficiente con adverbios intercalados
+
+**Discovered**: Campaña 2.1, mini-subfase #2 trigger expansion
+(commit posterior a `00cc877`), regen de `Fase2-romanos-post-augusto`.
+
+**What is wrong**: Tiberio tiene en su body la frase exacta:
+
+> *"Hijastro y sucesor reluctante de [[Augusto]]"*
+
+El trigger nuevo `"sucesor de"` → `succeeded` **no disparó** sobre esta
+oración porque el adverbio "reluctante" está intercalado entre
+"sucesor" y "de". El matcher actual del extractor es `str.find` literal
+sobre la ventana (sin normalización gramatical), por lo que
+`"sucesor de"` como substring contiguo no aparece — aunque
+semánticamente la relación sucesoria es obvia para cualquier lector.
+
+La misma frase sí permitió desbloquear **Adriano** (`"Sucesor de
+[[Trajano]]"`, sin adverbio). La mini-subfase #2 desbloqueó 1 nota
+(Adriano) y dejó 1 nota bloqueada (Tiberio) por este caso específico.
+
+**Punto clave — el problema NO es el predicado**:
+
+- `succeeded` está en `CANONICAL_PREDICATES` desde Campaña 0.
+- El trigger `"sucesor de"` está semánticamente bien elegido.
+- Los tests unitarios del trigger pasan (`test_nominal_trigger_sucesor_de_emits_succeeded`).
+- Adriano confirma que funciona en casos limpios.
+
+El problema es que el **matcher del extractor** es demasiado rígido:
+solo acepta la subcadena contigua exacta. Cualquier adverbio,
+adjetivo o inciso entre el sustantivo y la preposición rompe el match.
+
+**Remediation paths**:
+
+1. **Matcher regex/tolerante a adverbios** (mejora mayor, ~40 LoC +
+   tests): reemplazar el `str.find` por un matcher regex que acepte
+   `"sucesor\s+(\w+\s+)?de"` — permitir 0 o 1 palabra intermedia.
+   Ejemplos que desbloquearía:
+   - "sucesor reluctante de" ✓
+   - "sucesor natural de" ✓
+   - "sucesora indiscutible de" ✓
+   - "hijastro y sucesor de" ✓ (si mantenemos "sucesor de" aislado)
+
+   Riesgo: también podría aceptar combinaciones indeseadas (ej.
+   "sucesor principal es X de Y" si la regex es demasiado liberal).
+   Diseño cuidadoso necesario.
+
+2. **Wider trigger set con formas explícitas** (mini-subfase #3): en
+   lugar de regex, añadir manualmente las N variantes más comunes:
+   `"sucesor natural de"`, `"sucesor reluctante de"`, `"sucesor
+   directo de"`, etc. Cubre casos de alta frecuencia sin complejidad
+   nueva del motor. Más controlable pero menos escalable.
+
+3. **Body tweak caso por caso**: reformular la frase de Tiberio para
+   que el trigger dispare exacto. Rompe la política frontmatter-only
+   de 2.1.
+
+4. **LLM-assisted extractor (2.2)**: lee la prosa semánticamente y
+   emite la relación sin depender del pattern exacto. Solución de
+   fondo pero out of 2.1 scope.
+
+**Priority**: media. Solo afecta casos específicos donde la prosa usa
+el adverbio intercalado. En el vault actual es probable que haya
+varias docenas de estos (ej. "el sucesor legítimo de X", "la
+discípula favorita de Y", "el alumno más brillante de Z"). Conforme
+escalemos a más batches, el impacto crecerá.
+
+**Notable — afecta a múltiples predicados, no solo `succeeded`**:
+el mismo problema aparece potencialmente con `"discípulo brillante
+de"` (studied_under), `"amigo íntimo de"` (sin predicado canónico
+obvio), `"rival declarado de"` (opposed), etc. Si se adopta remediation
+path #1 (regex matcher), beneficia a todos los triggers nominales
+recientemente añadidos (`fundador de`, `sucesor de`, etc.) y futuros.
+
+**Tracked in**:
+- `<vault>/.brain-ops/relations-proposals/batch-Fase2-romanos-post-augusto/`
+  (Tiberio sigue en `skipped_empty` del manifest tras mini-subfase #2)
+
+---
+
 ## How to add to this file
 
 When a campaña discovers a cleanup-level issue that is legitimately out
