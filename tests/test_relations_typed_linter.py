@@ -326,3 +326,33 @@ class NoNoiseOnBaselineTestCase(TestCase):
                      "relation_object_is_disambig_page"}
         rel_flags = [v for v in vs if v.field in rel_rules]
         self.assertEqual(rel_flags, [])
+
+
+# ---------------------------------------------------------------------------
+# Campaña 2.1 — adoptive predicates are canonical
+# ---------------------------------------------------------------------------
+class AdoptivePredicatesTestCase(TestCase):
+    def test_adopted_by_is_canonical(self) -> None:
+        fm = _mk_note("Augusto", relationships=[
+            {"predicate": "adopted_by", "object": "Julio César"},
+        ])
+        vs = validate_note("x.md", "Augusto", fm)
+        self.assertEqual(_rel_violations(vs, "relation_unknown_predicate"), [])
+
+    def test_adoptive_parent_of_is_canonical(self) -> None:
+        fm = _mk_note("Julio César", relationships=[
+            {"predicate": "adoptive_parent_of", "object": "Augusto"},
+        ])
+        vs = validate_note("x.md", "Julio César", fm)
+        self.assertEqual(_rel_violations(vs, "relation_unknown_predicate"), [])
+
+    def test_biological_and_adoptive_to_same_target_are_not_duplicates(self) -> None:
+        # A writer could, in principle, assert both edges for one person.
+        # Dedup key is (source, predicate, object), so two different predicates
+        # to the same target must not flag as duplicates.
+        fm = _mk_note("Augusto", relationships=[
+            {"predicate": "child_of", "object": "Julio César"},
+            {"predicate": "adopted_by", "object": "Julio César"},
+        ])
+        vs = validate_note("x.md", "Augusto", fm)
+        self.assertEqual(_rel_violations(vs, "relation_duplicate"), [])
