@@ -29,6 +29,7 @@ Rules this module enforces:
 
 from __future__ import annotations
 
+import functools
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -297,6 +298,72 @@ def _find_trigger_in_window(trigger: str, window_lower: str) -> int | None:
     """
     idx = window_lower.rfind(trigger)
     return idx if idx >= 0 else None
+
+
+# ---------------------------------------------------------------------------
+# Regex matcher for multi-word triggers — Campaña 2.2A Paso 2
+# ---------------------------------------------------------------------------
+#
+# Pure function. NOT wired to `_extract_from_body` yet. Paso 3 will integrate
+# it behind a simple dispatch: "trigger contains space -> use regex; else
+# keep str.find". For now this exists, is tested, and is callable in
+# isolation.
+
+# Upper bound on number of intermediate tokens (adverbs / adjectives)
+# allowed between the literal tokens of a trigger. Chosen conservatively
+# per the plan (D1 = 2). Lowering to 1 is the first escape hatch if the
+# benchmark shows FPs from cross-clause matches.
+_MAX_INTERMEDIATE_TOKENS: int = 2
+
+
+@functools.lru_cache(maxsize=256)
+def _build_regex_for_trigger(phrase: str, max_intermediate: int) -> re.Pattern:
+    """Build a regex that matches a multi-word trigger with optional
+    adverbs/adjectives intercalated between its literal tokens.
+
+    Only multi-word triggers use this path. Single-word triggers (verbs
+    like "fundó", "founded", "conquered") stay on `str.rfind` — there is
+    nothing to intercalate for them.
+
+    Between consecutive literal tokens, the regex allows 0 to
+    `max_intermediate` intermediate `\\w+` tokens, each separated by
+    whitespace. Word boundaries (`\\b`) guard both ends to prevent
+    substring matches (e.g. `"sucesor de"` must not match inside
+    `"predecesor de"`). Match is case-insensitive so the caller does not
+    have to lowercase the input first when reaching the regex path.
+
+    Punctuation between tokens (commas, semicolons, dashes) is NOT
+    permitted intercalation — `\\w+` only covers word characters, so
+    any non-word character breaks the match. This is intentional: a
+    comma likely indicates a clause boundary and the match would likely
+    cross to a different grammatical subject.
+
+    The function is cached because a small, fixed number of multi-word
+    trigger phrases get compiled once per process.
+
+    Examples (illustrative, with max_intermediate=2):
+        _build_regex_for_trigger("sucesor de", 2)
+        → compiled /\\bsucesor(?:\\s+\\w+){0,2}\\s+de\\b/i
+        _build_regex_for_trigger("fundador de", 2)
+        → compiled /\\bfundador(?:\\s+\\w+){0,2}\\s+de\\b/i
+    """
+    tokens = phrase.split()
+    if len(tokens) < 2:
+        raise ValueError(
+            f"_build_regex_for_trigger requires a multi-word trigger "
+            f"(got {phrase!r}); single-word triggers should use str.rfind"
+        )
+    if max_intermediate < 0:
+        raise ValueError(
+            f"max_intermediate must be >= 0 (got {max_intermediate})"
+        )
+
+    escaped_tokens = [re.escape(t) for t in tokens]
+    # Connector between consecutive tokens: 0 to N intermediate "\s+\w+"
+    # slots, then the required final "\s+".
+    connector = rf"(?:\s+\w+){{0,{max_intermediate}}}\s+"
+    pattern = r"\b" + connector.join(escaped_tokens) + r"\b"
+    return re.compile(pattern, re.IGNORECASE)
 
 
 def _extract_from_body(

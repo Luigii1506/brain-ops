@@ -13,6 +13,7 @@ from brain_ops.config import FolderConfig, VaultConfig
 from brain_ops.domains.knowledge.relations_proposer import (
     EVIDENCE_SOURCES,
     ProposalResult,
+    _build_regex_for_trigger,
     _find_trigger_in_window,
     propose_relations_for_entity,
 )
@@ -470,6 +471,63 @@ class MatcherHelperTestCase(TestCase):
         # El helper es case-sensitive por diseño — el caller normaliza.
         # Si llega con case mixto, no matchea (comportamiento documentado).
         self.assertIsNone(_find_trigger_in_window("fundó", "FUNDÓ atenas"))
+
+
+class RegexBuilderTestCase(TestCase):
+    """Paso 2 de Campaña 2.2A — función pura `_build_regex_for_trigger`.
+
+    Tests unitarios aislados. El builder existe pero NO está integrado
+    al `_extract_from_body` todavía — Paso 3 hará la integración. Estos
+    tests verifican que el builder genera un regex con la semántica
+    correcta (0 a N tokens intermedios, word boundaries, case-insensitive,
+    puntuación rompe match).
+    """
+
+    # D1: max_intermediate = 2 (conservative)
+    MAX = 2
+
+    def test_zero_intermediate_matches_exact_phrase(self) -> None:
+        """Backwards compat: la frase literal sin intercalados matchea."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        self.assertIsNotNone(regex.search("Adriano, sucesor de Trajano"))
+        self.assertIsNotNone(regex.search("la sucesor de alguien"))
+
+    def test_one_adverb_intermediate_matches(self) -> None:
+        """El caso Tiberio: 'sucesor reluctante de [[Augusto]]'."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        self.assertIsNotNone(regex.search("Tiberio, sucesor reluctante de Augusto"))
+
+    def test_two_tokens_intermediate_matches(self) -> None:
+        """Dos palabras intercaladas (adjetivo + adjetivo) aún dentro del límite."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        self.assertIsNotNone(regex.search("sucesor natural directo de Alguien"))
+
+    def test_three_tokens_intermediate_rejected(self) -> None:
+        """3 palabras excede max_intermediate=2; NO matchea."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        self.assertIsNone(regex.search("sucesor natural muy directo de X"))
+
+    def test_punctuation_between_tokens_breaks_match(self) -> None:
+        """Comas/semicolons/guiones NO son \\w+ — cortan la cláusula."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        # Comas entre tokens: debería romper el match
+        self.assertIsNone(regex.search("sucesor, dicho, de alguien"))
+        # Guion: idem
+        self.assertIsNone(regex.search("sucesor - directo - de alguien"))
+
+    def test_word_boundary_prevents_substring_matches(self) -> None:
+        """'sucesor de' NO debe matchear dentro de 'predecesor de'."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        self.assertIsNone(regex.search("predecesor de Augusto"))
+        # Tampoco sufijos con "sucesor" como substring de otra palabra
+        self.assertIsNone(regex.search("antesucesor de X"))
+
+    def test_case_insensitive_match(self) -> None:
+        """Mayúsculas/minúsculas irrelevantes."""
+        regex = _build_regex_for_trigger("sucesor de", self.MAX)
+        self.assertIsNotNone(regex.search("Sucesor De Trajano"))
+        self.assertIsNotNone(regex.search("SUCESOR DE TRAJANO"))
+        self.assertIsNotNone(regex.search("Sucesor reluctante De Augusto"))
 
 
 class YAMLContractTestCase(TestCase):
