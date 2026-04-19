@@ -1052,6 +1052,66 @@ def present_show_entity_relations_command(
 import typer  # noqa: E402 — used above by present_query_relations_command
 
 
+def present_propose_relations_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    entity: str,
+    include_existing: bool,
+    output: Path | None,
+    stdout: bool,
+    as_json: bool,
+) -> None:
+    """Campaña 2.1 Paso 2 — emit a read-only proposal of typed relations.
+
+    Never mutates the vault note. Writes a YAML proposal file (default:
+    `<vault>/.brain-ops/relations-proposals/<entity>.yaml`) that a human
+    reviewer edits before running `brain apply-relations-batch`.
+    """
+    import json as _json
+
+    import yaml as _yaml
+
+    from brain_ops.domains.knowledge.relations_proposer import (
+        propose_relations_for_entity,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=True)
+    db_path = Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db"
+
+    result = propose_relations_for_entity(
+        entity, vault,
+        db_path=db_path if db_path.exists() else None,
+        include_existing=include_existing,
+    )
+
+    payload = result.to_yaml_dict()
+    serialized = (
+        _json.dumps(payload, ensure_ascii=False, indent=2) if as_json
+        else _yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+    )
+
+    if stdout:
+        console.print(serialized)
+    else:
+        target = output or (
+            Path(vault.config.vault_path)
+            / ".brain-ops" / "relations-proposals" / f"{entity}.yaml"
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(serialized, encoding="utf-8")
+        console.print(f"[green]wrote[/green] {target}")
+
+    high = sum(1 for p in result.proposal if p.confidence == "high")
+    med = sum(1 for p in result.proposal if p.confidence == "medium")
+    missing = len(result.missing_entities_if_approved)
+    console.print(
+        f"[dim]entity={result.entity} · baseline_typed={result.baseline.typed} · "
+        f"proposed={len(result.proposal)} (high={high}, medium={med}) · "
+        f"missing_entities={missing}[/dim]"
+    )
+
+
 __all__ = [
     "present_audit_vault_command",
     "present_compile_knowledge_command",
@@ -1064,6 +1124,7 @@ __all__ = [
     "present_lint_schemas_command",
     "present_migrate_knowledge_db_command",
     "present_normalize_domain_command",
+    "present_propose_relations_command",
     "present_query_relations_command",
     "present_show_entity_relations_command",
     "present_registry_lint_command",

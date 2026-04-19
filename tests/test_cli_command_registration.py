@@ -168,6 +168,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "fill-domain",
                 "query-relations",
                 "show-entity-relations",
+                "propose-relations",
             },
         )
 

@@ -26,6 +26,7 @@ from .knowledge import (
     present_normalize_domain_command,
     present_normalize_frontmatter_command,
     present_process_inbox_command,
+    present_propose_relations_command,
     present_query_knowledge_command,
     present_registry_lint_command,
     present_replay_extractions_command,
@@ -1351,6 +1352,43 @@ entity: false
                 predicate=predicate,
                 include_legacy=include_legacy,
                 limit=limit,
+                as_json=as_json,
+            )
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("propose-relations")
+    def propose_relations_command(
+        entity: str = typer.Argument(..., help="Entity name (exact match)."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        include_existing: bool = typer.Option(
+            False, "--include-existing",
+            help="Also propose triples that are already typed in the note "
+                 "(useful to inspect proposer behavior on piloted notes).",
+        ),
+        output: Path | None = typer.Option(
+            None, "--output",
+            help="Override output path. Default: "
+                 "<vault>/.brain-ops/relations-proposals/<entity>.yaml",
+        ),
+        stdout: bool = typer.Option(
+            False, "--stdout",
+            help="Print the proposal YAML to stdout instead of writing a file.",
+        ),
+        as_json: bool = typer.Option(
+            False, "--json",
+            help="Emit JSON instead of YAML.",
+        ),
+    ) -> None:
+        """Campaña 2.1 Paso 2 — propose typed relations for an entity (read-only)."""
+        try:
+            present_propose_relations_command(
+                console,
+                config_path=config_path,
+                entity=entity,
+                include_existing=include_existing,
+                output=output,
+                stdout=stdout,
                 as_json=as_json,
             )
         except BrainOpsError as error:
