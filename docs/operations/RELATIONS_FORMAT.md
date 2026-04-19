@@ -447,27 +447,26 @@ Campaña 2.0 ships a usable typed-graph infrastructure, but leaves the
 following refinements **unresolved**. They are intentionally deferred and
 tracked here so future campañas pick them up from the same source of truth.
 
-### 12.1 Adoption is conflated with biological parentage
+### 12.1 Adoption — resolved in Campaña 2.1 Paso 1 *(historical)*
 
-The canonical vocabulary has `parent_of` / `child_of` but no dedicated
-adoption predicate. The pilot ships three adoptive edges using the
-biological predicates:
+Originalmente, el piloto 2.0 envió tres edges adoptivos con
+predicados biológicos (`child_of` / `parent_of`) anotados con
+`reason: adoptive …`. Campaña 2.1 Paso 1 introdujo los predicados
+canónicos dedicados `adopted_by` y `adoptive_parent_of`, y migró los
+tres edges byte-level:
 
-- `Augusto       → child_of  → Julio César`   *(adoptivo)*
-- `Julio César   → parent_of → Augusto`       *(adoptivo)*
-- `Marco Aurelio → child_of  → Antonino Pío`  *(adoptivo)*
+- `Augusto       → adopted_by         → Julio César`   *(was child_of)*
+- `Julio César   → adoptive_parent_of → Augusto`       *(was parent_of)*
+- `Marco Aurelio → adopted_by         → Antonino Pío`  *(was child_of)*
 
-Each of these triples carries the annotation
-`reason: adoptive — refinar con predicado específico de adopción si se introduce`
-in the frontmatter. This annotation is **not persisted to SQLite** (see §2.1
-persistence note) — it lives in the YAML and is discoverable by any tool
-that reads the note directly.
+Los triples quedan persistidos en SQLite con los predicados
+adoptivos canónicos; el marcador `reason: adoptive` se eliminó como
+parte de la migración. Ver
+[`CAMPAIGN_2_1_SUMMARY.md`](CAMPAIGN_2_1_SUMMARY.md) §1 para el
+detalle de la migración.
 
-If a future campaña introduces a dedicated predicate (e.g. `adopted_by` /
-`adopted_child_of` / a structured `relation_subtype` field), these edges can
-be migrated deterministically by matching the `reason` marker in frontmatter.
-Until then, treat adoption as an annotation on the biological predicate, not
-a distinct edge type in SQLite.
+La sección se conserva como referencia histórica — explica por qué
+los predicados adoptivos existen en `CANONICAL_PREDICATES`.
 
 ### 12.2 Annotation fields are not queryable from SQLite
 
@@ -489,6 +488,15 @@ this gap is not exercised yet.
 
 ## 13. Changelog
 
+- **2026-04-19 (Campaña 2.1 closure)** — Operational validation phase
+  closed with +17 typed edges (88 total), 6 batches + 2 mini-subfases
+  de triggers, 59 new tests, 6 structured debts identified and
+  documented. Extractor gained nominal-form triggers for `founded`,
+  `succeeded`, `adopted_by`. Adoption debt from §12.1 resolved at the
+  predicate level with new canonical predicates `adopted_by` /
+  `adoptive_parent_of`. See
+  [`CAMPAIGN_2_1_SUMMARY.md`](CAMPAIGN_2_1_SUMMARY.md) for full closure
+  narrative, bottleneck analysis, and 2.2 proposal.
 - **2026-04-18 (post-pilot)** — Campaña 2.0 infrastructure shipped: parser
   (`relations_typed.py`), compile/SQLite persistence of `predicate` +
   `confidence`, schema linter rules, `brain query-relations`,
