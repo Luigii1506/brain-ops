@@ -167,6 +167,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "fix-capitalization",
                 "fill-domain",
                 "query-relations",
+                "show-entity-relations",
             },
         )
 

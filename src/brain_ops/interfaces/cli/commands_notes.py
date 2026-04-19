@@ -18,6 +18,7 @@ from .knowledge import (
     present_enrich_entity_command,
     present_fill_domain_command,
     present_query_relations_command,
+    present_show_entity_relations_command,
     present_fix_capitalization_command,
     present_ingest_source_command,
     present_lint_schemas_command,
@@ -1304,6 +1305,29 @@ entity: false
         """Run health checks on the entity registry."""
         try:
             present_registry_lint_command(console, config_path=config_path, as_json=as_json)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("show-entity-relations")
+    def show_entity_relations_command(
+        entity: str = typer.Argument(..., help="Entity name (exact match)."),
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        only_typed: bool = typer.Option(False, "--only-typed", help="Show only typed relations."),
+        only_legacy: bool = typer.Option(False, "--only-legacy", help="Show only legacy `related:` rows."),
+        all_legacy: bool = typer.Option(False, "--all", help="Show all legacy rows (default truncates to 15)."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Subfase 2.0 — display all relations (in+out, typed+legacy) for an entity."""
+        try:
+            present_show_entity_relations_command(
+                console,
+                config_path=config_path,
+                entity=entity,
+                only_typed=only_typed,
+                only_legacy=only_legacy,
+                all_legacy=all_legacy,
+                as_json=as_json,
+            )
         except BrainOpsError as error:
             handle_error(error)
 

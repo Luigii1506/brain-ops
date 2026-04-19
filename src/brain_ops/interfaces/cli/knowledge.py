@@ -979,6 +979,76 @@ def present_query_relations_command(
     console.print(f"[dim]{len(rows)} result(s).[/dim]")
 
 
+def present_show_entity_relations_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    entity: str,
+    only_typed: bool,
+    only_legacy: bool,
+    all_legacy: bool,
+    as_json: bool,
+) -> None:
+    """Subfase 2.0 — show all relations (typed + legacy, in+out) for one entity."""
+    from brain_ops.domains.knowledge.relations_query import summarize_entity_relations
+
+    vault = load_validated_vault(config_path, dry_run=False)
+    db_path = Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db"
+    summary = summarize_entity_relations(db_path, entity)
+
+    if as_json:
+        console.print_json(data=summary.to_dict())
+        return
+
+    # Render human-readable output
+    console.print(f"[bold]=== {entity} — outgoing ===[/bold]")
+
+    if not only_legacy:
+        if summary.typed_by_predicate:
+            for predicate in sorted(summary.typed_by_predicate):
+                rels = summary.typed_by_predicate[predicate]
+                console.print(f"\n[bold cyan]{predicate}[/bold cyan]:")
+                for r in rels:
+                    conf = f" [dim]({r.confidence})[/dim]" if r.confidence and r.confidence != "medium" else ""
+                    console.print(f"  - {r.target_entity}{conf}")
+        else:
+            console.print("\n[dim]No typed relations.[/dim]")
+
+    if not only_typed:
+        if summary.legacy:
+            console.print(f"\n[bold]=== {entity} — legacy (related:, untyped) ===[/bold]")
+            legacy_to_show = summary.legacy if all_legacy else summary.legacy[:15]
+            for r in legacy_to_show:
+                console.print(f"  - {r.target_entity}")
+            hidden = len(summary.legacy) - len(legacy_to_show)
+            if hidden > 0:
+                console.print(f"  [dim](... {hidden} more, use --all to see)[/dim]")
+
+    if summary.incoming_typed_by_predicate or summary.incoming_legacy:
+        console.print(f"\n[bold]=== {entity} — incoming ===[/bold]")
+        if not only_legacy:
+            for predicate in sorted(summary.incoming_typed_by_predicate):
+                rels = summary.incoming_typed_by_predicate[predicate]
+                console.print(f"\n[bold cyan]{predicate}[/bold cyan] (← from):")
+                for r in rels:
+                    console.print(f"  - {r.source_entity}")
+        if not only_typed and summary.incoming_legacy:
+            console.print("\n[dim]incoming legacy:[/dim]")
+            incoming_to_show = summary.incoming_legacy if all_legacy else summary.incoming_legacy[:10]
+            for r in incoming_to_show:
+                console.print(f"  - {r.source_entity}")
+            hidden = len(summary.incoming_legacy) - len(incoming_to_show)
+            if hidden > 0:
+                console.print(f"  [dim](... {hidden} more)[/dim]")
+
+    # Footer summary
+    console.print(
+        f"\n[dim]{summary.typed_count} typed · {summary.legacy_count} legacy · "
+        f"{summary.incoming_typed_count} incoming typed · "
+        f"{len(summary.incoming_legacy)} incoming legacy[/dim]"
+    )
+
+
 import typer  # noqa: E402 — used above by present_query_relations_command
 
 
@@ -995,6 +1065,7 @@ __all__ = [
     "present_migrate_knowledge_db_command",
     "present_normalize_domain_command",
     "present_query_relations_command",
+    "present_show_entity_relations_command",
     "present_registry_lint_command",
     "present_replay_extractions_command",
     "present_query_knowledge_command",
