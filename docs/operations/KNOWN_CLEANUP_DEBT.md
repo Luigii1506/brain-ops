@@ -263,6 +263,72 @@ futura independiente.
 
 ---
 
+## 5. Body ensayístico insuficiente para pattern extractor en filosofía
+
+**Discovered**: Campaña 2.1, Batch Fase1-filosofos-nuevos.
+
+**What is wrong**: Tres notas de filósofos fuera del piloto 2.0 quedaron
+skipped (0 proposals) pese a tener body sustancial y contenido
+relacional claro:
+
+| Nota | body_chars | unique wikilinks | Formulación típica que no extrae |
+|---|---|---|---|
+| Averroes | 9,469 | 9 | *"el comentarista más importante de [[Aristóteles]]"* |
+| Agustín de Hipona | 15,864 | 22 | *"Nacido en Tagaste"* (Tagaste sin wikilink) |
+| Parménides | 13,429 | 18 | *"fundador de la escuela eleática"* (escuela sin wikilink) |
+
+Esto extiende el patrón ya documentado en #2 (Zeus) y #3 (Newton) al
+dominio de filosofía. Ninguna de las tres notas es infra-desarrollada
+— todas tienen prosa rica. El problema es el **formato de la prosa**:
+
+- "comentarista de X" — no hay predicado canónico exacto; sería
+  `influenced_by` con matiz específico, o `interpreted_as` en inverso.
+- "fundador de X" — `founded` ES canonical pero el trigger actual del
+  extractor es `"fundó"`, no `"fundador de"`. Modificación posible
+  del extractor (ver nota más abajo).
+- "Nacido en Tagaste" — `born_in` es canonical y el trigger sí dispara,
+  pero el target no está wikilinked. Fix upstream: wikilink en body +
+  crear entidad Tagaste.
+
+**Why Campaña 2.1 can't fix it en los tres casos**:
+
+- Body mutation para añadir wikilinks fuera de scope.
+- Crear entidades masivamente (Tagaste, etc.) fuera de scope de
+  Fase 1 actual.
+- Extender el catálogo de predicados (ej. `commented_on`) introduciría
+  decisiones de taxonomía que no son responsabilidad de 2.1.
+
+**Remediation paths**:
+
+1. **Extractor trigger expansion — `"fundador de"`** (tamaño mini):
+   añadir `"fundador de"` como alias de `"fundó"` en `_BODY_TRIGGERS`.
+   Desbloquearía al menos Parménides (`founded → Escuela eleática`) y
+   probablemente otras figuras que hablan de "fundador" en registro
+   biográfico. Propuesta inmediata como mini-subfase después de
+   Fase 1 apply, no bloquea el batch actual.
+2. **LLM-assisted semantic extractor (Campaña 2.2)**: extrae relaciones
+   desde prosa sin depender del patrón exacto.
+3. **Body enrichment caso por caso**: wikilinkar "Tagaste", crear
+   entidades faltantes, ajustar prosa a formato trigger-friendly. Alto
+   costo por nota, mejor resuelto con asistencia LLM.
+
+**Observación general**: esta entrada (+ #2 Zeus + #3 Newton) sugiere
+que el pattern extractor actual funciona mejor con notas de "formato
+piloto 2.0" (identity-kinship-denso, timeline-estructurado) que con
+notas de "formato ensayo histórico-filosófico" (prosa continua con
+subordinadas). Escalar 2.1 al resto del vault probablemente requiere
+una de las tres remediation paths como paso intermedio.
+
+**Priority**: alta para 2.2 (bloquea el avance real del edge count);
+baja para 2.1 actual (no bloquea el cierre).
+
+**Tracked in**:
+- `<vault>/.brain-ops/relations-proposals/batch-Fase1-filosofos-nuevos/`
+- `Averroes`, `Agustín de Hipona`, `Parménides` aparecen como
+  `skipped_empty` en el manifest de la batch.
+
+---
+
 ## How to add to this file
 
 When a campaña discovers a cleanup-level issue that is legitimately out
