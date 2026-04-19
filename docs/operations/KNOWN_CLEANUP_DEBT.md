@@ -150,6 +150,119 @@ or (3) runs.
 
 ---
 
+## 3. Isaac Newton under-typed — same pattern as Zeus
+
+**Discovered**: Campaña 2.1, Batch F4-science (dry-run confirmatorio).
+
+**What is wrong**: Newton has 71 wikilinks in body (Galileo, Kepler,
+Descartes, Relatividad general, Mecánica cuántica, Gravedad, Órbita,
+Sistema Solar, Sol, etc.) but the pattern extractor returned 0 new
+proposals for him. Current state: **3 typed edges** from the 2.0 pilot
+(`influenced_by → Galileo Galilei`, `influenced_by → Johannes Kepler`,
+`developed → Física clásica`). Nothing more.
+
+What should exist:
+- `author_of → Principia Mathematica` (but Principia isn't a canonical
+  entity in the vault — missing)
+- `influenced → Albert Einstein` (Einstein's relativity generalized
+  Newtonian mechanics; body mentions this)
+- `reacted_against → René Descartes` (body mentions the cartesian
+  debates)
+- `developed → Cálculo diferencial` (as concept, if it existed as
+  entity)
+
+The body of Newton is written as an essay, not a structured fact list.
+Example:
+
+> *"Su síntesis de la física de [[Galileo Galilei]] y la astronomía de
+> [[Johannes Kepler]] bajo un único marco matemático…"*
+
+"Síntesis de" is not a canonical verb trigger; the wikilinks are
+grammatical objects detached from predicate-anchoring verbs within the
+extractor's window.
+
+**Why Campaña 2.1 can't fix it**: same as Zeus (entry #2) — body
+mutation is out of scope, and loosening triggers causes FPs elsewhere.
+
+**Remediation paths**:
+
+1. **Manual typing batch**: write a hand-curated Newton batch with the
+   obvious intellectual-history edges. Cheapest.
+2. **Create `Principia Mathematica` as a canonical entity** (book,
+   1687) and then re-run the proposer — the `author_of` triple would
+   then be extractable from passages like "Sus *Principia Mathematica*
+   (1687) unificaron…" if a small body tweak adds the wikilink.
+3. **LLM-assisted extractor (2.2 scope)**.
+
+**Priority**: baja-media. Newton is a central node in the science
+graph, but the science domain is not a primary 2.1 focus. This debt
+is best paid off alongside building out Einstein's cluster (entry #4
+below).
+
+**Tracked in**: `<vault>/.brain-ops/relations-proposals/batch-F4-science/`
+
+---
+
+## 4. Albert Einstein cluster — 11 missing entities block his graph
+
+**Discovered**: Campaña 2.1, Batch F4-science.
+
+**What is wrong**: Einstein has **2 typed edges** from the pilot
+(`developed → Relatividad especial`, `developed → Relatividad general`)
+and effectively no other graph connectivity. The F4 batch surfaced 1
+additional candidate (`born_in → Ulm`), rejected by priority.
+
+The real problem is that almost every entity Einstein's body links to
+does not exist as a canonical vault entity. All of these are
+real-world, well-documented, structurally important nodes:
+
+| Missing entity | Relation to Einstein |
+|---|---|
+| Mileva Marić | primera esposa, colaboradora en sus estudios |
+| Elsa Einstein | segunda esposa, compañera en el exilio |
+| Marcel Grossmann | colaborador matemático clave en la Relatividad general |
+| Max Planck | uno de los primeros defensores dentro del establishment |
+| Niels Bohr | interlocutor/rival en los debates fundacionales de QM |
+| Arthur Eddington | astrónomo, difusión internacional post-1919 |
+| Princeton | sede final (Institute for Advanced Study) |
+| Ulm | birthplace (Alemania) |
+| ETH Zúrich | formación académica |
+| Instituto de Estudios Avanzados | afiliación Princeton 1933-1955 |
+| Teoría de la relatividad | concepto general (especial + general) |
+| Efecto fotoeléctrico | paper del annus mirabilis 1905, Nobel 1921 |
+
+Creating Ulm alone desbloquearía solo 1 triple. Lo mismo con cualquier
+otra entidad individual. El cluster solo desbloquea valor real
+**completo**.
+
+**Why Campaña 2.1 can't fix it**: 2.1 scope is priority-limited to
+filosofia / historia / religion núcleo (per the plan accepted at the
+start of 2.1). Einstein is a ciencia-domain node. Creating 11 entities
+for one person is a separate project, not an in-scope 2.1 batch.
+
+**Remediation path** (single recommended):
+
+1. **Campaña 2.x-ciencia — Einstein cluster**: dedicated campaign that
+   creates the 11 missing entities en bloque using `brain create-entity`
+   or direct-enrich, then runs a `Einstein-cluster-apply` batch that
+   types all the newly-resolvable edges in one go. Estimated
+   ~20-30 new typed edges across Einstein + each created entity's
+   reciprocal relations. Scope probably includes Newton's missing
+   entities too (Principia Mathematica) — both under-typed science
+   notes are part of the same systemic gap.
+
+No partial remediation makes sense — one-off creations give marginal
+return while inflating the creation queue.
+
+**Priority**: baja para 2.1 (outside scope); media-alta como campaña
+futura independiente.
+
+**Tracked in**:
+- `<vault>/.brain-ops/relations-proposals/batch-F4-science/Albert Einstein.yaml`
+- `al-01 Ulm` rejected por prioridad con review_note explícita.
+
+---
+
 ## How to add to this file
 
 When a campaña discovers a cleanup-level issue that is legitimately out
