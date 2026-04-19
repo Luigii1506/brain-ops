@@ -278,6 +278,27 @@ def _extract_wikilink_target(raw: str) -> str:
     return core.strip()
 
 
+def _find_trigger_in_window(trigger: str, window_lower: str) -> int | None:
+    """Locate the rightmost occurrence of `trigger` inside `window_lower`.
+
+    Returns the offset (within `window_lower`) of the match start, or None
+    if the trigger does not appear.
+
+    Campaña 2.2A Paso 1: this is an exact `str.rfind` — a straight
+    extraction of the matching logic that previously lived inline in
+    `_extract_from_body`. Behavior is unchanged (same tests still pass).
+    Paso 3 will extend this helper to use regex for multi-word triggers
+    so adverbs/adjectives intercalated between tokens ("sucesor reluctante
+    de") become matchable.
+
+    `trigger` is assumed already lowercased; `window_lower` likewise. The
+    caller is responsible for the case normalization so this helper stays
+    pure and cheap per call.
+    """
+    idx = window_lower.rfind(trigger)
+    return idx if idx >= 0 else None
+
+
 def _extract_from_body(
     entity_name: str, body: str
 ) -> list[ProposedRelation]:
@@ -300,8 +321,8 @@ def _extract_from_body(
             slice_start = max(0, target_offset - window)
             preceding_window_lower = preceding_lower[slice_start:target_offset]
             for trigger in triggers:
-                idx = preceding_window_lower.rfind(trigger)
-                if idx < 0:
+                idx = _find_trigger_in_window(trigger, preceding_window_lower)
+                if idx is None:
                     continue
                 absolute_offset = slice_start + idx
                 if best is None or absolute_offset > best[0]:

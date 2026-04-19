@@ -13,6 +13,7 @@ from brain_ops.config import FolderConfig, VaultConfig
 from brain_ops.domains.knowledge.relations_proposer import (
     EVIDENCE_SOURCES,
     ProposalResult,
+    _find_trigger_in_window,
     propose_relations_for_entity,
 )
 from brain_ops.vault import Vault
@@ -445,6 +446,30 @@ class CrossRefEvidenceTestCase(TestCase):
         self.assertEqual(len(mentor_props), 1)
         # cross-ref should be appended because the inverse edge was already in DB
         self.assertIn("cross-ref", mentor_props[0].evidence_source)
+
+
+class MatcherHelperTestCase(TestCase):
+    """Paso 1 de Campaña 2.2A — helper `_find_trigger_in_window`.
+
+    Tests básicos de contrato. El helper solo hace `str.rfind` por ahora;
+    Paso 3 añadirá regex path para triggers multi-palabra. Estos tests
+    deben seguir pasando después del Paso 3 (backwards compat).
+    """
+
+    def test_returns_offset_of_rightmost_match(self) -> None:
+        # "fundó" aparece dos veces; debe devolver la posición del segundo.
+        window = "primero fundó atenas, después fundó el liceo"
+        idx = _find_trigger_in_window("fundó", window)
+        self.assertIsNotNone(idx)
+        self.assertEqual(idx, window.rfind("fundó"))
+
+    def test_returns_none_when_trigger_absent(self) -> None:
+        self.assertIsNone(_find_trigger_in_window("fundó", "nada relevante aquí"))
+
+    def test_expects_lowercased_inputs(self) -> None:
+        # El helper es case-sensitive por diseño — el caller normaliza.
+        # Si llega con case mixto, no matchea (comportamiento documentado).
+        self.assertIsNone(_find_trigger_in_window("fundó", "FUNDÓ atenas"))
 
 
 class YAMLContractTestCase(TestCase):
