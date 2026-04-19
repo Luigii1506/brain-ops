@@ -64,6 +64,92 @@ Kant's body will trip on this same bad wikilink.
 
 ---
 
+## 2. Zeus under-typed — pattern extractor insufficient for olympian kinship
+
+**Discovered**: Campaña 2.1, Batch F3-religion (dry-run confirmatorio).
+
+**What is wrong**: The note
+[`02 - Knowledge/Zeus.md`](../../../../02%20-%20Knowledge/Zeus.md)
+is structurally under-typed for its obvious mythological content.
+
+Current state in SQLite: **1 typed edge** (`located_in → Olimpo`, from
+the 2.0 pilot). Nothing else.
+
+What should exist (standard Greek mythology, no interpretation needed):
+- `child_of → Cronos`, `child_of → Rea`
+- `sibling_of → Poseidón`, `Hades`, `Hera`, `Deméter`, `Hestia`
+- `married_to → Hera`
+- `parent_of → Atenea`, `Apolo`, `Artemisa`, `Hermes`, `Dioniso`,
+  `Heracles`, `Perseo`, and several more
+
+All of those entities exist as canonical notes in the vault. All of
+those facts are affirmed by Zeus's own `related:` list. But the body
+of the Zeus note writes them in a register the pattern extractor
+cannot match. For example:
+
+> *"Zeus es el dios supremo del panteón griego — padre de dioses y hombres"*
+
+The wikilinks `[[Hera]]`, `[[Cronos]]`, `[[Rea]]`, `[[Poseidón]]`,
+`[[Hades]]`, etc. all appear in the body (80 total wikilinks), but
+none are preceded by a trigger verb within the extractor's 40-60
+character window. The note reads as prose essay, not as a structured
+genealogy.
+
+Batch F3-religion therefore returned 0 proposals for Zeus
+(`skipped: Osiris, Zeus` in the batch stats).
+
+**Why Campaña 2.1 can't fix it**:
+
+1. Body mutation to add `hijo de [[Cronos]]`-style phrasing is out of
+   2.1's frontmatter-only constraint.
+2. The pattern extractor's `_BODY_TRIGGERS` are conservative by design;
+   loosening them for this case would produce many false positives
+   elsewhere.
+3. 2.1 refuses to type relations not surfaced by the extractor, to
+   avoid the "invisible curation" problem where edges appear in SQLite
+   without clear YAML provenance.
+
+**Remediation paths** (pick one in a later campaña):
+
+1. **Narrowest — manual typing batch**: produce a hand-curated batch
+   `F3.1-zeus-manual` where the olympian kinship edges are written
+   directly as proposals (bypassing the pattern extractor) and reviewed
+   normally. All facts are mythologically standard — no novel claims.
+   Cheapest intervention. Same hash-verify and idempotency guarantees
+   as any other batch.
+
+2. **Body enrichment**: rewrite sections of Zeus's body so that the
+   kinship predicates are adjacent to their wikilinks (e.g., a
+   `## Genealogía` section listing "Hijo de [[Cronos]] y [[Rea]] …").
+   Would also benefit the reader. But this is a body mutation and
+   should be done with an author-level review, not as 2.x apply.
+
+3. **LLM-assisted semantic extractor (Campaña 2.2 scope)**: an LLM
+   reads the prose and proposes the same triples as a human would,
+   without requiring syntactic pattern match. Already discussed as
+   out-of-scope for 2.1 but a natural 2.2 addition.
+
+**Priority**: medium. Zeus is a central mythological node whose graph
+connectivity is currently near-zero. This hurts queries like "who are
+the children of Cronos", "who is married to Hera", etc. But it's
+isolated — fixing other under-typed deity notes (Hera, Apolo, etc.)
+faces the same issue and should be bundled.
+
+**Not specific to Zeus**: the same pattern likely affects other
+mythological notes whose bodies are written as essays rather than
+structured genealogies. Batch F3-religion confirmed Osiris is well-typed
+(identity-first kinship sentences) and Isis moderately so, but any
+deity whose body is prose-heavy will be under-typed until option (1)
+or (3) runs.
+
+**Tracked in**:
+- Campaña 2.1 Batch F3-religion summary:
+  `<vault>/.brain-ops/relations-proposals/batch-F3-religion/`
+- 2.0 pilot dry-run already flagged Zeus as infra-desarrollada
+  with only 1 triple in `Zeus.yaml` Paso 6.
+
+---
+
 ## How to add to this file
 
 When a campaña discovers a cleanup-level issue that is legitimately out
