@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 from brain_ops.domains.knowledge.llm_extractor import (
     ALLOWED_FLAGS,
     AnthropicLLMClient,
+    OpenAILLMClient,
     LLMExtractionResult,
     LLMResponseCache,
     MockLLMClient,
@@ -871,6 +872,168 @@ class AnthropicLLMClientTestCase(TestCase):
                 client.extract(prompt="p", temperature=0.0)
         # initial + 2 retries = 3 attempts total
         self.assertEqual(flaky.attempts, 3)
+
+
+class OpenAILLMClientTestCase(TestCase):
+    """Paso 6.5: cliente real con mock inyectado — NO requiere `openai` SDK."""
+
+    class _FakeOpenAIClient:
+        """Mock del SDK openai con shape compatible: chat.completions.create."""
+        def __init__(self, response_text: str = '{"proposals": []}'):
+            self.response_text = response_text
+            self.call_count = 0
+            self.last_kwargs = None
+
+            class _Completions:
+                outer = self
+                def create(cls, **kwargs):
+                    cls.outer.call_count += 1
+                    cls.outer.last_kwargs = kwargs
+                    class Message:
+                        content = cls.outer.response_text
+                    class Choice:
+                        message = Message()
+                    class Resp:
+                        choices = [Choice()]
+                    return Resp()
+
+            class _Chat:
+                completions = _Completions()
+
+            self.chat = _Chat()
+
+    def test_instantiation_with_injected_client_does_not_require_sdk(self) -> None:
+        """No import de openai cuando se inyecta _client — testeable sin SDK."""
+        fake = self._FakeOpenAIClient()
+        client = OpenAILLMClient(model="test", _client=fake)
+        self.assertEqual(client.model, "test")
+
+    def test_extract_calls_underlying_chat_completions_create(self) -> None:
+        fake = self._FakeOpenAIClient('{"proposals": [{"predicate": "x"}]}')
+        client = OpenAILLMClient(model="gpt-test", _client=fake)
+        out = client.extract(prompt="hello", temperature=0.0)
+        self.assertEqual(out, '{"proposals": [{"predicate": "x"}]}')
+        self.assertEqual(fake.call_count, 1)
+        self.assertEqual(fake.last_kwargs["model"], "gpt-test")
+        self.assertEqual(fake.last_kwargs["temperature"], 0.0)
+        self.assertEqual(
+            fake.last_kwargs["messages"],
+            [{"role": "user", "content": "hello"}],
+        )
+        # JSON mode hint al modelo
+        self.assertEqual(
+            fake.last_kwargs["response_format"], {"type": "json_object"},
+        )
+
+    def test_cache_hit_skips_underlying_call(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            cache.put("cached prompt", "gpt-test", 0.0, "cached response")
+            fake = self._FakeOpenAIClient("fresh")
+            client = OpenAILLMClient(
+                model="gpt-test", _client=fake, cache=cache,
+            )
+            out = client.extract(prompt="cached prompt", temperature=0.0)
+            self.assertEqual(out, "cached response")
+            self.assertEqual(fake.call_count, 0)
+
+    def test_cache_miss_calls_api_then_caches(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            fake = self._FakeOpenAIClient("fresh response")
+            client = OpenAILLMClient(
+                model="gpt-test", _client=fake, cache=cache,
+            )
+            out = client.extract(prompt="new prompt", temperature=0.0)
+            self.assertEqual(out, "fresh response")
+            self.assertEqual(fake.call_count, 1)
+            out2 = client.extract(prompt="new prompt", temperature=0.0)
+            self.assertEqual(out2, "fresh response")
+            self.assertEqual(fake.call_count, 1)
+
+    def test_retry_on_transient_error_then_success(self) -> None:
+        """Error retryable por nombre (RateLimitError) → retry + éxito."""
+        class RateLimitError(Exception):
+            pass
+
+        class FlakyOpenAI:
+            def __init__(self):
+                self.attempts = 0
+                class _Completions:
+                    outer = self
+                    def create(cls, **kwargs):
+                        cls.outer.attempts += 1
+                        if cls.outer.attempts == 1:
+                            raise RateLimitError("too fast")
+                        class Message:
+                            content = "ok"
+                        class Choice:
+                            message = Message()
+                        class Resp:
+                            choices = [Choice()]
+                        return Resp()
+
+                class _Chat:
+                    completions = _Completions()
+                self.chat = _Chat()
+
+        flaky = FlakyOpenAI()
+        client = OpenAILLMClient(
+            model="gpt-test", _client=flaky, max_retries=3,
+        )
+        import unittest.mock
+        with unittest.mock.patch(
+            "brain_ops.domains.knowledge.llm_extractor.time.sleep"
+        ):
+            out = client.extract(prompt="p", temperature=0.0)
+        self.assertEqual(out, "ok")
+        self.assertEqual(flaky.attempts, 2)
+
+    def test_no_retry_on_non_retryable_error(self) -> None:
+        class BadRequestError(Exception):
+            pass
+
+        class BadOpenAI:
+            def __init__(self):
+                self.attempts = 0
+                class _Completions:
+                    outer = self
+                    def create(cls, **kwargs):
+                        cls.outer.attempts += 1
+                        raise BadRequestError("malformed")
+
+                class _Chat:
+                    completions = _Completions()
+                self.chat = _Chat()
+
+        bad = BadOpenAI()
+        client = OpenAILLMClient(
+            model="gpt-test", _client=bad, max_retries=3,
+        )
+        with self.assertRaises(BadRequestError):
+            client.extract(prompt="p", temperature=0.0)
+        self.assertEqual(bad.attempts, 1)
+
+    def test_unexpected_response_shape_raises(self) -> None:
+        """Si choices está vacío o message.content no es str, surface."""
+        class EmptyOpenAI:
+            class _Completions:
+                @staticmethod
+                def create(**kwargs):
+                    class Resp:
+                        choices = []
+                    return Resp()
+
+            class _Chat:
+                completions = None
+            def __init__(self):
+                self.chat = self._Chat()
+                self.chat.completions = self._Completions()
+
+        empty = EmptyOpenAI()
+        client = OpenAILLMClient(model="gpt-test", _client=empty, max_retries=0)
+        with self.assertRaises(RuntimeError):
+            client.extract(prompt="p", temperature=0.0)
 
 
 class ClosedSetInvariantsTestCase(TestCase):

@@ -639,8 +639,10 @@ def _run_llm_extraction(
 
     Campaña 2.2B Paso 4: this is the integration point. mode=cheap short-
     circuits without instantiating a client (backwards-compat path). If
-    the caller doesn't inject a client, a default `AnthropicLLMClient`
-    with optional cache is constructed.
+    the caller doesn't inject a client, a default `OpenAILLMClient`
+    with optional cache is constructed (Paso 6.5 switched the default
+    provider from Anthropic to OpenAI; `AnthropicLLMClient` remains
+    available for callers that want to inject it explicitly).
 
     Errors from the LLM client propagate — by design (per plan §14 risk
     R7 and user decision on error handling: do not swallow).
@@ -650,7 +652,7 @@ def _run_llm_extraction(
 
     # Lazy import to keep the no-LLM path dependency-light.
     from brain_ops.domains.knowledge.llm_extractor import (
-        AnthropicLLMClient, LLMResponseCache, extract_and_validate,
+        LLMResponseCache, OpenAILLMClient, extract_and_validate,
         prioritize_candidate_targets,
     )
 
@@ -678,7 +680,7 @@ def _run_llm_extraction(
         cache = None
         if cache_dir is not None:
             cache = LLMResponseCache(cache_dir)
-        client = AnthropicLLMClient(cache=cache)
+        client = OpenAILLMClient(cache=cache)
 
     subtype = frontmatter.get("subtype")
     domain = frontmatter.get("domain")
@@ -730,7 +732,9 @@ def propose_relations_for_entity(
 
     `llm_client` allows tests (and future CLI orchestrators) to inject a
     specific client. If None and mode != cheap, a default
-    `AnthropicLLMClient` is constructed (requires the `anthropic` package).
+    `OpenAILLMClient` is constructed (requires the `openai` package and
+    a readable `OPENAI_API_KEY`). `AnthropicLLMClient` remains available
+    as an alternative provider — inject it via `llm_client=` explicitly.
     `cache_dir` wires a `LLMResponseCache` into the default client; ignored
     if `llm_client` is passed.
     """

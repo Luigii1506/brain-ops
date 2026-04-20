@@ -529,8 +529,9 @@ def build_prompt(
 class LLMClient(Protocol):
     """Protocolo mínimo para clientes LLM compatibles con 2.2B.
 
-    Paso 3 implementará un cliente real sobre Anthropic Messages API. Por
-    ahora, `MockLLMClient` satisface este Protocolo para tests sin red.
+    Paso 3 añadió `AnthropicLLMClient`; Paso 6.5 añadió `OpenAILLMClient`
+    y movió el default del pipeline a OpenAI. Ambos satisfacen este
+    Protocolo. `MockLLMClient` también lo satisface para tests sin red.
     """
 
     def extract(self, *, prompt: str, temperature: float) -> str:
@@ -744,6 +745,123 @@ class AnthropicLLMClient:
 
 
 # ---------------------------------------------------------------------------
+# OpenAI client real — Campaña 2.2B Paso 6.5
+# ---------------------------------------------------------------------------
+#
+# Espejo de `AnthropicLLMClient` para el provider OpenAI. Import del SDK
+# es LAZY: el módulo carga limpio sin `openai` instalado. Los tests
+# inyectan un mock vía `_client=`. La jerarquía pública de `openai`
+# coincide por nombre con la de `anthropic` en los errores retryables
+# (ambas heredan de httpx-based base classes), así que reutilizamos
+# `_RETRYABLE_ERROR_NAMES` y `_is_retryable`.
+
+
+class OpenAILLMClient:
+    """Cliente real sobre la API de OpenAI Chat Completions.
+
+    Implementa el Protocolo `LLMClient` (método `extract`). Simétrico a
+    `AnthropicLLMClient`:
+
+    - Lazy import del SDK `openai`: si el paquete no está instalado, la
+      instanciación del cliente lanza `ImportError` con mensaje claro.
+      El módulo `llm_extractor` sigue importándose limpio.
+    - Integración opcional con `LLMResponseCache`.
+    - Retry con backoff exponencial + jitter en errores transitorios
+      (`APIConnectionError`, `APITimeoutError`, `RateLimitError`,
+      `InternalServerError`, `APIStatusError` — mismos nombres que
+      Anthropic).
+    - `response_format={"type": "json_object"}` pide al modelo que
+      devuelva JSON válido. Nuestro parser es tolerante a fallos, pero
+      esta pista ayuda al modelo a no emitir prosa alrededor.
+    - Dependency injection para tests: parámetro `_client` acepta un
+      mock con `.chat.completions.create(...)` sin requerir `openai`
+      instalado.
+
+    `api_key=None` deja que el SDK lea `OPENAI_API_KEY` del entorno.
+    Si la API key falta, el SDK levanta en la primera llamada — no en
+    la instanciación.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str = "gpt-4o-mini",
+        api_key: str | None = None,
+        max_retries: int = 3,
+        timeout_s: float = 60.0,
+        max_tokens: int = 4096,
+        cache: LLMResponseCache | None = None,
+        _client: object | None = None,
+    ):
+        self.model = model
+        self.max_retries = max_retries
+        self.timeout_s = timeout_s
+        self.max_tokens = max_tokens
+        self.cache = cache
+
+        if _client is not None:
+            # Test seam: inject a pre-built client (real or mock).
+            self._client = _client
+        else:
+            try:
+                from openai import OpenAI  # type: ignore
+            except ImportError as exc:
+                raise ImportError(
+                    "OpenAILLMClient requires the `openai` package. "
+                    "Install with: pip install openai"
+                ) from exc
+            self._client = OpenAI(api_key=api_key, timeout=timeout_s)
+
+    def extract(self, *, prompt: str, temperature: float) -> str:
+        if self.cache is not None:
+            cached = self.cache.get(prompt, self.model, temperature)
+            if cached is not None:
+                return cached
+
+        response = self._call_with_retry(prompt, temperature)
+
+        if self.cache is not None:
+            self.cache.put(prompt, self.model, temperature, response)
+        return response
+
+    def _call_with_retry(self, prompt: str, temperature: float) -> str:
+        """Call the underlying OpenAI Chat Completions API with exponential
+        backoff on transient errors. max_retries attempts after the initial
+        try."""
+        last_exc: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = self._client.chat.completions.create(  # type: ignore[attr-defined]
+                    model=self.model,
+                    temperature=temperature,
+                    max_tokens=self.max_tokens,
+                    response_format={"type": "json_object"},
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                # OpenAI SDK: resp.choices[0].message.content is the string.
+                choices = getattr(resp, "choices", None) or []
+                if choices:
+                    message = getattr(choices[0], "message", None)
+                    content = getattr(message, "content", None)
+                    if isinstance(content, str):
+                        return content
+                raise RuntimeError(
+                    "OpenAILLMClient: unexpected response shape "
+                    "(no choices[0].message.content string found)"
+                )
+            except BaseException as exc:
+                last_exc = exc
+                if attempt < self.max_retries and _is_retryable(exc):
+                    sleep_s = (2 ** attempt) + random.random()
+                    time.sleep(sleep_s)
+                    continue
+                raise
+        # Unreachable: loop either returns or raises.
+        assert last_exc is not None
+        raise last_exc
+
+
+# ---------------------------------------------------------------------------
 # LLM response parser
 # ---------------------------------------------------------------------------
 
@@ -898,6 +1016,7 @@ __all__ = [
     "LLMMode",
     "LLMResponseCache",
     "MockLLMClient",
+    "OpenAILLMClient",
     "PROMPT_VERSION",
     "RawLLMProposal",
     "REASON_DUPLICATE_TYPED",

@@ -1072,7 +1072,7 @@ def present_batch_propose_relations_command(
     Campaña 2.2B Paso 5: accepts `mode` ∈ {cheap, strict, deep}. Default
     `cheap` preserves 2.2A behavior (pattern extractor only). `strict` and
     `deep` activate the LLM-assisted extractor for each entity in the
-    batch (requires `anthropic` package + API key).
+    batch (requires `openai` package + `OPENAI_API_KEY`).
 
     Writes to `<vault>/.brain-ops/relations-proposals/batch-<name>/` only;
     never mutates any vault note. Emits `manifest.yaml`, per-entity
@@ -1269,8 +1269,8 @@ def present_propose_relations_command(
 
     Campaña 2.2B Paso 5: accepts `mode` ∈ {cheap, strict, deep}. Default
     `cheap` preserves 2.2A behavior (pattern extractor only). `strict` and
-    `deep` activate the LLM-assisted extractor (requires `anthropic`
-    package + API key).
+    `deep` activate the LLM-assisted extractor (requires `openai`
+    package + `OPENAI_API_KEY`).
 
     Never mutates the vault note. Writes a YAML proposal file (default:
     `<vault>/.brain-ops/relations-proposals/<entity>.yaml`) that a human
