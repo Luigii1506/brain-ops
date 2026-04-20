@@ -9,9 +9,14 @@ from __future__ import annotations
 
 from unittest import TestCase
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from brain_ops.domains.knowledge.llm_extractor import (
     ALLOWED_FLAGS,
+    AnthropicLLMClient,
     LLMExtractionResult,
+    LLMResponseCache,
     MockLLMClient,
     RawLLMProposal,
     REASON_DUPLICATE_TYPED,
@@ -24,8 +29,14 @@ from brain_ops.domains.knowledge.llm_extractor import (
     build_prompt,
     extract_and_validate,
     parse_llm_response,
+    prioritize_candidate_targets,
     propose_triples_via_llm,
     validate_raw_proposal,
+)
+from brain_ops.domains.knowledge.llm_extractor import (
+    _MAX_BODY_CHARS_DEEP,
+    _MAX_BODY_CHARS_STRICT,
+    _BODY_TRUNCATION_MARKER,
 )
 
 
@@ -592,6 +603,274 @@ class EndToEndWithMockTestCase(TestCase):
         rejection = result.rejections[0]
         self.assertEqual(rejection["raw"]["object"], "Y")
         self.assertEqual(rejection["raw"]["confidence"], "high")
+
+
+class BodyTruncationTestCase(TestCase):
+    """Paso 3 micro-adjustment #1: body se trunca según modo."""
+
+    def test_short_body_untouched_in_strict(self) -> None:
+        prompt = build_prompt("X", "body corto", "strict")
+        self.assertIn("body corto", prompt)
+        self.assertNotIn(_BODY_TRUNCATION_MARKER, prompt)
+
+    def test_long_body_truncated_in_strict(self) -> None:
+        long_body = "A" * 20000
+        prompt = build_prompt("X", long_body, "strict")
+        # El prompt completo incluye el marcador — verificamos que está
+        self.assertIn(_BODY_TRUNCATION_MARKER, prompt)
+        # Y que el body original (20k chars) no cabe completo — usamos
+        # una firma unique al body para aislar conteo de chars accidentales
+        # en otros bloques del prompt.
+        a_count = prompt.count("A")
+        self.assertLessEqual(a_count, _MAX_BODY_CHARS_STRICT + 50)  # margen
+                                                                     # pequeño
+                                                                     # por "A"
+                                                                     # en headers
+        self.assertGreater(a_count, _MAX_BODY_CHARS_STRICT - 100)
+
+    def test_deep_cap_is_larger_than_strict(self) -> None:
+        """Un body de 20k debería caber entero en deep, no en strict."""
+        body = "B" * 20000
+        strict = build_prompt("X", body, "strict")
+        deep = build_prompt("X", body, "deep")
+        self.assertIn(_BODY_TRUNCATION_MARKER, strict)
+        self.assertNotIn(_BODY_TRUNCATION_MARKER, deep)
+
+    def test_deep_truncates_only_when_exceeds_deep_cap(self) -> None:
+        body = "C" * 30000  # > 25k cap
+        deep = build_prompt("X", body, "deep")
+        self.assertIn(_BODY_TRUNCATION_MARKER, deep)
+
+
+class PrioritizeCandidateTargetsTestCase(TestCase):
+    """Paso 3 micro-adjustment #2: orden por proximidad contextual."""
+
+    def test_related_before_wikilinks_before_sqlite(self) -> None:
+        out = prioritize_candidate_targets(
+            note_related=["A", "B"],
+            body_wikilinks=["C", "D"],
+            sqlite_related=["E", "F"],
+        )
+        self.assertEqual(out, ["A", "B", "C", "D", "E", "F"])
+
+    def test_dedup_preserves_first_appearance(self) -> None:
+        out = prioritize_candidate_targets(
+            note_related=["Platón", "Aristóteles"],
+            body_wikilinks=["Platón", "Sócrates"],  # Platón dup
+            sqlite_related=["Aristóteles", "Kant"],  # Aristóteles dup
+        )
+        self.assertEqual(out, ["Platón", "Aristóteles", "Sócrates", "Kant"])
+
+    def test_empty_inputs_returns_empty(self) -> None:
+        self.assertEqual(prioritize_candidate_targets(), [])
+
+    def test_none_and_empty_strings_ignored(self) -> None:
+        out = prioritize_candidate_targets(
+            note_related=["A", "", None, "B"],  # type: ignore
+        )
+        self.assertEqual(out, ["A", "B"])
+
+
+class LLMResponseCacheTestCase(TestCase):
+    """Paso 3: cache file-based keyed por sha256(prompt+model+temp)."""
+
+    def test_put_then_get_returns_same_response(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            cache.put("my prompt", "model-x", 0.0, '{"proposals": []}')
+            got = cache.get("my prompt", "model-x", 0.0)
+            self.assertEqual(got, '{"proposals": []}')
+
+    def test_cache_miss_returns_none(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            self.assertIsNone(cache.get("never put", "m", 0.0))
+
+    def test_different_prompt_different_key(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            cache.put("prompt A", "m", 0.0, "resp-A")
+            cache.put("prompt B", "m", 0.0, "resp-B")
+            self.assertEqual(cache.get("prompt A", "m", 0.0), "resp-A")
+            self.assertEqual(cache.get("prompt B", "m", 0.0), "resp-B")
+
+    def test_different_temperature_invalidates_cache(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            cache.put("prompt", "m", 0.0, "resp-strict")
+            self.assertIsNone(cache.get("prompt", "m", 0.2))
+
+    def test_different_model_invalidates_cache(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            cache.put("prompt", "haiku", 0.0, "resp-h")
+            self.assertIsNone(cache.get("prompt", "sonnet", 0.0))
+
+    def test_persists_across_instances(self) -> None:
+        with TemporaryDirectory() as td:
+            cache1 = LLMResponseCache(Path(td))
+            cache1.put("prompt", "m", 0.0, "resp")
+            # Nueva instancia en el mismo directorio
+            cache2 = LLMResponseCache(Path(td))
+            self.assertEqual(cache2.get("prompt", "m", 0.0), "resp")
+
+
+class AnthropicLLMClientTestCase(TestCase):
+    """Paso 3: cliente real con mock inyectado — NO requiere `anthropic` SDK."""
+
+    class _FakeAnthropicClient:
+        """Mock del SDK anthropic con shape compatible."""
+        def __init__(self, response_text: str = '{"proposals": []}'):
+            self.response_text = response_text
+            self.call_count = 0
+            self.last_kwargs = None
+
+            class _Messages:
+                outer = self
+                def create(cls, **kwargs):
+                    cls.outer.call_count += 1
+                    cls.outer.last_kwargs = kwargs
+                    class Block:
+                        text = cls.outer.response_text
+                    class Resp:
+                        content = [Block()]
+                    return Resp()
+            self.messages = _Messages()
+
+    def test_instantiation_with_injected_client_does_not_require_sdk(self) -> None:
+        """No import de anthropic cuando se inyecta _client — testeable
+        sin SDK instalado."""
+        fake = self._FakeAnthropicClient()
+        client = AnthropicLLMClient(model="test", _client=fake)
+        self.assertEqual(client.model, "test")
+
+    def test_extract_calls_underlying_messages_create(self) -> None:
+        fake = self._FakeAnthropicClient('{"proposals": [{"predicate": "x"}]}')
+        client = AnthropicLLMClient(model="test-m", _client=fake)
+        out = client.extract(prompt="hello", temperature=0.0)
+        self.assertEqual(out, '{"proposals": [{"predicate": "x"}]}')
+        self.assertEqual(fake.call_count, 1)
+        self.assertEqual(fake.last_kwargs["model"], "test-m")
+        self.assertEqual(fake.last_kwargs["temperature"], 0.0)
+        self.assertEqual(
+            fake.last_kwargs["messages"],
+            [{"role": "user", "content": "hello"}],
+        )
+
+    def test_cache_hit_skips_underlying_call(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            cache.put("cached prompt", "test-m", 0.0, "cached response")
+            fake = self._FakeAnthropicClient("fresh")
+            client = AnthropicLLMClient(
+                model="test-m", _client=fake, cache=cache,
+            )
+            out = client.extract(prompt="cached prompt", temperature=0.0)
+            self.assertEqual(out, "cached response")
+            self.assertEqual(fake.call_count, 0)
+
+    def test_cache_miss_calls_api_then_caches(self) -> None:
+        with TemporaryDirectory() as td:
+            cache = LLMResponseCache(Path(td))
+            fake = self._FakeAnthropicClient("fresh response")
+            client = AnthropicLLMClient(
+                model="test-m", _client=fake, cache=cache,
+            )
+            out = client.extract(prompt="new prompt", temperature=0.0)
+            self.assertEqual(out, "fresh response")
+            self.assertEqual(fake.call_count, 1)
+            # Segunda llamada debe ir al cache
+            out2 = client.extract(prompt="new prompt", temperature=0.0)
+            self.assertEqual(out2, "fresh response")
+            self.assertEqual(fake.call_count, 1)  # no re-llamada
+
+    def test_retry_on_transient_error_then_success(self) -> None:
+        """Error retryable → retry + éxito. Simulamos una RateLimitError
+        inicial, luego success."""
+        class RateLimitError(Exception):
+            pass
+
+        class FlakyAnthropic:
+            def __init__(self):
+                self.attempts = 0
+                class _Messages:
+                    outer = self
+                    def create(cls, **kwargs):
+                        cls.outer.attempts += 1
+                        if cls.outer.attempts == 1:
+                            raise RateLimitError("too fast")
+                        class Block:
+                            text = "ok"
+                        class Resp:
+                            content = [Block()]
+                        return Resp()
+                self.messages = _Messages()
+
+        flaky = FlakyAnthropic()
+        client = AnthropicLLMClient(
+            model="test-m", _client=flaky, max_retries=3,
+        )
+        # Patch time.sleep to avoid real waits in test
+        import unittest.mock
+        with unittest.mock.patch(
+            "brain_ops.domains.knowledge.llm_extractor.time.sleep"
+        ):
+            out = client.extract(prompt="p", temperature=0.0)
+        self.assertEqual(out, "ok")
+        self.assertEqual(flaky.attempts, 2)
+
+    def test_no_retry_on_non_retryable_error(self) -> None:
+        """Error no-retryable (ej. BadRequestError) debe propagarse en el
+        primer intento, sin retries."""
+        class BadRequestError(Exception):
+            pass
+
+        class BadAnthropic:
+            def __init__(self):
+                self.attempts = 0
+                class _Messages:
+                    outer = self
+                    def create(cls, **kwargs):
+                        cls.outer.attempts += 1
+                        raise BadRequestError("malformed")
+                self.messages = _Messages()
+
+        bad = BadAnthropic()
+        client = AnthropicLLMClient(
+            model="test-m", _client=bad, max_retries=3,
+        )
+        with self.assertRaises(BadRequestError):
+            client.extract(prompt="p", temperature=0.0)
+        self.assertEqual(bad.attempts, 1)  # single attempt, no retries
+
+    def test_max_retries_exhausted_reraises(self) -> None:
+        """Si los retries se agotan, la última excepción retryable se
+        propaga."""
+        class RateLimitError(Exception):
+            pass
+
+        class AlwaysFails:
+            def __init__(self):
+                self.attempts = 0
+                class _Messages:
+                    outer = self
+                    def create(cls, **kwargs):
+                        cls.outer.attempts += 1
+                        raise RateLimitError("keeps failing")
+                self.messages = _Messages()
+
+        flaky = AlwaysFails()
+        client = AnthropicLLMClient(
+            model="test-m", _client=flaky, max_retries=2,
+        )
+        import unittest.mock
+        with unittest.mock.patch(
+            "brain_ops.domains.knowledge.llm_extractor.time.sleep"
+        ):
+            with self.assertRaises(RateLimitError):
+                client.extract(prompt="p", temperature=0.0)
+        # initial + 2 retries = 3 attempts total
+        self.assertEqual(flaky.attempts, 3)
 
 
 class ClosedSetInvariantsTestCase(TestCase):

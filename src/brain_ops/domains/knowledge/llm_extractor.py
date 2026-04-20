@@ -35,8 +35,13 @@ without forcing a `adopted_by` or `child_of` decision at extraction time.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import random
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Iterable, Literal, Protocol
 
 from brain_ops.domains.knowledge.object_model import CANONICAL_PREDICATES
@@ -280,6 +285,68 @@ def propose_triples_via_llm(
 
 PROMPT_VERSION = "v1.0"
 
+# Campaña 2.2B Paso 3 micro-adjustment #1: cap del body en el prompt.
+# Justificación: costo + latencia + ruido irrelevante. Valores elegidos para
+# cubrir ~99% de las notas del vault (mediana ~6-12k chars, p95 ~25k).
+_MAX_BODY_CHARS_STRICT: int = 15000
+_MAX_BODY_CHARS_DEEP: int = 25000
+
+_BODY_TRUNCATION_MARKER = (
+    "\n\n[... body truncado por cap de la campaña 2.2B ...]"
+)
+
+
+def _truncate_body_for_mode(body: str, mode: LLMMode) -> str:
+    """Trunca el body si excede el cap del modo. Deja un marcador visible.
+
+    Truncar al principio del body es deliberado: identity + timeline suele
+    contener la señal densa, y los bodies largos acumulan frases célebres,
+    preguntas de recuperación, etc., que son menos productivas para el
+    extractor de relaciones.
+    """
+    cap = _MAX_BODY_CHARS_STRICT if mode == "strict" else _MAX_BODY_CHARS_DEEP
+    if len(body) <= cap:
+        return body
+    return body[:cap] + _BODY_TRUNCATION_MARKER
+
+
+# Campaña 2.2B Paso 3 micro-adjustment #2: priorizar candidate_targets.
+# El LLM tiene un cap (default 150). Si hay más entidades relevantes que ese
+# cap, conviene que las primeras sean las que efectivamente aparecen en el
+# contexto de la nota — maximiza la probabilidad de que el LLM use targets
+# existentes en vez de emitir MISSING_ENTITY innecesarios.
+
+
+def prioritize_candidate_targets(
+    note_related: Iterable[str] = (),
+    body_wikilinks: Iterable[str] = (),
+    sqlite_related: Iterable[str] = (),
+) -> list[str]:
+    """Ordena candidate_targets según proximidad contextual a la entidad.
+
+    Prioridad (decreciente):
+      1. Nombres en `related:` de la nota (fuente explícita del autor)
+      2. Wikilinks del body (referencias activas en prosa)
+      3. Entidades ya relacionadas en SQLite (típadas o no)
+
+    Duplicados se eliminan preservando la primera aparición — una entidad
+    que aparece tanto en `related` como en body queda con prioridad `related`.
+
+    Inputs pueden ser cualquier iterable de strings. Strings vacíos/None
+    se ignoran.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for group in (note_related, body_wikilinks, sqlite_related):
+        for name in group:
+            if not name or not isinstance(name, str):
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+    return out
+
 _SHARED_HEADER = """\
 Eres un extractor de relaciones tipadas para un knowledge graph personal.
 Lees prosa biográfica/histórica/científica en español e inglés y propones
@@ -438,6 +505,8 @@ def build_prompt(
 
     full_template = _SHARED_HEADER + "\n" + mode_block + "\n" + _SHARED_FOOTER
 
+    truncated_body = _truncate_body_for_mode(body, mode)
+
     return full_template.format(
         canonical_predicates=_format_canonical_predicates_block(),
         allowed_flags=_format_allowed_flags_block(),
@@ -448,7 +517,7 @@ def build_prompt(
         candidate_targets=_format_candidate_targets_block(
             candidate_targets, candidate_cap,
         ),
-        body=body,
+        body=truncated_body,
     )
 
 
@@ -479,6 +548,199 @@ class MockLLMClient:
     def extract(self, *, prompt: str, temperature: float) -> str:
         self.calls.append({"prompt": prompt, "temperature": temperature})
         return self.canned_response
+
+
+# ---------------------------------------------------------------------------
+# Cache file-based — Campaña 2.2B Paso 3
+# ---------------------------------------------------------------------------
+
+
+class LLMResponseCache:
+    """Cache file-based keyed por SHA-256 del prompt completo.
+
+    Cada entrada es un archivo JSON en `cache_dir/<sha256>.json` con la
+    response raw + metadata para auditoría. La clave incluye `model` y
+    `temperature` para que el cambio de cualquiera invalide el cache.
+
+    Operaciones:
+    - `get(prompt, model, temperature) -> str | None`: cache hit devuelve
+      la response raw; miss devuelve None.
+    - `put(prompt, model, temperature, response) -> None`: escribe atómico
+      (via write-then-rename) para no dejar archivos corruptos si crash.
+
+    No hay evicción automática — los archivos persisten. Para una campaña
+    completa de 100-200 llamadas esto es trivial (<1 MB).
+    """
+
+    def __init__(self, cache_dir: Path):
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _key(prompt: str, model: str, temperature: float) -> str:
+        blob = f"{model}|{temperature:.3f}|{prompt}".encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()
+
+    def _path_for(self, prompt: str, model: str, temperature: float) -> Path:
+        return self.cache_dir / f"{self._key(prompt, model, temperature)}.json"
+
+    def get(self, prompt: str, model: str, temperature: float) -> str | None:
+        path = self._path_for(prompt, model, temperature)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        response = payload.get("response")
+        return response if isinstance(response, str) else None
+
+    def put(
+        self, prompt: str, model: str, temperature: float, response: str,
+    ) -> None:
+        path = self._path_for(prompt, model, temperature)
+        payload = {
+            "model": model,
+            "temperature": temperature,
+            "prompt_sha256": self._key(prompt, model, temperature),
+            "prompt_preview": prompt[:500],
+            "response": response,
+            "cached_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        # Write atomically: write to .tmp, then rename.
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+
+
+# ---------------------------------------------------------------------------
+# Anthropic client real — Campaña 2.2B Paso 3
+# ---------------------------------------------------------------------------
+#
+# Import del SDK es LAZY: el módulo carga limpio sin `anthropic` instalado.
+# Solo al instanciar `AnthropicLLMClient` sin `_client` explícito se intenta
+# el import. Tests inyectan un mock vía `_client=` — no requieren SDK.
+
+# Retryable errors by class name — decisión name-based para no importar
+# el SDK en el módulo. La lista refleja la jerarquía pública de anthropic:
+# https://github.com/anthropics/anthropic-sdk-python
+_RETRYABLE_ERROR_NAMES: frozenset[str] = frozenset({
+    "APIConnectionError",
+    "APITimeoutError",
+    "RateLimitError",
+    "InternalServerError",
+    "APIStatusError",  # conservative fallback for unknown 5xx
+})
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    return type(exc).__name__ in _RETRYABLE_ERROR_NAMES
+
+
+class AnthropicLLMClient:
+    """Cliente real sobre la API de Anthropic Messages.
+
+    Implementa el Protocolo `LLMClient` (método `extract`). Características:
+
+    - Lazy import del SDK `anthropic`: si el paquete no está instalado, la
+      instanciación del cliente lanza `ImportError` con mensaje claro.
+      El módulo `llm_extractor` sigue importándose limpio.
+    - Integración opcional con `LLMResponseCache`: si se pasa cache, hit/miss
+      se consulta antes de llamar a la API.
+    - Retry con backoff exponencial + jitter en errores transitorios
+      (connection / timeout / rate-limit / 5xx). No retry en errores
+      permanentes (bad request, auth).
+    - Dependency injection para tests: parámetro `_client` acepta un mock
+      con `.messages.create(...)` sin requerir `anthropic` instalado.
+
+    `api_key=None` deja que el SDK lea `ANTHROPIC_API_KEY` del entorno.
+    Si la API key falta, el SDK levanta en la primera llamada — no en
+    la instanciación — consistente con "no rompe nada sin API key hasta
+    que se hace una llamada real".
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str = "claude-haiku-4-5-20251001",
+        api_key: str | None = None,
+        max_retries: int = 3,
+        timeout_s: float = 60.0,
+        max_tokens: int = 4096,
+        cache: LLMResponseCache | None = None,
+        _client: object | None = None,
+    ):
+        self.model = model
+        self.max_retries = max_retries
+        self.timeout_s = timeout_s
+        self.max_tokens = max_tokens
+        self.cache = cache
+
+        if _client is not None:
+            # Test seam: inject a pre-built client (real or mock).
+            self._client = _client
+        else:
+            try:
+                from anthropic import Anthropic  # type: ignore
+            except ImportError as exc:
+                raise ImportError(
+                    "AnthropicLLMClient requires the `anthropic` package. "
+                    "Install with: pip install anthropic"
+                ) from exc
+            self._client = Anthropic(api_key=api_key, timeout=timeout_s)
+
+    def extract(self, *, prompt: str, temperature: float) -> str:
+        # Cache check first — cheap and idempotent.
+        if self.cache is not None:
+            cached = self.cache.get(prompt, self.model, temperature)
+            if cached is not None:
+                return cached
+
+        response = self._call_with_retry(prompt, temperature)
+
+        if self.cache is not None:
+            self.cache.put(prompt, self.model, temperature, response)
+        return response
+
+    def _call_with_retry(self, prompt: str, temperature: float) -> str:
+        """Call the underlying Anthropic API with exponential backoff on
+        transient errors. max_retries attempts after the initial try."""
+        last_exc: BaseException | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = self._client.messages.create(  # type: ignore[attr-defined]
+                    model=self.model,
+                    max_tokens=self.max_tokens,
+                    temperature=temperature,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                # Anthropic SDK returns a Message with .content list of blocks
+                # — TextBlock objects have .text. We pull the first text block.
+                blocks = getattr(resp, "content", None) or []
+                for block in blocks:
+                    text = getattr(block, "text", None)
+                    if isinstance(text, str):
+                        return text
+                # Fallback: if the SDK shape changed, raise to surface it
+                # instead of returning empty silently.
+                raise RuntimeError(
+                    "AnthropicLLMClient: unexpected response shape "
+                    "(no text block found)"
+                )
+            except BaseException as exc:
+                last_exc = exc
+                if attempt < self.max_retries and _is_retryable(exc):
+                    # Exponential backoff with jitter. Base 2 + up to 1s jitter.
+                    sleep_s = (2 ** attempt) + random.random()
+                    time.sleep(sleep_s)
+                    continue
+                raise
+        # Unreachable: loop either returns or raises.
+        assert last_exc is not None
+        raise last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -629,10 +891,12 @@ def extract_and_validate(
 
 __all__ = [
     "ALLOWED_FLAGS",
+    "AnthropicLLMClient",
     "LLM_MODES",
     "LLMClient",
     "LLMExtractionResult",
     "LLMMode",
+    "LLMResponseCache",
     "MockLLMClient",
     "PROMPT_VERSION",
     "RawLLMProposal",
@@ -646,6 +910,7 @@ __all__ = [
     "build_prompt",
     "extract_and_validate",
     "parse_llm_response",
+    "prioritize_candidate_targets",
     "propose_triples_via_llm",
     "validate_raw_proposal",
 ]
