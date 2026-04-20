@@ -47,7 +47,7 @@ from brain_ops.vault import Vault
 # Canonical enumerations
 # ---------------------------------------------------------------------------
 
-EVIDENCE_SOURCES: tuple[str, ...] = ("body", "related", "metadata", "cross-ref")
+EVIDENCE_SOURCES: tuple[str, ...] = ("body", "related", "metadata", "cross-ref", "llm")
 _VALID_SOURCES = frozenset(EVIDENCE_SOURCES)
 
 ObjectStatus = Literal[
