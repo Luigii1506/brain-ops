@@ -311,8 +311,11 @@ class RunnerTestCase(TestCase):
         self.assertGreaterEqual(len(result.policy_passes), 1)
 
     def test_tiberio_with_hijastro_violation_high_confidence(self) -> None:
-        """El LLM emite adopted_by → Augusto con HIGH (viola D12).
-        Quote corta garantizada substring del body."""
+        """Post-Check 9 (Paso 7d): el fixture 09 tiene body 'Hijastro y
+        sucesor...' SIN marker adoptivo léxico. Check 9 rechaza la
+        proposal antes de llegar a policy_checks — endurecimiento más
+        estricto que D12 original. Resultado: 0 accepted, 0
+        policy_failures (policy pasa vacuamente al no haber triple)."""
         fixture = GoldenFixture.from_yaml(FIXTURES_DIR / "09_tiberio_hijastro.yaml")
         canned = (
             '{"proposals": ['
@@ -325,9 +328,8 @@ class RunnerTestCase(TestCase):
         )
         client = MockLLMClient(canned_response=canned)
         result = run_fixture(fixture, client=client, mode="strict")
-        self.assertEqual(len(result.policy_failures), 1)
-        # Razón específica: confidence incorrecto
-        self.assertIn("confidence", result.policy_failures[0]["reasons"][0])
+        self.assertEqual(len(result.proposals), 0)
+        self.assertEqual(len(result.policy_failures), 0)
 
     def test_aggregate_metrics_produce_composite_score(self) -> None:
         """Verifica que el composite_score se calcula de forma consistente."""

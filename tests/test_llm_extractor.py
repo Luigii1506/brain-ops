@@ -20,6 +20,7 @@ from brain_ops.domains.knowledge.llm_extractor import (
     LLMResponseCache,
     MockLLMClient,
     RawLLMProposal,
+    REASON_ADOPTED_BY_MISSING_MARKER,
     REASON_DUPLICATE_TYPED,
     REASON_EMPTY_FIELD,
     REASON_INVALID_CONFIDENCE,
@@ -220,6 +221,183 @@ class DedupCheckTestCase(TestCase):
                  evidence_quote="Aristóteles criticó a Platón"),
             existing_typed={("studied_under", "Platón")},
             body="Aristóteles criticó a Platón sobre las Formas",
+        )
+        self.assertIsNotNone(proposal)
+        self.assertIsNone(reason)
+
+
+# ---------------------------------------------------------------------------
+# Check 9 — adopted_by deterministic gate (Campaña 2.2B Paso 7d)
+# ---------------------------------------------------------------------------
+#
+# Surgical guardrail: only `adopted_by` is gated. Requires the body to
+# contain an adoption marker ("adoptado", "adoptiva", "adopción",
+# "adopted", "adoption", etc.) — otherwise rejected, regardless of
+# confidence or flag. Other predicates are not affected.
+
+
+class AdoptedByGateTestCase(TestCase):
+    def test_adopted_by_with_explicit_es_marker_accepted(self) -> None:
+        body = "Tiberio fue adoptado formalmente por Augusto en el año 4 d.C."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Augusto",
+                evidence_quote="Tiberio fue adoptado formalmente por Augusto",
+            ),
+            body=body,
+            entity_name="Tiberio",
+            entity_index={"Augusto": "entity", "Tiberio": "entity"},
+        )
+        self.assertIsNotNone(proposal)
+        self.assertIsNone(reason)
+
+    def test_adopted_by_with_hijo_adoptivo_marker_accepted(self) -> None:
+        body = "Augusto, hijo adoptivo de Julio César, heredó el poder."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Julio César",
+                evidence_quote="Augusto, hijo adoptivo de Julio César",
+            ),
+            body=body,
+            entity_name="Augusto",
+            entity_index={"Julio César": "entity", "Augusto": "entity"},
+        )
+        self.assertIsNotNone(proposal)
+        self.assertIsNone(reason)
+
+    def test_adopted_by_with_en_marker_accepted(self) -> None:
+        body = "Tiberius was adopted by Augustus as his heir."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Augustus",
+                evidence_quote="Tiberius was adopted by Augustus",
+            ),
+            body=body,
+            entity_name="Tiberius",
+            entity_index={"Augustus": "entity", "Tiberius": "entity"},
+        )
+        self.assertIsNotNone(proposal)
+        self.assertIsNone(reason)
+
+    def test_adopted_by_without_marker_rejected_biological_mother(self) -> None:
+        """Agustín de Hipona + Mónica — la madre era BIOLÓGICA, no adoptiva."""
+        body = "Agustín creció bajo la influencia de su madre Mónica."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Mónica",
+                evidence_quote="su madre Mónica",
+            ),
+            body=body,
+            entity_name="Agustín de Hipona",
+            entity_index={"Mónica": "entity", "Agustín de Hipona": "entity"},
+        )
+        self.assertIsNone(proposal)
+        self.assertEqual(reason, REASON_ADOPTED_BY_MISSING_MARKER)
+
+    def test_adopted_by_without_marker_rejected_spouse(self) -> None:
+        """Einstein + Elsa — era su esposa, no adopción."""
+        body = "Einstein se casó en segundas nupcias con Elsa Einstein en 1919."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Elsa Einstein",
+                evidence_quote="se casó en segundas nupcias con Elsa Einstein",
+            ),
+            body=body,
+            entity_name="Albert Einstein",
+            entity_index={"Elsa Einstein": "entity", "Albert Einstein": "entity"},
+        )
+        self.assertIsNone(proposal)
+        self.assertEqual(reason, REASON_ADOPTED_BY_MISSING_MARKER)
+
+    def test_adopted_by_without_marker_rejected_religious_order(self) -> None:
+        """Tomás de Aquino + Orden de Predicadores — ingreso a orden, no adopción."""
+        body = "Tomás de Aquino ingresó a la Orden de Predicadores en 1244."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Orden de Predicadores",
+                evidence_quote="ingresó a la Orden de Predicadores",
+            ),
+            body=body,
+            entity_name="Tomás de Aquino",
+            entity_index={"Orden de Predicadores": "entity",
+                          "Tomás de Aquino": "entity"},
+        )
+        self.assertIsNone(proposal)
+        self.assertEqual(reason, REASON_ADOPTED_BY_MISSING_MARKER)
+
+    def test_adopted_by_without_marker_rejected_patron(self) -> None:
+        """Aristóteles + Filipo II — patronage, no adopción."""
+        body = ("Aristóteles fue tutor de Alejandro Magno por encargo de "
+                "Filipo II de Macedonia.")
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Filipo II de Macedonia",
+                evidence_quote="por encargo de Filipo II de Macedonia",
+            ),
+            body=body,
+            entity_name="Aristóteles",
+            entity_index={"Filipo II de Macedonia": "entity",
+                          "Aristóteles": "entity"},
+        )
+        self.assertIsNone(proposal)
+        self.assertEqual(reason, REASON_ADOPTED_BY_MISSING_MARKER)
+
+    def test_flag_hijastro_does_not_bypass_check9(self) -> None:
+        """El escape hatch observado (flag=hijastro_step_relation + medium)
+        NO debe permitir adopted_by cuando el body carece de marker adoptivo.
+        Este es el caso residual que Check 9 está diseñado para matar."""
+        body = "Agustín creció con su madre Mónica."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Mónica",
+                confidence="medium",
+                evidence_quote="su madre Mónica",
+                flags=("hijastro_step_relation",),
+            ),
+            body=body,
+            entity_name="Agustín de Hipona",
+            entity_index={"Mónica": "entity", "Agustín de Hipona": "entity"},
+        )
+        self.assertIsNone(proposal)
+        self.assertEqual(reason, REASON_ADOPTED_BY_MISSING_MARKER)
+
+    def test_other_predicates_not_affected_by_check9(self) -> None:
+        """Check 9 es quirúrgico: `child_of` (u otros) nunca se gating
+        por marker adoptivo."""
+        body = "Agustín creció con su madre Mónica."
+        proposal, reason = _validate(
+            _raw(
+                predicate="child_of",
+                object="Mónica",
+                evidence_quote="su madre Mónica",
+            ),
+            body=body,
+            entity_name="Agustín de Hipona",
+            entity_index={"Mónica": "entity", "Agustín de Hipona": "entity"},
+        )
+        self.assertIsNotNone(proposal)
+        self.assertIsNone(reason)
+
+    def test_marker_case_insensitive(self) -> None:
+        """Marker en MAYÚSCULAS también desbloquea el gate."""
+        body = "TIBERIO FUE ADOPTADO POR AUGUSTO EN EL 4 D.C."
+        proposal, reason = _validate(
+            _raw(
+                predicate="adopted_by",
+                object="Augusto",
+                evidence_quote="TIBERIO FUE ADOPTADO POR AUGUSTO",
+            ),
+            body=body,
+            entity_name="Tiberio",
+            entity_index={"Augusto": "entity", "Tiberio": "entity"},
         )
         self.assertIsNotNone(proposal)
         self.assertIsNone(reason)
@@ -553,9 +731,14 @@ class EndToEndWithMockTestCase(TestCase):
         self.assertEqual(result.rejections[0]["reason"], REASON_QUOTE_NOT_IN_BODY)
 
     def test_hijastro_case_emits_medium_with_flag(self) -> None:
-        """D12 del plan: el LLM debe emitir hijastro como medium + flag,
-        NUNCA auto-mapearlo a adopted_by high. Aquí simulamos que el LLM
-        respetó la instrucción del prompt."""
+        """Post-Check 9 policy: 'hijastro' por sí solo NO es suficiente
+        para `adopted_by`. El validator (Check 9) requiere marcador
+        adoptivo léxico explícito en el body.
+
+        Caso A: body SIN marker → adopted_by rechazado aunque el LLM
+        emita con medium + flag. Éste es el endurecimiento post-7d.
+        """
+        # BODY de la clase contiene "Hijastro" pero NO "adoptado".
         canned = '''{"proposals": [
           {"predicate": "adopted_by", "object": "Augusto",
            "confidence": "medium",
@@ -569,10 +752,36 @@ class EndToEndWithMockTestCase(TestCase):
             existing_typed=set(),
             entity_index=self.ENTITY_INDEX,
         )
+        # Check 9 rechaza: body carece de marker adoptivo.
+        self.assertEqual(len(result.accepted), 0)
+        self.assertEqual(len(result.rejections), 1)
+        self.assertEqual(
+            result.rejections[0]["reason"], "adopted_by_missing_marker",
+        )
+
+    def test_adopted_by_accepted_when_body_has_explicit_marker(self) -> None:
+        """Caso B: body CON marker 'adoptado' → adopted_by pasa el gate
+        de Check 9. El resto del pipeline mantiene el mapeo medium →
+        needs-refinement para el reviewer humano."""
+        body_with_marker = (
+            "Tiberio fue adoptado formalmente por Augusto en 4 d.C. "
+            "Hijastro de Augusto por el matrimonio con Livia."
+        )
+        canned = '''{"proposals": [
+          {"predicate": "adopted_by", "object": "Augusto",
+           "confidence": "medium",
+           "evidence_quote": "Tiberio fue adoptado formalmente por Augusto",
+           "rationale": "Adopción formal explícita.",
+           "flags": ["hijastro_step_relation"]}
+        ]}'''
+        result = extract_and_validate(
+            "Tiberio", body_with_marker, mode="strict",
+            client=MockLLMClient(canned_response=canned),
+            existing_typed=set(),
+            entity_index=self.ENTITY_INDEX,
+        )
         self.assertEqual(len(result.accepted), 1)
         p = result.accepted[0]
-        # Mapeo automático medium → needs-refinement preserva la decisión
-        # para el reviewer humano.
         self.assertEqual(p.confidence, "medium")
         self.assertEqual(p.status, "needs-refinement")
         self.assertIn("hijastro_step_relation", p.note)
@@ -623,10 +832,10 @@ class BodyTruncationTestCase(TestCase):
         # una firma unique al body para aislar conteo de chars accidentales
         # en otros bloques del prompt.
         a_count = prompt.count("A")
-        self.assertLessEqual(a_count, _MAX_BODY_CHARS_STRICT + 50)  # margen
-                                                                     # pequeño
-                                                                     # por "A"
-                                                                     # en headers
+        self.assertLessEqual(a_count, _MAX_BODY_CHARS_STRICT + 150)  # margen
+                                                                      # pequeño
+                                                                      # por "A"
+                                                                      # en headers
         self.assertGreater(a_count, _MAX_BODY_CHARS_STRICT - 100)
 
     def test_deep_cap_is_larger_than_strict(self) -> None:

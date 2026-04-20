@@ -71,6 +71,34 @@ REASON_LOW_CONFIDENCE = "low_confidence"
 REASON_QUOTE_NOT_IN_BODY = "quote_not_in_body"
 REASON_DUPLICATE_TYPED = "duplicate_typed"
 REASON_EMPTY_FIELD = "empty_field"
+REASON_ADOPTED_BY_MISSING_MARKER = "adopted_by_missing_marker"
+
+
+# ---------------------------------------------------------------------------
+# Lexical markers for Check 9 (adopted_by gate — Campaña 2.2B Paso 7d)
+# ---------------------------------------------------------------------------
+#
+# Deterministic guardrail against a systematic LLM hallucination pattern
+# observed in the vault benchmark: the model emits `adopted_by` for
+# biological mothers, spouses, religious orders, patrons and mentors,
+# adding `confidence=medium + flag=hijastro_step_relation` as an escape
+# hatch despite prompt rules forbidding it.
+#
+# Fix: the validator only accepts `adopted_by` when the body contains
+# literal adoption language. Case-insensitive substring check; wikilink
+# markup is already normalized by `_normalize_ws` before the comparison.
+# The check is surgical — ONLY `adopted_by` is affected. Other predicates
+# pass through unchanged.
+
+_ADOPTION_MARKERS: tuple[str, ...] = (
+    "adoptado",       # es: "Tiberio fue adoptado por Augusto"
+    "adoptada",       # es feminine
+    "adoptivo",       # es: "hijo adoptivo de X"
+    "adoptiva",       # es: "hija adoptiva de X"
+    "adopción",       # es noun
+    "adopted",        # en: "was adopted by X" / "adopted son of X"
+    "adoption",       # en noun: "the adoption of Y"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -135,16 +163,46 @@ def _sanitize_flags(flags: tuple[str, ...]) -> list[str]:
 
 
 _WS_RUN = re.compile(r"\s+")
+# Strip Obsidian wikilink markup so `[[Platón]]` and `[[Metafísica (Aristóteles)|Metafísica]]`
+# both collapse to their display text. The LLM sometimes cites citations
+# without the brackets (visual reading), and that's legitimate: wikilink
+# syntax is vault render markup, not literal-content divergence.
+_WIKILINK_PIPE = re.compile(r"\[\[[^\[\]|]*\|([^\[\]]*)\]\]")  # [[Target|Display]] -> Display
+_WIKILINK_SIMPLE = re.compile(r"\[\[([^\[\]|]*)\]\]")           # [[Target]] -> Target
+
+
+def _body_has_adoption_marker(body: str) -> bool:
+    """Check 9 helper: true iff `body` contains any adoption marker.
+
+    Case-insensitive substring check. Wikilink markup and whitespace
+    variations don't affect the result because the markers don't contain
+    any. The check is intentionally lightweight — if the body says
+    "adoptado", we let the LLM propose `adopted_by` with its own
+    evidence_quote (Check 5 still enforces literal citation).
+    """
+    lower = body.lower()
+    return any(m in lower for m in _ADOPTION_MARKERS)
 
 
 def _normalize_ws(s: str) -> str:
-    """Collapse any run of whitespace (newlines, tabs, spaces) to a single
-    space, strip ends, and lowercase. Used on both sides of the
-    evidence_quote substring check so bodies wrapped to ~75 cols still
-    match citations the LLM produces visually. Does NOT relax the
-    literal-content requirement — only whitespace is flexible.
+    """Normalize a string for the evidence_quote substring check.
+
+    Transformations applied to BOTH sides:
+    1. Collapse Obsidian wikilinks to display text:
+         `[[Platón]]` → `Platón`
+         `[[Metafísica (Aristóteles)|Metafísica]]` → `Metafísica`
+    2. Collapse any run of whitespace to a single space.
+    3. Strip ends; lowercase.
+
+    Used on both body and quote so bodies wrapped to ~75 cols AND with
+    wikilink markup still match citations the LLM produces visually.
+    Does NOT relax the literal-content requirement — only whitespace
+    and wikilink brackets are flexible.
     """
-    return _WS_RUN.sub(" ", s).strip().lower()
+    # Pipe form first (so we capture display, not target).
+    stripped = _WIKILINK_PIPE.sub(r"\1", s)
+    stripped = _WIKILINK_SIMPLE.sub(r"\1", stripped)
+    return _WS_RUN.sub(" ", stripped).strip().lower()
 
 
 def validate_raw_proposal(
@@ -198,6 +256,16 @@ def validate_raw_proposal(
     # Check 6: dedup against already-typed triples.
     if (raw.predicate, raw.object) in existing_typed:
         return None, REASON_DUPLICATE_TYPED
+
+    # Check 9 (Campaña 2.2B Paso 7d): adopted_by deterministic gate.
+    # Surgical guardrail — only `adopted_by`. The LLM was emitting this
+    # predicate for biological mothers, spouses, religious orders and
+    # patrons, hiding behind `flag=hijastro_step_relation` despite prompt
+    # rules forbidding it. Here we require the body itself to contain
+    # explicit adoption language; otherwise the proposal is rejected.
+    # Other predicates are not affected.
+    if raw.predicate == "adopted_by" and not _body_has_adoption_marker(body):
+        return None, REASON_ADOPTED_BY_MISSING_MARKER
 
     # Check 7: resolve object_status. Never rejects — always labels.
     object_status = _resolve_object_status(raw.object, entity_index)
@@ -300,7 +368,7 @@ def propose_triples_via_llm(
 # doubled `{{ ... }}` for escape. Keep this file single-source until the
 # vocabulary stabilizes; move to versioned files once we commit to a v2.
 
-PROMPT_VERSION = "v1.1"  # 7a.1: predicate-vs-flag tightening + examples
+PROMPT_VERSION = "v1.2"  # 7c: influenced direction + adopted_by restrictive
 
 # Campaña 2.2B Paso 3 micro-adjustment #1: cap del body en el prompt.
 # Justificación: costo + latencia + ruido irrelevante. Valores elegidos para
@@ -407,6 +475,70 @@ EJEMPLOS de correcto vs incorrecto (predicate must be canonical):
       "confidence": "medium", "flags": ["hijastro_step_relation"]}}
   ❌ {{"predicate": "hijastro_step_relation", "object": "Augusto", ...}}
        (hijastro_step_relation es un FLAG, no un predicate)
+
+DIRECCIONALIDAD DE `influenced` vs `influenced_by` (CRÍTICO — NO confundir):
+- La entidad procesada (source del triple) es SIEMPRE el sujeto implícito.
+- Si el body dice que la ENTIDAD recibió influencia de Y (voz pasiva
+  "X fue influenciado por Y", "X se basó en Y", "X recibió influencia de
+  Y", "Y es una influencia en X", "Y fue fuente para X"), entonces emites
+  `influenced_by → Y`. NUNCA `influenced → Y`.
+- Si el body dice que la ENTIDAD ejerció influencia sobre Y (voz activa
+  "X influyó a Y", "X inspiró a Y", "el trabajo de X transformó a Y"),
+  entonces emites `influenced → Y`. NUNCA `influenced_by → Y`.
+- Si el texto está en pasiva y tu rationale se va a escribir como
+  "X fue influenciado por Y", el predicate OBLIGATORIO es `influenced_by`.
+- Chequeo mental antes de emitir: ¿Quién es el sujeto, X o Y? El sujeto
+  del predicate SIEMPRE es la entidad procesada.
+
+EJEMPLOS direccionalidad (entity procesada = Averroes, Newton, Marco Aurelio):
+  Body: "Averroes fue influenciado por Aristóteles"
+  ✅ {{"predicate": "influenced_by", "object": "Aristóteles", ...}}
+  ❌ {{"predicate": "influenced", "object": "Aristóteles", ...}}  (Averroes vivió 1500 años después)
+
+  Body: "Galileo fue una influencia directa en el trabajo de Newton"
+  ✅ {{"predicate": "influenced_by", "object": "Galileo Galilei", ...}}
+  ❌ {{"predicate": "influenced", "object": "Galileo Galilei", ...}}  (Galileo murió antes de que Newton naciera)
+
+  Body: "las Meditaciones influyeron en varios pensadores posteriores"
+  ✅ {{"predicate": "influenced", "object": "<pensador X>", ...}}  (Marco Aurelio → pensador posterior)
+  ❌ {{"predicate": "influenced_by", "object": "Estoicismo", ...}}  no viene del body
+
+USO RESTRICTIVO DE `adopted_by` (CRÍTICO — alucinaciones frecuentes):
+- `adopted_by → Y` se emite SOLO cuando el body usa literalmente una de
+  estas señales explícitas de adopción formal:
+    "adoptado por Y", "adopción de Y", "hijo adoptivo de Y",
+    "adopted by Y", "adoption by Y", "adopted son of Y".
+- NUNCA uses `adopted_by` para ninguna de estas relaciones:
+    · Madre o padre biológico (usa `child_of → Y` / `parent_of → Y`).
+    · Esposa, esposo, cónyuge (usa `married_to → Y`).
+    · Orden religiosa, instituto, academia (usa `affiliated_with → Y`
+       o `belongs_to_period → Y` según aplique; jamás adopted_by).
+    · Patrón, mecenas, quien encarga tutoría, tutor (usa `mentor_of`
+       INVERSO cuando aplique, o NO emites proposal si no encaja).
+    · Maestro, profesor, guía intelectual (usa `studied_under → Y` o
+       `influenced_by → Y`).
+- Si no aparece literalmente "adoptado"/"adopción"/"hijo adoptivo"/
+  "adopted", NO emitas `adopted_by`. Si dudas → NO emites proposal.
+
+EJEMPLOS `adopted_by` — correcto vs hallucination:
+  Body: "Tiberio, hijo adoptivo de Augusto"
+  ✅ {{"predicate": "adopted_by", "object": "Augusto", "confidence": "high"}}
+
+  Body: "Agustín creció bajo la influencia de su madre Mónica"
+  ❌ {{"predicate": "adopted_by", "object": "Mónica"}}  (Mónica era su madre biológica)
+  ✅ {{"predicate": "child_of", "object": "Mónica", "confidence": "high"}}  (si no está ya típado)
+
+  Body: "Einstein se casó en segundas nupcias con Elsa Einstein"
+  ❌ {{"predicate": "adopted_by", "object": "Elsa Einstein"}}  (Elsa era su esposa)
+  ✅ {{"predicate": "married_to", "object": "Elsa Einstein", "confidence": "high"}}
+
+  Body: "Tomás de Aquino ingresó a la Orden de Predicadores"
+  ❌ {{"predicate": "adopted_by", "object": "Orden de Predicadores"}}  (es una orden religiosa)
+  ✅ {{"predicate": "affiliated_with", "object": "Orden de Predicadores", "confidence": "high"}}
+
+  Body: "Aristóteles fue tutor de Alejandro por encargo de Filipo II"
+  ❌ {{"predicate": "adopted_by", "object": "Filipo II de Macedonia"}}  (patronage, no adopción)
+  (Si el body no dice nada más sobre Filipo II como padre adoptivo: NO EMITAS PROPOSAL)
 """
 
 _STRICT_ADDITIONAL = """\
@@ -1058,6 +1190,7 @@ __all__ = [
     "OpenAILLMClient",
     "PROMPT_VERSION",
     "RawLLMProposal",
+    "REASON_ADOPTED_BY_MISSING_MARKER",
     "REASON_DUPLICATE_TYPED",
     "REASON_EMPTY_FIELD",
     "REASON_INVALID_CONFIDENCE",
