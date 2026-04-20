@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import enum
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
 from brain_ops.errors import BrainOpsError
+
+
+class LLMModeChoice(str, enum.Enum):
+    """Campaña 2.2B Paso 5 — CLI enum para --mode.
+
+    - cheap: pattern extractor only (default, preserves 2.2A)
+    - strict: pattern + LLM con cita textual literal
+    - deep: pattern + LLM permitiendo inferencias contextuales medium
+    """
+    cheap = "cheap"
+    strict = "strict"
+    deep = "deep"
 
 from .knowledge import (
     present_apply_relations_batch_command,
@@ -1379,6 +1392,14 @@ entity: false
                  "Off by default to avoid clobbering reviewer edits.",
         ),
         as_json: bool = typer.Option(False, "--json", help="Emit JSON report."),
+        mode: LLMModeChoice = typer.Option(
+            LLMModeChoice.cheap, "--mode",
+            help="LLM mode: cheap (pattern only, default, 2.2A behavior), "
+                 "strict (pattern + LLM with literal-quote evidence), "
+                 "deep (pattern + LLM permitting medium-confidence "
+                 "contextual inferences — use only on notes explicitly "
+                 "blocked by strict).",
+        ),
     ) -> None:
         """Campaña 2.1 Paso 4 — build a batch of typed-relation proposals."""
         try:
@@ -1394,6 +1415,7 @@ entity: false
                 include_empty=include_empty,
                 overwrite=overwrite,
                 as_json=as_json,
+                mode=mode.value,
             )
         except BrainOpsError as error:
             handle_error(error)
@@ -1448,6 +1470,14 @@ entity: false
             False, "--json",
             help="Emit JSON instead of YAML.",
         ),
+        mode: LLMModeChoice = typer.Option(
+            LLMModeChoice.cheap, "--mode",
+            help="LLM mode: cheap (pattern only, default, 2.2A behavior), "
+                 "strict (pattern + LLM with literal-quote evidence), "
+                 "deep (pattern + LLM permitting medium-confidence "
+                 "contextual inferences — use only on notes explicitly "
+                 "blocked by strict).",
+        ),
     ) -> None:
         """Campaña 2.1 Paso 2 — propose typed relations for an entity (read-only)."""
         try:
@@ -1459,6 +1489,7 @@ entity: false
                 output=output,
                 stdout=stdout,
                 as_json=as_json,
+                mode=mode.value,
             )
         except BrainOpsError as error:
             handle_error(error)

@@ -311,7 +311,14 @@ def build_batch(
     *,
     skip_empty: bool = True,
     overwrite: bool = False,
+    mode: str = "cheap",
+    llm_client: object | None = None,
+    cache_dir: Path | None = None,
 ) -> BatchBuildResult:
+    """Construye un batch de proposals. Campaña 2.2B Paso 5: `mode`,
+    `llm_client`, `cache_dir` se pasan through a `propose_relations_for_entity`.
+    Default mode="cheap" preserva el comportamiento pre-2.2B.
+    """
     batch_dir = resolve_batch_dir(vault, batch_name)
     if batch_dir.exists():
         if not overwrite:
@@ -338,6 +345,9 @@ def build_batch(
             proposal = propose_relations_for_entity(
                 name, vault,
                 db_path=db_path if db_path.exists() else None,
+                mode=mode,
+                llm_client=llm_client,
+                cache_dir=cache_dir,
             )
         except FileNotFoundError:
             # Entity enumerated but note missing (race condition) — skip.

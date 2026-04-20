@@ -1065,8 +1065,14 @@ def present_batch_propose_relations_command(
     include_empty: bool,
     overwrite: bool,
     as_json: bool,
+    mode: str = "cheap",
 ) -> None:
     """Campaña 2.1 Paso 4 — materialise a batch of relation proposals.
+
+    Campaña 2.2B Paso 5: accepts `mode` ∈ {cheap, strict, deep}. Default
+    `cheap` preserves 2.2A behavior (pattern extractor only). `strict` and
+    `deep` activate the LLM-assisted extractor for each entity in the
+    batch (requires `anthropic` package + API key).
 
     Writes to `<vault>/.brain-ops/relations-proposals/batch-<name>/` only;
     never mutates any vault note. Emits `manifest.yaml`, per-entity
@@ -1079,6 +1085,7 @@ def present_batch_propose_relations_command(
     )
 
     vault = load_validated_vault(config_path, dry_run=True)
+    cache_dir = Path(vault.config.vault_path) / ".brain-ops" / "llm-cache"
     filter_ = BatchFilter(
         subtype=subtype,
         domain=domain,
@@ -1091,6 +1098,8 @@ def present_batch_propose_relations_command(
             vault, batch_name, filter_,
             skip_empty=not include_empty,
             overwrite=overwrite,
+            mode=mode,
+            cache_dir=cache_dir if mode != "cheap" else None,
         )
     except BatchBuildError as exc:
         console.print(f"[red]error[/red]: {exc}")
@@ -1254,8 +1263,14 @@ def present_propose_relations_command(
     output: Path | None,
     stdout: bool,
     as_json: bool,
+    mode: str = "cheap",
 ) -> None:
     """Campaña 2.1 Paso 2 — emit a read-only proposal of typed relations.
+
+    Campaña 2.2B Paso 5: accepts `mode` ∈ {cheap, strict, deep}. Default
+    `cheap` preserves 2.2A behavior (pattern extractor only). `strict` and
+    `deep` activate the LLM-assisted extractor (requires `anthropic`
+    package + API key).
 
     Never mutates the vault note. Writes a YAML proposal file (default:
     `<vault>/.brain-ops/relations-proposals/<entity>.yaml`) that a human
@@ -1271,11 +1286,15 @@ def present_propose_relations_command(
 
     vault = load_validated_vault(config_path, dry_run=True)
     db_path = Path(vault.config.vault_path) / ".brain-ops" / "knowledge.db"
+    # Default cache dir for LLM responses. Ignored if mode=cheap.
+    cache_dir = Path(vault.config.vault_path) / ".brain-ops" / "llm-cache"
 
     result = propose_relations_for_entity(
         entity, vault,
         db_path=db_path if db_path.exists() else None,
         include_existing=include_existing,
+        mode=mode,
+        cache_dir=cache_dir if mode != "cheap" else None,
     )
 
     payload = result.to_yaml_dict()

@@ -871,3 +871,99 @@ class CliCommandRegistrationTestCase(TestCase):
                 "improve_structure": False,
             },
         )
+
+
+class LLMModeCLIFlagTestCase(TestCase):
+    """Campaña 2.2B Paso 5 — `--mode` flag en propose-relations y
+    batch-propose-relations.
+
+    Verifica:
+    - default = cheap (preserva 2.2A)
+    - strict y deep se pasan correctamente al presenter
+    - mode inválido → typer rechaza con exit != 0
+    """
+
+    def setUp(self) -> None:
+        self.runner = CliRunner()
+        self.console = Console(record=True)
+        self.handle_error = Mock()
+
+    def _build_app(self) -> typer.Typer:
+        app = typer.Typer()
+        register_note_and_knowledge_commands(
+            app, self.console, self.handle_error,
+        )
+        return app
+
+    def test_propose_relations_default_mode_is_cheap(self) -> None:
+        app = self._build_app()
+        with patch(
+            "brain_ops.interfaces.cli.commands_notes."
+            "present_propose_relations_command"
+        ) as mock_presenter:
+            result = self.runner.invoke(
+                app, ["propose-relations", "Aristóteles"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_presenter.assert_called_once()
+        self.assertEqual(mock_presenter.call_args.kwargs["mode"], "cheap")
+
+    def test_propose_relations_mode_strict_passed_through(self) -> None:
+        app = self._build_app()
+        with patch(
+            "brain_ops.interfaces.cli.commands_notes."
+            "present_propose_relations_command"
+        ) as mock_presenter:
+            result = self.runner.invoke(
+                app, ["propose-relations", "Aristóteles", "--mode", "strict"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_presenter.call_args.kwargs["mode"], "strict")
+
+    def test_propose_relations_mode_deep_passed_through(self) -> None:
+        app = self._build_app()
+        with patch(
+            "brain_ops.interfaces.cli.commands_notes."
+            "present_propose_relations_command"
+        ) as mock_presenter:
+            result = self.runner.invoke(
+                app, ["propose-relations", "Zeus", "--mode", "deep"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_presenter.call_args.kwargs["mode"], "deep")
+
+    def test_propose_relations_invalid_mode_rejected(self) -> None:
+        app = self._build_app()
+        result = self.runner.invoke(
+            app, ["propose-relations", "X", "--mode", "banana"],
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("banana", result.output.lower() + result.stderr.lower()
+                      if hasattr(result, "stderr") else result.output.lower())
+
+    def test_batch_propose_relations_default_mode_is_cheap(self) -> None:
+        app = self._build_app()
+        with patch(
+            "brain_ops.interfaces.cli.commands_notes."
+            "present_batch_propose_relations_command"
+        ) as mock_presenter:
+            result = self.runner.invoke(
+                app, ["batch-propose-relations", "--batch-name", "t1"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_presenter.assert_called_once()
+        self.assertEqual(mock_presenter.call_args.kwargs["mode"], "cheap")
+
+    def test_batch_propose_relations_mode_strict_passed_through(self) -> None:
+        app = self._build_app()
+        with patch(
+            "brain_ops.interfaces.cli.commands_notes."
+            "present_batch_propose_relations_command"
+        ) as mock_presenter:
+            result = self.runner.invoke(
+                app,
+                ["batch-propose-relations", "--batch-name", "t1",
+                 "--mode", "strict"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_presenter.call_args.kwargs["mode"], "strict")
