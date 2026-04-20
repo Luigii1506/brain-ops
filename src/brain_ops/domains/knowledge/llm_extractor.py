@@ -35,8 +35,9 @@ without forcing a `adopted_by` or `child_of` decision at extraction time.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Iterable, Literal, Protocol
 
 from brain_ops.domains.knowledge.object_model import CANONICAL_PREDICATES
 from brain_ops.domains.knowledge.relations_proposer import (
@@ -262,10 +263,378 @@ def propose_triples_via_llm(
     return []
 
 
+# ---------------------------------------------------------------------------
+# Prompt templates — Campaña 2.2B Paso 2
+# ---------------------------------------------------------------------------
+#
+# Two modes share 95% of the prompt. The `_strict` template is the default
+# operational mode: LLM only proposes triples where the evidence_quote is
+# LITERALLY in the body. The `_deep` template adds a single extra rule
+# permitting implicit-context inferences with confidence=medium and flag
+# `implicit_context_inference`. Use deep only on notes explicitly blocked
+# (Zeus, Einstein post-cluster) where strict returned 0.
+#
+# Placeholders use Python `.format()` substitution. JSON literal braces are
+# doubled `{{ ... }}` for escape. Keep this file single-source until the
+# vocabulary stabilizes; move to versioned files once we commit to a v2.
+
+PROMPT_VERSION = "v1.0"
+
+_SHARED_HEADER = """\
+Eres un extractor de relaciones tipadas para un knowledge graph personal.
+Lees prosa biográfica/histórica/científica en español e inglés y propones
+triples (source, predicate, object) conformes al catálogo canónico.
+
+REGLAS INVIOLABLES:
+- Solo propones triples donde la evidencia está LITERALMENTE en el body.
+- NUNCA inventas hechos que no aparecen explícitamente en el texto dado.
+- Respetas negaciones: si el body dice "X no aparece en Y", NO emites triple.
+- Distingues adopción de biología: "hijo adoptivo de X" -> `adopted_by`,
+  NUNCA `child_of`.
+- Distingues dirección: "nacido fuera de Italia" NO implica ruled -> Italia.
+- "hijastro de X" NO se auto-mapea: emite con confidence=medium y flag
+  `hijastro_step_relation`; el reviewer humano decide entre adopted_by,
+  child_of, o rechazar.
+- Si dudas entre 2 predicados canónicos, emites con confidence=medium y
+  flag `multi_candidate_predicate`.
+- Si ningún predicado canónico encaja con precisión, NO emites proposal.
+- Si el body presenta versiones contradictorias de una relación, NO emites
+  proposal para ese par; puedes emitir una proposal medium con flag
+  `conflicting_traditions` como señal para el reviewer.
+"""
+
+_STRICT_ADDITIONAL = """\
+MODO: strict
+- No incluyas inferencias contextuales. Solo relaciones con cita textual
+  inequívoca en el body.
+- Confidence `high` solo si la relación está afirmada sin ambigüedad.
+- Confidence `medium` si el predicado tiene múltiples candidatos o si la
+  cita requiere interpretación mínima.
+- Confidence `low` NO debe emitirse.
+"""
+
+_DEEP_ADDITIONAL = """\
+MODO: deep (exploratorio)
+- Puedes inferir relaciones contextuales cuando el body las sugiere sin
+  afirmarlas textualmente, PERO siempre con confidence=medium y flag
+  `implicit_context_inference`.
+- Confidence `high` sigue requiriendo cita textual directa.
+- Aún así, `evidence_quote` debe ser substring LITERAL del body (puede ser
+  una oración breve adyacente al contexto inferido).
+- Confidence `low` NO debe emitirse.
+"""
+
+_SHARED_FOOTER = """\
+CATÁLOGO DE PREDICADOS CANÓNICOS (usa EXACTAMENTE estos nombres):
+{canonical_predicates}
+
+FLAGS SEMÁNTICOS PERMITIDOS (lista cerrada):
+{allowed_flags}
+
+ENTIDAD:
+- name: {entity_name}
+- subtype: {subtype}
+- domain: {domain}
+
+TRIPLES YA TÍPADOS (NO PROPONGAS ESTOS):
+{existing_typed}
+
+TARGETS CANDIDATOS (entidades canónicas del vault; preferir estos como
+object cuando encajen; otros targets generan MISSING_ENTITY downstream):
+{candidate_targets}
+
+BODY:
+---
+{body}
+---
+
+INSTRUCCIONES DE SALIDA:
+Devuelve EXCLUSIVAMENTE un JSON válido (sin markdown fences, sin texto
+adicional) con este schema:
+{{
+  "proposals": [
+    {{
+      "predicate": "<uno del catálogo>",
+      "object": "<nombre canónico>",
+      "confidence": "high" | "medium",
+      "evidence_quote": "<substring LITERAL del body>",
+      "rationale": "<1 línea explicando por qué ese predicado>",
+      "flags": ["<opcional, de la lista cerrada>"]
+    }}
+  ]
+}}
+
+Si no hay relaciones extraíbles, devuelve {{"proposals": []}}.
+"""
+
+
+def _format_canonical_predicates_block() -> str:
+    """Emite el catálogo canónico en formato tabular compacto."""
+    lines = []
+    for pred, desc in sorted(CANONICAL_PREDICATES.items()):
+        lines.append(f"- {pred}: {desc}")
+    return "\n".join(lines)
+
+
+def _format_allowed_flags_block() -> str:
+    return "\n".join(f"- {f}" for f in sorted(ALLOWED_FLAGS))
+
+
+def _format_existing_typed_block(existing_typed: Iterable[tuple[str, str]]) -> str:
+    items = sorted(existing_typed)
+    if not items:
+        return "(ninguno)"
+    return "\n".join(f"- {pred} -> {obj}" for pred, obj in items)
+
+
+def _format_candidate_targets_block(targets: Iterable[str], cap: int) -> str:
+    deduped = list(dict.fromkeys(targets))  # preserve order, drop duplicates
+    truncated = deduped[:cap]
+    if not truncated:
+        return "(ninguno curado para esta entidad)"
+    lines = [f"- {t}" for t in truncated]
+    if len(deduped) > cap:
+        lines.append(f"... ({len(deduped) - cap} más omitidos por cap={cap})")
+    return "\n".join(lines)
+
+
+def _format_domain(domain: str | list[str] | None) -> str:
+    if domain is None:
+        return "(sin domain)"
+    if isinstance(domain, list):
+        return ", ".join(domain)
+    return str(domain)
+
+
+def build_prompt(
+    entity_name: str,
+    body: str,
+    mode: LLMMode,
+    *,
+    subtype: str | None = None,
+    domain: str | list[str] | None = None,
+    existing_typed: Iterable[tuple[str, str]] = (),
+    candidate_targets: Iterable[str] = (),
+    candidate_cap: int = 150,
+) -> str:
+    """Construye el prompt completo para el LLM según `mode`.
+
+    Devuelve un único string que puede enviarse como user message. El
+    prompt está estructurado en bloques claramente separados para que
+    tanto humanos como el LLM los lean con facilidad.
+
+    - `strict` y `deep` comparten header + catalog + footer completos.
+    - La única diferencia entre modos es el bloque de reglas específicas
+      del modo (_STRICT_ADDITIONAL vs _DEEP_ADDITIONAL).
+    """
+    if mode == "cheap":
+        raise ValueError("cheap mode should not build a prompt (no LLM call)")
+    if mode == "strict":
+        mode_block = _STRICT_ADDITIONAL
+    elif mode == "deep":
+        mode_block = _DEEP_ADDITIONAL
+    else:
+        raise ValueError(f"Unknown LLM mode: {mode!r}")
+
+    full_template = _SHARED_HEADER + "\n" + mode_block + "\n" + _SHARED_FOOTER
+
+    return full_template.format(
+        canonical_predicates=_format_canonical_predicates_block(),
+        allowed_flags=_format_allowed_flags_block(),
+        entity_name=entity_name,
+        subtype=subtype or "(sin subtype)",
+        domain=_format_domain(domain),
+        existing_typed=_format_existing_typed_block(existing_typed),
+        candidate_targets=_format_candidate_targets_block(
+            candidate_targets, candidate_cap,
+        ),
+        body=body,
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM client abstraction + mock (testing only)
+# ---------------------------------------------------------------------------
+
+
+class LLMClient(Protocol):
+    """Protocolo mínimo para clientes LLM compatibles con 2.2B.
+
+    Paso 3 implementará un cliente real sobre Anthropic Messages API. Por
+    ahora, `MockLLMClient` satisface este Protocolo para tests sin red.
+    """
+
+    def extract(self, *, prompt: str, temperature: float) -> str:
+        """Envía el prompt al LLM, devuelve la respuesta raw (JSON esperado)."""
+        ...
+
+
+@dataclass
+class MockLLMClient:
+    """Cliente de testing. Devuelve una respuesta canned y guarda el prompt
+    para inspección por los tests."""
+    canned_response: str = '{"proposals": []}'
+    calls: list[dict] = field(default_factory=list)
+
+    def extract(self, *, prompt: str, temperature: float) -> str:
+        self.calls.append({"prompt": prompt, "temperature": temperature})
+        return self.canned_response
+
+
+# ---------------------------------------------------------------------------
+# LLM response parser
+# ---------------------------------------------------------------------------
+
+
+def parse_llm_response(raw_text: str) -> list[RawLLMProposal]:
+    """Parsea la respuesta raw del LLM a una lista de `RawLLMProposal`.
+
+    Tolerante a:
+    - JSON malformado (devuelve []).
+    - Falta la clave `proposals` (devuelve []).
+    - Proposals con campos faltantes (se omiten silenciosamente — el
+      validator posterior aplica los checks más estrictos).
+
+    NO aplica validación semántica. Solo extrae lo que parece estructura
+    mínima. La validación real (canonical predicate, quote literal, etc.)
+    vive en `validate_raw_proposal`.
+    """
+    try:
+        payload = json.loads(raw_text)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    if not isinstance(payload, dict):
+        return []
+
+    proposals = payload.get("proposals")
+    if not isinstance(proposals, list):
+        return []
+
+    out: list[RawLLMProposal] = []
+    for item in proposals:
+        if not isinstance(item, dict):
+            continue
+        # Campos mínimos para construir RawLLMProposal
+        predicate = item.get("predicate")
+        obj = item.get("object")
+        confidence = item.get("confidence")
+        evidence_quote = item.get("evidence_quote")
+        if not all(isinstance(x, str) for x in (predicate, obj, confidence, evidence_quote)):
+            continue
+        rationale = item.get("rationale", "")
+        if not isinstance(rationale, str):
+            rationale = ""
+        flags_raw = item.get("flags", [])
+        if isinstance(flags_raw, list):
+            flags = tuple(f for f in flags_raw if isinstance(f, str))
+        else:
+            flags = ()
+        out.append(RawLLMProposal(
+            predicate=predicate,
+            object=obj,
+            confidence=confidence,
+            evidence_quote=evidence_quote,
+            rationale=rationale,
+            flags=flags,
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: prompt -> client -> parse -> validate
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LLMExtractionResult:
+    """Resultado completo de una extracción LLM-assisted para una entidad."""
+    accepted: list[ProposedRelation]
+    rejections: list[dict]
+    prompt: str
+    raw_response: str
+    mode: LLMMode
+
+
+def extract_and_validate(
+    entity_name: str,
+    body: str,
+    *,
+    mode: LLMMode,
+    client: LLMClient,
+    existing_typed: set[tuple[str, str]],
+    entity_index: dict[str, str],
+    subtype: str | None = None,
+    domain: str | list[str] | None = None,
+    candidate_targets: Iterable[str] = (),
+    candidate_cap: int = 150,
+    temperature: float | None = None,
+) -> LLMExtractionResult:
+    """End-to-end: construye prompt, llama al cliente, parsea, valida.
+
+    `temperature` default per mode: strict=0.0, deep=0.2 (per plan D3).
+    Cheap mode short-circuits con resultado vacío (no llamada).
+    """
+    if mode == "cheap":
+        return LLMExtractionResult(
+            accepted=[], rejections=[], prompt="", raw_response="", mode="cheap",
+        )
+
+    if temperature is None:
+        temperature = 0.0 if mode == "strict" else 0.2
+
+    prompt = build_prompt(
+        entity_name, body, mode,
+        subtype=subtype, domain=domain,
+        existing_typed=existing_typed,
+        candidate_targets=candidate_targets,
+        candidate_cap=candidate_cap,
+    )
+    raw_response = client.extract(prompt=prompt, temperature=temperature)
+    raw_proposals = parse_llm_response(raw_response)
+
+    accepted: list[ProposedRelation] = []
+    rejections: list[dict] = []
+    for i, raw in enumerate(raw_proposals, start=1):
+        proposal, reason = validate_raw_proposal(
+            raw,
+            entity_name=entity_name,
+            body=body,
+            existing_typed=existing_typed,
+            entity_index=entity_index,
+            proposal_id=f"llm-{i:02d}",
+        )
+        if proposal is not None:
+            accepted.append(proposal)
+        else:
+            rejections.append({
+                "reason": reason,
+                "raw": {
+                    "predicate": raw.predicate,
+                    "object": raw.object,
+                    "confidence": raw.confidence,
+                    "evidence_quote": raw.evidence_quote,
+                    "rationale": raw.rationale,
+                    "flags": list(raw.flags),
+                },
+            })
+    return LLMExtractionResult(
+        accepted=accepted,
+        rejections=rejections,
+        prompt=prompt,
+        raw_response=raw_response,
+        mode=mode,
+    )
+
+
 __all__ = [
     "ALLOWED_FLAGS",
     "LLM_MODES",
+    "LLMClient",
+    "LLMExtractionResult",
     "LLMMode",
+    "MockLLMClient",
+    "PROMPT_VERSION",
     "RawLLMProposal",
     "REASON_DUPLICATE_TYPED",
     "REASON_EMPTY_FIELD",
@@ -274,6 +643,9 @@ __all__ = [
     "REASON_QUOTE_NOT_IN_BODY",
     "REASON_SELF_REFERENCE",
     "REASON_UNKNOWN_PREDICATE",
+    "build_prompt",
+    "extract_and_validate",
+    "parse_llm_response",
     "propose_triples_via_llm",
     "validate_raw_proposal",
 ]

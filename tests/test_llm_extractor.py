@@ -11,6 +11,8 @@ from unittest import TestCase
 
 from brain_ops.domains.knowledge.llm_extractor import (
     ALLOWED_FLAGS,
+    LLMExtractionResult,
+    MockLLMClient,
     RawLLMProposal,
     REASON_DUPLICATE_TYPED,
     REASON_EMPTY_FIELD,
@@ -19,6 +21,9 @@ from brain_ops.domains.knowledge.llm_extractor import (
     REASON_QUOTE_NOT_IN_BODY,
     REASON_SELF_REFERENCE,
     REASON_UNKNOWN_PREDICATE,
+    build_prompt,
+    extract_and_validate,
+    parse_llm_response,
     propose_triples_via_llm,
     validate_raw_proposal,
 )
@@ -313,6 +318,281 @@ class StubEntryPointTestCase(TestCase):
 # ---------------------------------------------------------------------------
 # Closed-set invariants
 # ---------------------------------------------------------------------------
+
+class PromptBuilderTestCase(TestCase):
+    """Paso 2: prompt builder para strict y deep."""
+
+    def test_strict_prompt_includes_all_required_blocks(self) -> None:
+        prompt = build_prompt(
+            "Tiberio", "Tiberio fue emperador.", "strict",
+            subtype="person", domain="historia",
+            existing_typed={("ruled", "Imperio Romano")},
+            candidate_targets=["Augusto", "Julia la Mayor"],
+        )
+        # Bloques estructurales
+        self.assertIn("REGLAS INVIOLABLES", prompt)
+        self.assertIn("MODO: strict", prompt)
+        self.assertIn("CATÁLOGO DE PREDICADOS CANÓNICOS", prompt)
+        self.assertIn("FLAGS SEMÁNTICOS PERMITIDOS", prompt)
+        self.assertIn("ENTIDAD:", prompt)
+        self.assertIn("TRIPLES YA TÍPADOS", prompt)
+        self.assertIn("TARGETS CANDIDATOS", prompt)
+        self.assertIn("BODY:", prompt)
+        self.assertIn("INSTRUCCIONES DE SALIDA", prompt)
+        # Contenido específico
+        self.assertIn("Tiberio", prompt)
+        self.assertIn("Tiberio fue emperador.", prompt)
+        self.assertIn("ruled -> Imperio Romano", prompt)
+        self.assertIn("Augusto", prompt)
+        # JSON schema literal debe estar
+        self.assertIn('"predicate":', prompt)
+        self.assertIn('"evidence_quote":', prompt)
+
+    def test_deep_prompt_has_implicit_inference_rule(self) -> None:
+        prompt = build_prompt(
+            "Zeus", "Zeus es el dios supremo.", "deep",
+            subtype="deity", domain="religion",
+        )
+        self.assertIn("MODO: deep", prompt)
+        self.assertIn("implicit_context_inference", prompt)
+        self.assertIn("contextuales", prompt.lower())
+
+    def test_strict_and_deep_share_core_rules(self) -> None:
+        """Ambos modos deben tener las mismas reglas inviolables + catálogo."""
+        strict_prompt = build_prompt("X", "body", "strict")
+        deep_prompt = build_prompt("X", "body", "deep")
+        for shared_rule in [
+            "Solo propones triples donde la evidencia está LITERALMENTE",
+            "hijastro de X",
+            "nacido fuera de Italia",
+            "hijo adoptivo de X",
+            "CATÁLOGO DE PREDICADOS CANÓNICOS",
+        ]:
+            self.assertIn(shared_rule, strict_prompt)
+            self.assertIn(shared_rule, deep_prompt)
+
+    def test_strict_prompt_forbids_hijastro_auto_mapping(self) -> None:
+        """D12 del plan: el prompt debe instruir explícitamente que hijastro
+        NO se auto-mapea a adopted_by."""
+        prompt = build_prompt("X", "body", "strict")
+        self.assertIn("hijastro de X", prompt)
+        self.assertIn("NO se auto-mapea", prompt)
+        self.assertIn("hijastro_step_relation", prompt)
+
+    def test_canonical_predicates_block_contains_key_predicates(self) -> None:
+        prompt = build_prompt("X", "body", "strict")
+        for pred in ["studied_under", "adopted_by", "succeeded",
+                     "founded", "born_in", "reacted_against"]:
+            self.assertIn(f"- {pred}:", prompt)
+
+    def test_existing_typed_rendered_correctly(self) -> None:
+        prompt = build_prompt(
+            "X", "body", "strict",
+            existing_typed={("studied_under", "Platón"),
+                            ("mentor_of", "Alejandro Magno")},
+        )
+        self.assertIn("studied_under -> Platón", prompt)
+        self.assertIn("mentor_of -> Alejandro Magno", prompt)
+
+    def test_empty_existing_typed_shows_placeholder(self) -> None:
+        prompt = build_prompt("X", "body", "strict", existing_typed=set())
+        self.assertIn("(ninguno)", prompt)
+
+    def test_candidate_targets_truncated_to_cap(self) -> None:
+        many = [f"E{i}" for i in range(200)]
+        prompt = build_prompt(
+            "X", "body", "strict",
+            candidate_targets=many, candidate_cap=50,
+        )
+        self.assertIn("E0", prompt)
+        self.assertIn("E49", prompt)
+        self.assertNotIn("E50", prompt)
+        self.assertIn("150 más omitidos", prompt)
+
+    def test_cheap_mode_does_not_build_prompt(self) -> None:
+        with self.assertRaises(ValueError):
+            build_prompt("X", "body", "cheap")
+
+
+class ResponseParserTestCase(TestCase):
+    """Paso 2: parse_llm_response — tolerante a errores, silencioso ante campos
+    faltantes (la validación semántica vive en validate_raw_proposal)."""
+
+    def test_valid_json_parses_to_raw_proposals(self) -> None:
+        raw = '''{"proposals": [
+          {"predicate": "studied_under", "object": "Platón",
+           "confidence": "high", "evidence_quote": "alumno de Platón",
+           "rationale": "directo", "flags": []}
+        ]}'''
+        out = parse_llm_response(raw)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].predicate, "studied_under")
+
+    def test_malformed_json_returns_empty(self) -> None:
+        self.assertEqual(parse_llm_response("{not valid json"), [])
+
+    def test_missing_proposals_key_returns_empty(self) -> None:
+        self.assertEqual(parse_llm_response('{"other_key": []}'), [])
+
+    def test_proposal_with_missing_fields_silently_skipped(self) -> None:
+        """Un proposal sin evidence_quote se omite; el resto del array pasa."""
+        raw = '''{"proposals": [
+          {"predicate": "studied_under", "object": "Platón"},
+          {"predicate": "mentor_of", "object": "X", "confidence": "high",
+           "evidence_quote": "maestro de X", "rationale": "ok"}
+        ]}'''
+        out = parse_llm_response(raw)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0].predicate, "mentor_of")
+
+    def test_non_list_proposals_returns_empty(self) -> None:
+        raw = '{"proposals": "not a list"}'
+        self.assertEqual(parse_llm_response(raw), [])
+
+
+class MockClientTestCase(TestCase):
+    def test_mock_returns_canned_response(self) -> None:
+        mock = MockLLMClient(canned_response='{"proposals": []}')
+        out = mock.extract(prompt="anything", temperature=0.0)
+        self.assertEqual(out, '{"proposals": []}')
+
+    def test_mock_records_calls(self) -> None:
+        mock = MockLLMClient(canned_response='{"proposals": []}')
+        mock.extract(prompt="prompt-a", temperature=0.0)
+        mock.extract(prompt="prompt-b", temperature=0.2)
+        self.assertEqual(len(mock.calls), 2)
+        self.assertEqual(mock.calls[0]["prompt"], "prompt-a")
+        self.assertEqual(mock.calls[1]["temperature"], 0.2)
+
+
+class EndToEndWithMockTestCase(TestCase):
+    """Paso 2: end-to-end con MockLLMClient.
+
+    Prompt → mock → parse → validate → LLMExtractionResult. Cuatro casos
+    canónicos que cubren los comportamientos clave del pipeline.
+    """
+
+    BODY = (
+        "Tiberio fue el segundo emperador romano. Hijastro y sucesor "
+        "reluctante de [[Augusto]]. Llegó al poder tarde."
+    )
+    ENTITY_INDEX = {"Augusto": "entity", "Tiberio": "entity"}
+
+    def test_good_case_emits_valid_proposal(self) -> None:
+        """Caso bueno: LLM emite proposal con cita literal + predicado
+        canónico + confidence high → accepted."""
+        canned = '''{"proposals": [
+          {"predicate": "succeeded", "object": "Augusto",
+           "confidence": "high",
+           "evidence_quote": "sucesor reluctante de [[Augusto]]",
+           "rationale": "Sucesión imperial directa.",
+           "flags": []}
+        ]}'''
+        result = extract_and_validate(
+            "Tiberio", self.BODY, mode="strict",
+            client=MockLLMClient(canned_response=canned),
+            existing_typed=set(),
+            entity_index=self.ENTITY_INDEX,
+        )
+        self.assertIsInstance(result, LLMExtractionResult)
+        self.assertEqual(len(result.accepted), 1)
+        self.assertEqual(result.accepted[0].predicate, "succeeded")
+        self.assertEqual(result.accepted[0].object, "Augusto")
+        self.assertEqual(result.accepted[0].status, "approved")
+        self.assertEqual(result.rejections, [])
+
+    def test_invalid_predicate_case_rejected_with_reason(self) -> None:
+        """Caso con predicado no-canónico: rejected con razón explícita."""
+        canned = '''{"proposals": [
+          {"predicate": "was_best_friends_with", "object": "Augusto",
+           "confidence": "high",
+           "evidence_quote": "sucesor reluctante de [[Augusto]]",
+           "rationale": "amistad imperial", "flags": []}
+        ]}'''
+        result = extract_and_validate(
+            "Tiberio", self.BODY, mode="strict",
+            client=MockLLMClient(canned_response=canned),
+            existing_typed=set(),
+            entity_index=self.ENTITY_INDEX,
+        )
+        self.assertEqual(result.accepted, [])
+        self.assertEqual(len(result.rejections), 1)
+        self.assertEqual(result.rejections[0]["reason"], REASON_UNKNOWN_PREDICATE)
+        self.assertEqual(result.rejections[0]["raw"]["predicate"],
+                         "was_best_friends_with")
+
+    def test_fabricated_quote_case_rejected(self) -> None:
+        """Anti-alucinación: si el LLM inventa una cita, rejected."""
+        canned = '''{"proposals": [
+          {"predicate": "succeeded", "object": "Augusto",
+           "confidence": "high",
+           "evidence_quote": "Tiberio bebió vino con Augusto cada martes",
+           "rationale": "fabricated",
+           "flags": []}
+        ]}'''
+        result = extract_and_validate(
+            "Tiberio", self.BODY, mode="strict",
+            client=MockLLMClient(canned_response=canned),
+            existing_typed=set(),
+            entity_index=self.ENTITY_INDEX,
+        )
+        self.assertEqual(result.accepted, [])
+        self.assertEqual(len(result.rejections), 1)
+        self.assertEqual(result.rejections[0]["reason"], REASON_QUOTE_NOT_IN_BODY)
+
+    def test_hijastro_case_emits_medium_with_flag(self) -> None:
+        """D12 del plan: el LLM debe emitir hijastro como medium + flag,
+        NUNCA auto-mapearlo a adopted_by high. Aquí simulamos que el LLM
+        respetó la instrucción del prompt."""
+        canned = '''{"proposals": [
+          {"predicate": "adopted_by", "object": "Augusto",
+           "confidence": "medium",
+           "evidence_quote": "Hijastro y sucesor reluctante de [[Augusto]]",
+           "rationale": "Caso hijastro — reviewer debe decidir.",
+           "flags": ["hijastro_step_relation"]}
+        ]}'''
+        result = extract_and_validate(
+            "Tiberio", self.BODY, mode="strict",
+            client=MockLLMClient(canned_response=canned),
+            existing_typed=set(),
+            entity_index=self.ENTITY_INDEX,
+        )
+        self.assertEqual(len(result.accepted), 1)
+        p = result.accepted[0]
+        # Mapeo automático medium → needs-refinement preserva la decisión
+        # para el reviewer humano.
+        self.assertEqual(p.confidence, "medium")
+        self.assertEqual(p.status, "needs-refinement")
+        self.assertIn("hijastro_step_relation", p.note)
+
+    def test_cheap_mode_short_circuits_without_calling_client(self) -> None:
+        """Cheap mode no debe llamar al cliente (ahorro de $)."""
+        mock = MockLLMClient(canned_response='{"proposals": [...]}')
+        result = extract_and_validate(
+            "X", "body", mode="cheap", client=mock,
+            existing_typed=set(), entity_index={},
+        )
+        self.assertEqual(result.accepted, [])
+        self.assertEqual(len(mock.calls), 0)
+
+    def test_rejections_log_contains_raw_payload(self) -> None:
+        """Rejections deben conservar el payload raw para auditoría."""
+        canned = '''{"proposals": [
+          {"predicate": "xxx", "object": "Y",
+           "confidence": "high",
+           "evidence_quote": "not in body",
+           "rationale": "r", "flags": []}
+        ]}'''
+        result = extract_and_validate(
+            "Tiberio", self.BODY, mode="strict",
+            client=MockLLMClient(canned_response=canned),
+            existing_typed=set(),
+            entity_index=self.ENTITY_INDEX,
+        )
+        rejection = result.rejections[0]
+        self.assertEqual(rejection["raw"]["object"], "Y")
+        self.assertEqual(rejection["raw"]["confidence"], "high")
+
 
 class ClosedSetInvariantsTestCase(TestCase):
     def test_hijastro_flag_present_in_allowed_set(self) -> None:
