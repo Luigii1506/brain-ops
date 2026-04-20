@@ -1,0 +1,58 @@
+fixture_id: 04_agustin
+entity: Agustín de Hipona
+subtype: person
+domain: filosofia
+
+# Caso 2.2A-skipped: Tagaste no wikilinked. El LLM debería poder inferir
+# semánticamente el born_in aunque el target sea texto plano.
+
+body: |
+  Agustín de Hipona (354–430 d.C.), conocido como San Agustín, fue el
+  filósofo y teólogo más influyente del cristianismo latino. Nacido en
+  Tagaste (actual Souk Ahras, Argelia), hijo de padre pagano y madre
+  cristiana (Mónica), pasó por el maniqueísmo, el escepticismo
+  académico y el neoplatonismo antes de convertirse al cristianismo
+  en 386 d.C.
+
+  Como obispo de Hipona durante 35 años, construyó el marco intelectual
+  del cristianismo medieval. Sus obras cumbres — *Confesiones* y *La
+  ciudad de Dios* — definieron la teología cristiana durante mil años.
+
+  Fue influenciado por [[Platón]] a través del neoplatonismo de
+  [[Plotino]], aunque reinterpretó radicalmente la metafísica
+  platónica en clave cristiana. Su sistema teológico influyó
+  posteriormente en [[Tomás de Aquino]], quien lo llama "Agustín"
+  por antonomasia.
+
+existing_typed: []
+
+candidate_targets:
+  - Platón
+  - Plotino
+  - Tomás de Aquino
+
+entity_index:
+  Agustín de Hipona: entity
+  Platón: entity
+  Tomás de Aquino: entity
+  # Plotino NOT canonical — debe ser MISSING_ENTITY
+  # Tagaste NOT canonical — el target natural de born_in pero no existe
+
+must_catch:
+  - [influenced_by, Platón]        # "Fue influenciado por Platón"
+  - [influenced, Tomás de Aquino]  # "Su sistema teológico influyó en Tomás"
+
+must_not_propose:
+  # Tagaste existe solo como texto plano — el LLM no debería inventar un
+  # wikilink ni proponer born_in con un target que no aparece con [[...]].
+  # Esto verifica que respeta el "solo propones si evidencia literal".
+  # Si propone born_in → Tagaste, verificamos que MISSING_ENTITY se etiquete.
+  # No es un error semántico duro: lo permitimos si el LLM razona bien.
+  # (Dejamos este hueco como "extra_proposals" permitido.)
+
+  # Error duro: Agustín NO fue discípulo de Platón (temporalmente imposible)
+  - predicate: studied_under
+    object: Platón
+    reason: "absurdo temporal — Platón vivió 800 años antes"
+
+policy_checks: []

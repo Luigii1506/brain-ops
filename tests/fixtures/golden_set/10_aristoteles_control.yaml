@@ -1,0 +1,68 @@
+fixture_id: 10_aristoteles_control
+entity: Aristóteles
+subtype: person
+domain: filosofia
+
+# CONTROL DE NO-REGRESIÓN:
+# Nota densamente típada por el piloto 2.0 + F1-consolidation de 2.1.
+# Si el LLM emite muchos nuevos triples aquí, está sobre-extrayendo (FP risk).
+# Esperamos pocos o cero NEW triples — la mayor parte ya está típado.
+
+body: |
+  Aristóteles (Ἀριστοτέλης), conocido como "El Estagirita" por su ciudad
+  natal y "El Filósofo" por antonomasia, fue un filósofo, polímata y
+  científico griego nacido en 384 a.C. en Estagira, Macedonia. Estudió
+  20 años con [[Platón]] en la Academia de Atenas, fue tutor de
+  [[Alejandro Magno]] por encargo de [[Filipo II de Macedonia]], y fundó
+  el Liceo (escuela peripatética) donde enseñó durante 13 años.
+
+  Autor de obras fundacionales como la *[[Ética a Nicómaco]]* y
+  *[[Metafísica (Aristóteles)|Metafísica]]*. Crítico de la teoría de
+  las Formas de Platón, reaccionó contra el idealismo platónico en
+  favor de un empirismo metafísico.
+
+existing_typed:
+  - [studied_under, Platón]
+  - [mentor_of, Alejandro Magno]
+  - [reacted_against, Platón]
+  - [author_of, Ética a Nicómaco]
+  - [born_in, Macedonia (Grecia)]
+
+candidate_targets:
+  - Platón
+  - Alejandro Magno
+  - Filipo II de Macedonia
+  - Ética a Nicómaco
+  - Metafísica (Aristóteles)
+  - Macedonia (Grecia)
+
+entity_index:
+  Aristóteles: entity
+  Platón: entity
+  Alejandro Magno: entity
+  Filipo II de Macedonia: entity
+  Ética a Nicómaco: entity
+  Metafísica (Aristóteles): entity
+  Macedonia (Grecia): entity
+
+must_catch:
+  # Triples NEW razonables que el piloto no capturó y que el LLM debería
+  # detectar via semántica:
+  - [author_of, Metafísica (Aristóteles)]  # "Autor de obras fundacionales... Metafísica"
+
+must_not_propose:
+  # Todos los already-typed (el LLM debería auto-dedup vía existing_typed
+  # check en validate_raw_proposal):
+  - predicate: studied_under
+    object: Platón
+    reason: "ya típado — debe ser filtrado por dedup"
+  - predicate: mentor_of
+    object: Alejandro Magno
+    reason: "ya típado"
+  # Filipo II NO es padre de Aristóteles — el body dice "por encargo de
+  # Filipo II" (patrón de patronage), no filiación.
+  - predicate: child_of
+    object: Filipo II de Macedonia
+    reason: "patronage no es filiación"
+
+policy_checks: []

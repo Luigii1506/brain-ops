@@ -1,0 +1,55 @@
+fixture_id: 08_trajano_fuera_de
+entity: Trajano
+subtype: person
+domain: historia
+
+# Caso 2.2A-FP canónico: body dice "primer emperador nacido FUERA de
+# Italia". El regex tolerante de 2.2A capturó "emperador nacido fuera
+# de" como `ruled → Italia`. La preposición "fuera" invierte el
+# significado. El LLM debe detectar la inversión.
+
+body: |
+  Trajano fue emperador romano (98-117 d.C.), considerado por Maquiavelo
+  uno de los "cinco buenos emperadores". Nació en Itálica, Hispania
+  Baetica — primer emperador nacido fuera de [[Italia]] — en el seno
+  de una familia senatorial itálica.
+
+  Bajo su gobierno el Imperio alcanzó su máxima extensión territorial
+  (~5 millones de km²), incorporando la [[Dacia]] tras dos guerras
+  devastadoras (101-106 d.C.) y extendiéndose temporalmente hasta
+  [[Mesopotamia]].
+
+  Gobernó el [[Imperio Romano]] como princeps durante casi 20 años.
+
+existing_typed:
+  - [born_in, Hispania]
+
+candidate_targets:
+  - Italia
+  - Dacia
+  - Mesopotamia
+  - Imperio Romano
+  - Hispania
+
+entity_index:
+  Trajano: entity
+  Italia: entity
+  Dacia: entity
+  Mesopotamia: entity
+  Imperio Romano: entity
+  Hispania: entity
+
+must_catch:
+  - [ruled, Imperio Romano]      # "Gobernó el Imperio Romano como princeps"
+  - [conquered, Dacia]           # "incorporando la Dacia tras dos guerras"
+
+must_not_propose:
+  # FP semántico canónico — preposición reversora:
+  - predicate: ruled
+    object: Italia
+    reason: "body dice 'nacido FUERA DE Italia' — preposición invierte la relación"
+  - predicate: born_in
+    object: Italia
+    reason: "body dice explícitamente 'nacido fuera de Italia'"
+
+policy_checks: []

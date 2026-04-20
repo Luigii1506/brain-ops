@@ -1,0 +1,76 @@
+fixture_id: 02_newton
+entity: Isaac Newton
+subtype: person
+domain: ciencia
+
+# Caso 2.2A-bloqueado: intelectual lineage en prosa. Los tres edges del
+# piloto ya están típados; el LLM debe detectar relaciones NUEVAS que el
+# pattern extractor perdió por formato ensayístico.
+
+body: |
+  Isaac Newton fue un matemático, físico y astrónomo inglés nacido el 4 de
+  enero de 1643 en Woolsthorpe. Considerado el científico más influyente
+  de la historia, fue uno de los arquitectos centrales de la
+  [[Revolución científica]].
+
+  Sus *Philosophiae Naturalis Principia Mathematica* (1687) unificaron la
+  mecánica terrestre y la astronomía bajo un conjunto de leyes universales,
+  demostrando que la misma [[Gravedad]] que hace caer una manzana gobierna
+  las órbitas de los planetas. Formuló las tres leyes del movimiento y la
+  ley de la gravitación universal, inventó el cálculo diferencial e
+  integral (en paralelo con Leibniz), y realizó experimentos fundamentales
+  sobre la naturaleza de la luz.
+
+  Su síntesis integró la física de [[Galileo Galilei]] y la astronomía de
+  [[Johannes Kepler]]. Reaccionó intelectualmente contra el cartesianismo
+  de [[René Descartes]], rechazando las explicaciones mecanicistas
+  cartesianas en favor de fuerzas matemáticas universales.
+
+  Su trabajo fundó la [[Física clásica]] como disciplina, aunque dos siglos
+  después [[Albert Einstein]] mostraría que la mecánica newtoniana es un
+  caso límite de la [[Relatividad general]] a bajas velocidades.
+
+existing_typed:
+  - [influenced_by, Galileo Galilei]
+  - [influenced_by, Johannes Kepler]
+  - [developed, Física clásica]
+
+candidate_targets:
+  - Galileo Galilei
+  - Johannes Kepler
+  - René Descartes
+  - Física clásica
+  - Albert Einstein
+  - Relatividad general
+  - Revolución científica
+  - Gravedad
+
+entity_index:
+  Isaac Newton: entity
+  Galileo Galilei: entity
+  Johannes Kepler: entity
+  René Descartes: entity
+  Física clásica: entity
+  Albert Einstein: entity
+  Relatividad general: entity
+  Revolución científica: entity
+  Gravedad: entity
+
+must_catch:
+  # Relaciones intelectuales que 2.2A no extrae:
+  - [reacted_against, René Descartes]     # "rechazando las explicaciones cartesianas"
+  - [influenced, Albert Einstein]         # "dos siglos después Einstein mostraría..."
+
+must_not_propose:
+  # 2.2A había producido FPs en bodies similares:
+  - predicate: part_of
+    object: Revolución científica
+    reason: "relación amplia no bien definida en CANONICAL_PREDICATES"
+  # Einstein no es influenciado_by Newton (Einstein SUPERÓ a Newton, no fue
+  # influenciado pasivamente por Newton). La semántica aquí es "Newton
+  # influenced Einstein", no al revés.
+  - predicate: influenced_by
+    object: Albert Einstein
+    reason: "sujeto/objeto invertido"
+
+policy_checks: []

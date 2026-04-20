@@ -1,0 +1,56 @@
+fixture_id: 06_marco_aurelio_negacion
+entity: Marco Aurelio
+subtype: person
+domain: historia
+
+# Caso 2.2A-FP canónico: body dice "NO aparece literalmente en las
+# Meditaciones". El pattern extractor (con regex tolerante de 2.2A) emitió
+# `appears_in → Meditaciones`, pero el body lo NIEGA. El LLM debe
+# respetar la negación.
+
+body: |
+  Marco Aurelio fue el último de los "cinco buenos emperadores" y el
+  emperador filósofo del Imperio Romano (161-180 d.C.). Su obra cumbre
+  son las [[Meditaciones (Marco Aurelio)|Meditaciones]], uno de los
+  textos filosóficos más influyentes de la historia.
+
+  Entre las frases célebres atribuidas a Marco Aurelio, se encuentra la
+  siguiente:
+
+  > "Lo que no hace daño a la ciudad, no hace daño al ciudadano."
+
+  Contexto: atribución debatida, no aparece literalmente en las
+  [[Meditaciones (Marco Aurelio)|Meditaciones]] pero sintetiza ideas
+  de los libros II y IV.
+
+  También gobernó el [[Imperio Romano]] durante su última fase de
+  apogeo, con la [[Pax Romana]] llegando a su fin con su muerte.
+
+existing_typed:
+  - [author_of, Meditaciones (Marco Aurelio)]
+  - [ruled, Imperio Romano]
+
+candidate_targets:
+  - Meditaciones (Marco Aurelio)
+  - Imperio Romano
+  - Pax Romana
+
+entity_index:
+  Marco Aurelio: entity
+  Meditaciones (Marco Aurelio): entity
+  Imperio Romano: entity
+  Pax Romana: entity
+
+must_catch: []  # Todo relevante ya está típado; LLM debería no emitir duplicados
+
+must_not_propose:
+  # FP semántico canónico — negación no respetada:
+  - predicate: appears_in
+    object: Meditaciones (Marco Aurelio)
+    reason: "el body dice 'NO aparece literalmente' — negación explícita"
+  # Marco Aurelio no gobierna Pax Romana (es un período, no una entidad gobernable)
+  - predicate: ruled
+    object: Pax Romana
+    reason: "Pax Romana es período, no gobernable"
+
+policy_checks: []

@@ -1,0 +1,53 @@
+fixture_id: 07_augusto_adopcion
+entity: Augusto
+subtype: person
+domain: historia
+
+# Caso 2.2A-FP canónico: body dice "hijo adoptivo de Julio César". El
+# regex tolerante de 2.2A capturó "hijo adoptivo de" como `child_of`
+# (biológico), pero la relación es ADOPTIVA — ya típada como
+# `adopted_by → Julio César` desde Paso 1 de 2.1.
+# El LLM debe distinguir adopción de filiación biológica.
+
+body: |
+  Augusto (Gaius Octavius Thurinus, luego Gaius Julius Caesar Octavianus,
+  finalmente Imperator Caesar Divi Filius Augustus, 63 a.C.-14 d.C.) fue
+  el fundador del [[Imperio Romano]] y su primer emperador.
+  Sobrino-nieto e hijo adoptivo de [[Julio César]], tenía 18 años cuando
+  el [[Asesinato de Julio César|asesinato de César]] lo convirtió en
+  heredero político de Roma.
+
+  Su genio fue construir una monarquía que no parecía monarquía: el
+  Principado, donde el emperador gobernaba como "primer ciudadano"
+  (Princeps) conservando las formas de la [[República romana]].
+
+existing_typed:
+  - [adopted_by, Julio César]
+  - [founded, Imperio Romano]
+
+candidate_targets:
+  - Julio César
+  - Imperio Romano
+  - República romana
+  - Asesinato de Julio César
+
+entity_index:
+  Augusto: entity
+  Julio César: entity
+  Imperio Romano: entity
+  República romana: entity
+  Asesinato de Julio César: entity
+
+must_catch:
+  # 2.2A ya emitió founded → Imperio Romano y adopted_by → Julio César;
+  # el LLM no debe duplicarlos. Pero puede emitir relaciones NUEVAS:
+  # por ejemplo conquered / opposed / etc. Si el body no las afirma
+  # claramente, must_catch puede quedar vacío.
+
+must_not_propose:
+  # FP semántico canónico: relación es adoptiva, NO biológica.
+  - predicate: child_of
+    object: Julio César
+    reason: "body dice 'hijo ADOPTIVO' — la relación es adopted_by (ya típada)"
+
+policy_checks: []

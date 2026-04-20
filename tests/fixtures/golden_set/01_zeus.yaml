@@ -1,0 +1,78 @@
+fixture_id: 01_zeus
+entity: Zeus
+subtype: deity
+domain: religion
+
+# Caso 2.2A-bloqueado: body ensayístico, targets canónicos existen pero no
+# están en formato <trigger> <wikilink> adyacente. El LLM debe leer la prosa
+# y extraer la genealogía olímpica estándar.
+
+body: |
+  Zeus es el dios supremo del panteón griego. Hijo menor de [[Cronos]] y
+  [[Rea]], escapó al destino de ser devorado por su padre y lideró la
+  rebelión de los olímpicos contra los titanes.
+
+  Hermano de [[Poseidón]], [[Hades]], [[Hera]], [[Deméter]] y [[Hestia]],
+  se casó con [[Hera]] tras la victoria olímpica. Padre de [[Atenea]],
+  [[Apolo]], [[Artemisa]], [[Ares]], [[Hermes]] y muchos otros dioses y
+  héroes a través de múltiples uniones mortales y divinas.
+
+  Gobierna desde el [[Olimpo]] sobre todos los dioses.
+
+existing_typed:
+  - [located_in, Olimpo]
+
+candidate_targets:
+  - Cronos
+  - Rea
+  - Poseidón
+  - Hades
+  - Hera
+  - Deméter
+  - Hestia
+  - Atenea
+  - Apolo
+  - Artemisa
+  - Ares
+  - Hermes
+  - Olimpo
+
+entity_index:
+  Zeus: entity
+  Cronos: entity
+  Rea: entity
+  Poseidón: entity
+  Hades: entity
+  Hera: entity
+  Deméter: entity
+  Hestia: entity
+  Atenea: entity
+  Apolo: entity
+  Artemisa: entity
+  Ares: entity
+  Hermes: entity
+  Olimpo: entity
+
+must_catch:
+  # Kinship olímpica — el núcleo semántico bloqueado por 2.2A.
+  - [child_of, Cronos]
+  - [child_of, Rea]
+  - [sibling_of, Poseidón]
+  - [sibling_of, Hades]
+  - [sibling_of, Hera]
+  - [married_to, Hera]
+  - [parent_of, Atenea]
+  - [parent_of, Apolo]
+
+must_not_propose:
+  # Evita errores comunes que 2.2A hubiera hecho:
+  # - sibling_of Zeus (self)
+  - predicate: sibling_of
+    object: Zeus
+    reason: "self-reference"
+  # - Zeus nunca debe ser 'located_in Cronos' o similar absurdo
+  - predicate: located_in
+    object: Cronos
+    reason: "absurd — Cronos es persona mitológica, no lugar"
+
+policy_checks: []

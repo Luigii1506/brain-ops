@@ -1,0 +1,59 @@
+fixture_id: 05_parmenides
+entity: Parménides
+subtype: person
+domain: filosofia
+
+# Caso 2.2A-skipped: "fundador de la escuela eleática" no wikilinked.
+# Mini-subfase #1 de 2.2A añadió "fundador de" como trigger, pero
+# no desbloqueó Parménides porque el target no está en [[...]].
+# El LLM debería detectar "fundador de" semánticamente.
+
+body: |
+  Parménides de Elea (~515–450 a.C.) fue un filósofo presocrático,
+  fundador de la escuela eleática y considerado el padre de la
+  ontología occidental. En su poema filosófico "Sobre la naturaleza",
+  estableció la tesis más radical de la filosofía antigua: el Ser es
+  uno, eterno, inmóvil, continuo e indivisible; el cambio, el
+  movimiento y la pluralidad son ilusiones de los sentidos.
+
+  Su argumento influyó profundamente en [[Platón]] (especialmente en el
+  diálogo *Parménides*) y en [[Aristóteles]] (en la Metafísica).
+  Reaccionó contra [[Heráclito]], cuya filosofía del devenir y el
+  cambio perpetuo Parménides consideraba contradictoria con la razón.
+
+existing_typed: []
+
+candidate_targets:
+  - Platón
+  - Aristóteles
+  - Heráclito
+  # Escuela eleática: NOT in vault as canonical entity
+
+entity_index:
+  Parménides: entity
+  Platón: entity
+  Aristóteles: entity
+  Heráclito: entity
+  # Escuela eleática: missing — el LLM puede proponer con MISSING_ENTITY
+
+must_catch:
+  - [influenced, Platón]
+  - [influenced, Aristóteles]
+  - [reacted_against, Heráclito]
+
+must_not_propose:
+  # Parménides NO es alumno de Platón ni de Aristóteles (temporalmente invertido)
+  - predicate: studied_under
+    object: Platón
+    reason: "invertido — Parménides es presocrático, anterior a Platón"
+  - predicate: studied_under
+    object: Aristóteles
+    reason: "invertido temporalmente"
+  # Heráclito NO influenció POSITIVAMENTE a Parménides — reacted_against es
+  # la relación correcta. Emitir influenced_by Heráclito sería error
+  # semántico (oposición vs influencia).
+  - predicate: influenced_by
+    object: Heráclito
+    reason: "reaccionó en contra, no fue influenciado positivamente"
+
+policy_checks: []

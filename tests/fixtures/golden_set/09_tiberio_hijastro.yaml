@@ -1,0 +1,69 @@
+fixture_id: 09_tiberio_hijastro
+entity: Tiberio
+subtype: person
+domain: historia
+
+# Caso D12 del plan 2.2B (precisión del usuario):
+# "hijastro de X" NO se auto-mapea a adopted_by.
+# Si el LLM emite un proposal relacionado con Augusto por este motivo,
+# DEBE ser:
+#   confidence: medium
+#   flag: hijastro_step_relation
+# NUNCA confidence=high automático.
+#
+# Política explícita del usuario — revisar esto en benchmark es el test
+# más cualitativo del golden set.
+
+body: |
+  Tiberio Julio César Augusto (42 a.C.–37 d.C.) fue el segundo emperador
+  romano, gobernando del 14 al 37 d.C. Hijastro y sucesor reluctante de
+  [[Augusto]], llegó al poder como un general veterano y administrador
+  competente, pero su reinado se oscureció progresivamente por la
+  paranoia, los juicios de traición y su retiro voluntario a la isla de
+  Capri.
+
+  A pesar de su impopularidad, consolidó las instituciones del
+  Principado y estabilizó las fronteras. Gobernó el [[Imperio Romano]]
+  con disciplina militar estricta y finanzas saneadas.
+
+existing_typed:
+  - [ruled, Imperio Romano]
+
+candidate_targets:
+  - Augusto
+  - Imperio Romano
+
+entity_index:
+  Tiberio: entity
+  Augusto: entity
+  Imperio Romano: entity
+
+must_catch:
+  # 2.2A ya desbloqueó esto con regex matcher (Tiberio succeeded Augusto)
+  # El LLM debe re-detectarlo via cita literal:
+  - [succeeded, Augusto]  # "sucesor reluctante de Augusto"
+
+must_not_propose:
+  # Error duro: auto-mapear hijastro a child_of biológico
+  - predicate: child_of
+    object: Augusto
+    reason: "hijastro NO es filiación biológica"
+  # Error duro: auto-mapear hijastro a adopted_by HIGH sin flag
+  # El filter `without_flag` captura: viola solo si adopted_by → Augusto
+  # se emite SIN el flag hijastro_step_relation.
+  - predicate: adopted_by
+    object: Augusto
+    without_flag: hijastro_step_relation
+    reason: "D12 del plan: si adopted_by se emite, DEBE llevar el flag hijastro_step_relation"
+
+policy_checks:
+  # Si el LLM elige emitir adopted_by → Augusto (interpretación opcional
+  # del hijastro), DEBE ser medium + flag explícito.
+  # Si no lo emite en absoluto, el policy check pasa vacuamente (se salta).
+  - description: "D12: adopted_by → Augusto DEBE ser medium + flag hijastro_step_relation"
+    when:
+      predicate: adopted_by
+      object: Augusto
+    require:
+      confidence: medium
+      flag: hijastro_step_relation

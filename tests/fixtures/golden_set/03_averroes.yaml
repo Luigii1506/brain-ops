@@ -1,0 +1,53 @@
+fixture_id: 03_averroes
+entity: Averroes
+subtype: person
+domain: filosofia
+
+# Caso 2.2A-skipped: "comentarista de" no era trigger. El LLM debe leer
+# semánticamente y extraer la relación intelectual canónica
+# (influenced_by Aristóteles).
+
+body: |
+  Abu al-Walid Muhammad ibn Ahmad ibn Rushd (1126–1198 d.C.), conocido en
+  Occidente como Averroes, fue el último gran filósofo del Islam clásico
+  y el comentarista más importante de [[Aristóteles]] en la historia.
+
+  Nacido en Córdoba en el seno de una familia de juristas distinguidos,
+  Averroes reunió en una sola vida las vocaciones de jurista, médico,
+  astrónomo y filósofo. Sus comentarios a casi toda la obra conservada
+  de [[Aristóteles]] — breves, medios y largos — llegaron a Europa a
+  través de traducciones latinas y redefinieron el aristotelismo
+  escolástico del siglo XIII.
+
+  Su influencia sobre [[Tomás de Aquino]] es profunda, aunque Tomás a
+  menudo toma distancia crítica del averroísmo. El movimiento
+  averroísta latino, influido por sus interpretaciones, dominó la
+  Universidad de París hasta su condena en 1277.
+
+existing_typed: []
+
+candidate_targets:
+  - Aristóteles
+  - Tomás de Aquino
+
+entity_index:
+  Averroes: entity
+  Aristóteles: entity
+  Tomás de Aquino: entity
+
+must_catch:
+  # 2.2A completamente skipped esto:
+  - [influenced_by, Aristóteles]   # "comentarista más importante de Aristóteles"
+  - [influenced, Tomás de Aquino]  # "Su influencia sobre Tomás de Aquino es profunda"
+
+must_not_propose:
+  # Tomás no influenció a Averroes — invertido.
+  - predicate: influenced_by
+    object: Tomás de Aquino
+    reason: "dirección invertida — Tomás es posterior"
+  # Averroes no fue alumno directo de Aristóteles (1500 años de diferencia).
+  - predicate: studied_under
+    object: Aristóteles
+    reason: "absurdo temporal — Aristóteles vivió 1500 años antes"
+
+policy_checks: []
