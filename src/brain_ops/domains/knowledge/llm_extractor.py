@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -133,6 +134,19 @@ def _sanitize_flags(flags: tuple[str, ...]) -> list[str]:
     return [f for f in flags if f in ALLOWED_FLAGS]
 
 
+_WS_RUN = re.compile(r"\s+")
+
+
+def _normalize_ws(s: str) -> str:
+    """Collapse any run of whitespace (newlines, tabs, spaces) to a single
+    space, strip ends, and lowercase. Used on both sides of the
+    evidence_quote substring check so bodies wrapped to ~75 cols still
+    match citations the LLM produces visually. Does NOT relax the
+    literal-content requirement — only whitespace is flexible.
+    """
+    return _WS_RUN.sub(" ", s).strip().lower()
+
+
 def validate_raw_proposal(
     raw: RawLLMProposal,
     *,
@@ -174,8 +188,11 @@ def validate_raw_proposal(
         return None, REASON_LOW_CONFIDENCE
 
     # Check 5: anti-hallucination — quote must literally appear in the body.
-    # Case-insensitive comparison so the LLM doesn't need to match case.
-    if raw.evidence_quote.lower() not in body.lower():
+    # Case-insensitive AND whitespace-flexible: any run of whitespace
+    # (newlines, spaces, tabs) is normalized to a single space on both
+    # sides before the substring check. This tolerates wrapped YAML/MD
+    # bodies without relaxing the literal-content requirement.
+    if _normalize_ws(raw.evidence_quote) not in _normalize_ws(body):
         return None, REASON_QUOTE_NOT_IN_BODY
 
     # Check 6: dedup against already-typed triples.
@@ -283,7 +300,7 @@ def propose_triples_via_llm(
 # doubled `{{ ... }}` for escape. Keep this file single-source until the
 # vocabulary stabilizes; move to versioned files once we commit to a v2.
 
-PROMPT_VERSION = "v1.0"
+PROMPT_VERSION = "v1.1"  # 7a.1: predicate-vs-flag tightening + examples
 
 # Campaña 2.2B Paso 3 micro-adjustment #1: cap del body en el prompt.
 # Justificación: costo + latencia + ruido irrelevante. Valores elegidos para
@@ -368,6 +385,28 @@ REGLAS INVIOLABLES:
 - Si el body presenta versiones contradictorias de una relación, NO emites
   proposal para ese par; puedes emitir una proposal medium con flag
   `conflicting_traditions` como señal para el reviewer.
+
+PREDICATES VS FLAGS (CRÍTICO — closed-set enforcement):
+- `predicate` DEBE ser EXACTAMENTE uno del CATÁLOGO DE PREDICADOS CANÓNICOS
+  listado más abajo. Si ningún predicate del catálogo encaja, NO emites
+  proposal — nunca inventas un predicate nuevo.
+- `flags` son METADATA etiquetas para el reviewer; NUNCA son predicates.
+  Un flag nunca aparece en el campo `predicate`, solo en el array `flags`.
+- Si el body dice "tutor de X" o "tutored X", el predicate canónico es
+  `mentor_of`, no `tutored` (que no existe en el catálogo).
+- Si el body dice "hijastro de X", el predicate sigue siendo un predicate
+  canónico (p.ej. vacío, o `adopted_by` con flag) — NUNCA emites
+  `predicate: "hijastro_step_relation"` (eso es un flag, no un predicate).
+
+EJEMPLOS de correcto vs incorrecto (predicate must be canonical):
+  ✅ {{"predicate": "mentor_of", "object": "Alejandro Magno", ...}}
+  ❌ {{"predicate": "tutored", "object": "Alejandro Magno", ...}}
+       (tutored no está en el catálogo canónico)
+
+  ✅ {{"predicate": "adopted_by", "object": "Augusto",
+      "confidence": "medium", "flags": ["hijastro_step_relation"]}}
+  ❌ {{"predicate": "hijastro_step_relation", "object": "Augusto", ...}}
+       (hijastro_step_relation es un FLAG, no un predicate)
 """
 
 _STRICT_ADDITIONAL = """\
