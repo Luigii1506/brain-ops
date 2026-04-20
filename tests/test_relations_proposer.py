@@ -678,3 +678,250 @@ class YAMLContractTestCase(TestCase):
             after = note_path.read_bytes()
 
         self.assertEqual(before, after, "propose-relations must not mutate the note")
+
+
+class LLMIntegrationTestCase(TestCase):
+    """Paso 4 de Campaña 2.2B — integración del LLM extractor al pipeline.
+
+    Tests usan `MockLLMClient` inyectado vía kwarg `llm_client=` — sin red,
+    sin API key, sin SDK. Verifican:
+    - default mode=cheap preserva 2.2A exactamente
+    - mode=strict añade proposals del LLM al merged dict
+    - convergencia pattern+LLM mergea sources y excerpts
+    - existing_typed filtrado aunque LLM lo bypasee (defense-in-depth)
+    - source tagging correcto: ["body"] / ["llm"] / ["body", "llm"]
+    - errores del cliente LLM se propagan (no swallow)
+    """
+
+    @staticmethod
+    def _mock_client(canned_json: str):
+        from brain_ops.domains.knowledge.llm_extractor import MockLLMClient
+        return MockLLMClient(canned_response=canned_json)
+
+    def test_default_mode_cheap_preserves_2_2A_behavior(self) -> None:
+        """Default mode=cheap no llama al LLM (mock sin calls), y el
+        resultado es el mismo que la firma 2.2A pre-Paso 4."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Platón")
+            _write_note(vault.root, "Aristóteles", {
+                "name": "Aristóteles",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Alumno de [[Platón]] durante 20 años.")
+            mock = self._mock_client('{"proposals": [{"predicate": "should_not_appear", "object": "X", "confidence": "high", "evidence_quote": "q", "rationale": "r"}]}')
+            result = propose_relations_for_entity(
+                "Aristóteles", vault,
+                mode="cheap", llm_client=mock,
+            )
+
+        self.assertEqual(mock.calls, [])
+        # Solo el pattern extractor debe haber emitido studied_under
+        preds = [(p.predicate, p.object) for p in result.proposal]
+        self.assertIn(("studied_under", "Platón"), preds)
+        self.assertNotIn(("should_not_appear", "X"), preds)
+        for p in result.proposal:
+            self.assertNotIn("llm", p.evidence_source)
+
+    def test_strict_mode_adds_llm_only_proposal(self) -> None:
+        """mode=strict + LLM propone un triple que el pattern no detectó:
+        aparece en el resultado con source=['llm']."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Roma")
+            _write_note(vault.root, "Tiberio", {
+                "name": "Tiberio",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "historia",
+            }, "Tiberio gobernó desde su retiro en [[Roma]] durante sus últimos años.")
+            # LLM emite proposal con cita LITERAL del body
+            canned = (
+                '{"proposals": [{"predicate": "died_in", "object": "Roma", '
+                '"confidence": "high", '
+                '"evidence_quote": "retiro en [[Roma]] durante sus últimos años", '
+                '"rationale": "inferencia de retiro-hasta-muerte", '
+                '"flags": []}]}'
+            )
+            mock = self._mock_client(canned)
+            result = propose_relations_for_entity(
+                "Tiberio", vault,
+                mode="strict", llm_client=mock,
+            )
+
+        self.assertEqual(len(mock.calls), 1)  # LLM fue llamado
+        llm_props = [p for p in result.proposal if "llm" in p.evidence_source]
+        self.assertEqual(len(llm_props), 1)
+        self.assertEqual(llm_props[0].predicate, "died_in")
+        self.assertEqual(llm_props[0].object, "Roma")
+        self.assertEqual(llm_props[0].evidence_source, ["llm"])
+
+    def test_strict_convergence_merges_sources(self) -> None:
+        """mode=strict + LLM emite la MISMA (predicate, object) que el
+        pattern: merged source = ['body', 'llm']."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Platón")
+            _write_note(vault.root, "Aristóteles", {
+                "name": "Aristóteles",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Alumno de [[Platón]] durante 20 años.")
+            # Misma (predicate, object) que el pattern detecta
+            canned = (
+                '{"proposals": [{"predicate": "studied_under", '
+                '"object": "Platón", "confidence": "high", '
+                '"evidence_quote": "Alumno de [[Platón]] durante 20 años", '
+                '"rationale": "relación maestro-discípulo", "flags": []}]}'
+            )
+            mock = self._mock_client(canned)
+            result = propose_relations_for_entity(
+                "Aristóteles", vault,
+                mode="strict", llm_client=mock,
+            )
+
+        studied = [p for p in result.proposal
+                   if p.predicate == "studied_under" and p.object == "Platón"]
+        self.assertEqual(len(studied), 1, "no debe duplicarse el triple")
+        p = studied[0]
+        self.assertIn("body", p.evidence_source)
+        self.assertIn("llm", p.evidence_source)
+        # Excerpts de ambos orígenes
+        self.assertGreaterEqual(len(p.evidence_excerpts), 2)
+
+    def test_existing_typed_still_filters_llm_proposal(self) -> None:
+        """Defense-in-depth: aunque el LLM devuelva un triple que ya está
+        typed, el filtro existing_typed post-merge lo rechaza."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Platón")
+            _write_note(vault.root, "Aristóteles", {
+                "name": "Aristóteles",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+                "relationships": [
+                    {"predicate": "reacted_against", "object": "Platón"},
+                ],
+            }, "Criticó a [[Platón]] en la Metafísica.")
+            canned = (
+                '{"proposals": [{"predicate": "reacted_against", '
+                '"object": "Platón", "confidence": "high", '
+                '"evidence_quote": "Criticó a [[Platón]] en la Metafísica", '
+                '"rationale": "bypass hypothetical", "flags": []}]}'
+            )
+            mock = self._mock_client(canned)
+            result = propose_relations_for_entity(
+                "Aristóteles", vault,
+                mode="strict", llm_client=mock,
+            )
+        # Aunque el LLM lo propuso, el filtro final lo elimina
+        for p in result.proposal:
+            self.assertFalse(
+                p.predicate == "reacted_against" and p.object == "Platón",
+                "existing_typed debe filtrar aunque el LLM lo bypasee",
+            )
+
+    def test_source_tagging_three_categories(self) -> None:
+        """Caso combinado: un proposal solo-pattern, uno solo-LLM, uno
+        convergente. Los 3 tags deben aparecer correctamente."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Platón")
+            _canonical_entity(vault.root, "Alejandro Magno")
+            _canonical_entity(vault.root, "Parménides")
+            _write_note(vault.root, "Aristóteles", {
+                "name": "Aristóteles",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Alumno de [[Platón]]. Tutor de [[Alejandro Magno]]. Parménides es un precursor.")
+
+            # LLM emite: (a) la misma studied_under→Platón (convergencia)
+            #            (b) uno nuevo reacted_against→Parménides (solo-LLM)
+            canned = (
+                '{"proposals": ['
+                '{"predicate": "studied_under", "object": "Platón", '
+                '"confidence": "high", '
+                '"evidence_quote": "Alumno de [[Platón]]", '
+                '"rationale": "duplicate", "flags": []},'
+                '{"predicate": "reacted_against", "object": "Parménides", '
+                '"confidence": "high", '
+                '"evidence_quote": "Parménides es un precursor", '
+                '"rationale": "inferencia filosófica", "flags": []}'
+                ']}'
+            )
+            mock = self._mock_client(canned)
+            result = propose_relations_for_entity(
+                "Aristóteles", vault,
+                mode="strict", llm_client=mock,
+            )
+
+        by_key = {(p.predicate, p.object): p for p in result.proposal}
+
+        # studied_under → Platón: convergencia pattern+LLM
+        self.assertIn(("studied_under", "Platón"), by_key)
+        conv = by_key[("studied_under", "Platón")]
+        self.assertIn("body", conv.evidence_source)
+        self.assertIn("llm", conv.evidence_source)
+
+        # mentor_of → Alejandro Magno: solo pattern (el LLM no lo emitió)
+        self.assertIn(("mentor_of", "Alejandro Magno"), by_key)
+        pattern_only = by_key[("mentor_of", "Alejandro Magno")]
+        self.assertIn("body", pattern_only.evidence_source)
+        self.assertNotIn("llm", pattern_only.evidence_source)
+
+        # reacted_against → Parménides: solo LLM
+        self.assertIn(("reacted_against", "Parménides"), by_key)
+        llm_only = by_key[("reacted_against", "Parménides")]
+        self.assertEqual(llm_only.evidence_source, ["llm"])
+
+    def test_llm_client_error_propagates(self) -> None:
+        """Cuando el cliente LLM falla, el error se propaga (no swallow)."""
+        class FailingClient:
+            def extract(self, *, prompt: str, temperature: float) -> str:
+                raise RuntimeError("LLM down")
+
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _canonical_entity(vault.root, "Platón")
+            _write_note(vault.root, "Aristóteles", {
+                "name": "Aristóteles",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Alumno de [[Platón]].")
+            with self.assertRaises(RuntimeError) as ctx:
+                propose_relations_for_entity(
+                    "Aristóteles", vault,
+                    mode="strict", llm_client=FailingClient(),
+                )
+        self.assertIn("LLM down", str(ctx.exception))
+
+    def test_llm_note_preserved_through_status_resolution(self) -> None:
+        """LLM con MISSING_ENTITY: el rationale + flags deben preservarse
+        junto con el warning operacional."""
+        with TemporaryDirectory() as td:
+            vault = _mk_vault(Path(td))
+            _write_note(vault.root, "Aristóteles", {
+                "name": "Aristóteles",
+                "entity": True, "type": "person", "subtype": "person",
+                "object_kind": "entity", "domain": "filosofia",
+            }, "Fundó el [[Liceo]] en 335 a.C.")
+            canned = (
+                '{"proposals": [{"predicate": "founded", "object": "Liceo", '
+                '"confidence": "high", '
+                '"evidence_quote": "Fundó el [[Liceo]] en 335 a.C.", '
+                '"rationale": "fact central de biografía", '
+                '"flags": []}]}'
+            )
+            mock = self._mock_client(canned)
+            result = propose_relations_for_entity(
+                "Aristóteles", vault,
+                mode="strict", llm_client=mock,
+            )
+
+        liceo = [p for p in result.proposal if p.object == "Liceo"]
+        self.assertEqual(len(liceo), 1)
+        p = liceo[0]
+        self.assertEqual(p.object_status, "MISSING_ENTITY")
+        # Note preserva el rationale del LLM + warning operacional
+        self.assertIn("fact central", p.note)
+        self.assertIn("MISSING", p.note.upper() + " MISSING")  # operational warning appended
+        self.assertIn("--allow-mentions", p.note)

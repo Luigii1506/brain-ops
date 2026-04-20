@@ -577,6 +577,125 @@ def _find_note_for_entity(entity_name: str, vault: Vault) -> Path:
     raise FileNotFoundError(f"No note found for entity: {entity_name}")
 
 
+def _extract_body_wikilinks(body: str) -> list[str]:
+    """Return unique wikilink targets in body, preserving order of first
+    appearance. Used by Campaña 2.2B Paso 4 to build LLM candidate_targets.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in _WIKILINK_RE.finditer(body):
+        target = _extract_wikilink_target(m.group(0))
+        if target and target not in seen:
+            seen.add(target)
+            out.append(target)
+    return out
+
+
+def _query_sqlite_related_names(entity_name: str, db_path: Path) -> list[str]:
+    """Return entity names that appear as either source or target of any
+    existing `entity_relations` row involving `entity_name`.
+
+    Used as the third priority tier in `prioritize_candidate_targets` so
+    the LLM sees the graph context it would normally miss.
+    """
+    import sqlite3
+    if not db_path.exists():
+        return []
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT target_entity FROM entity_relations "
+            "WHERE source_entity = ?",
+            (entity_name,),
+        )
+        out: list[str] = [row[0] for row in cur.fetchall() if row[0]]
+        cur.execute(
+            "SELECT DISTINCT source_entity FROM entity_relations "
+            "WHERE target_entity = ?",
+            (entity_name,),
+        )
+        for row in cur.fetchall():
+            if row[0] and row[0] not in out:
+                out.append(row[0])
+        return out
+    finally:
+        conn.close()
+
+
+def _run_llm_extraction(
+    entity_name: str,
+    body: str,
+    mode: str,
+    *,
+    frontmatter: dict,
+    existing_typed: set[tuple[str, str]],
+    entity_index: dict[str, str],
+    db_path: Path | None,
+    client: object | None,
+    cache_dir: Path | None,
+) -> list[ProposedRelation]:
+    """Run LLM extraction and return accepted proposals.
+
+    Campaña 2.2B Paso 4: this is the integration point. mode=cheap short-
+    circuits without instantiating a client (backwards-compat path). If
+    the caller doesn't inject a client, a default `AnthropicLLMClient`
+    with optional cache is constructed.
+
+    Errors from the LLM client propagate — by design (per plan §14 risk
+    R7 and user decision on error handling: do not swallow).
+    """
+    if mode == "cheap":
+        return []
+
+    # Lazy import to keep the no-LLM path dependency-light.
+    from brain_ops.domains.knowledge.llm_extractor import (
+        AnthropicLLMClient, LLMResponseCache, extract_and_validate,
+        prioritize_candidate_targets,
+    )
+
+    # Build candidate_targets via priority helper (Paso 3 micro-adjustment #2).
+    note_related_raw = frontmatter.get("related") or []
+    note_related: list[str] = [
+        r for r in note_related_raw
+        if isinstance(r, str) and r and r != entity_name
+    ]
+    body_wikilinks = [w for w in _extract_body_wikilinks(body) if w != entity_name]
+    sqlite_related: list[str] = []
+    if db_path is not None:
+        sqlite_related = [
+            n for n in _query_sqlite_related_names(entity_name, db_path)
+            if n and n != entity_name
+        ]
+    candidate_targets = prioritize_candidate_targets(
+        note_related=note_related,
+        body_wikilinks=body_wikilinks,
+        sqlite_related=sqlite_related,
+    )
+
+    # Resolve client: injected first; else build default.
+    if client is None:
+        cache = None
+        if cache_dir is not None:
+            cache = LLMResponseCache(cache_dir)
+        client = AnthropicLLMClient(cache=cache)
+
+    subtype = frontmatter.get("subtype")
+    domain = frontmatter.get("domain")
+
+    result = extract_and_validate(
+        entity_name, body,
+        mode=mode,  # type: ignore[arg-type]
+        client=client,
+        existing_typed=existing_typed,
+        entity_index=entity_index,
+        subtype=subtype if isinstance(subtype, str) else None,
+        domain=domain,
+        candidate_targets=candidate_targets,
+    )
+    return result.accepted
+
+
 def _collect_existing_typed(frontmatter: dict) -> set[tuple[str, str]]:
     parse_result = parse_relationships(frontmatter.get("name", ""), frontmatter)
     return {(r.predicate, r.object) for r in parse_result.typed}
@@ -598,8 +717,23 @@ def propose_relations_for_entity(
     *,
     db_path: Path | None = None,
     include_existing: bool = False,
+    mode: str = "cheap",
+    llm_client: object | None = None,
+    cache_dir: Path | None = None,
 ) -> ProposalResult:
-    """Produce a ProposalResult for one entity. Does not write the vault."""
+    """Produce a ProposalResult for one entity. Does not write the vault.
+
+    Campaña 2.2B Paso 4: the `mode` parameter controls LLM augmentation.
+    Default `"cheap"` preserves 2.2A behavior exactly (no LLM call). Values
+    `"strict"` and `"deep"` invoke the LLM extractor and merge its proposals
+    with the pattern extractor output, source-tagged by origin.
+
+    `llm_client` allows tests (and future CLI orchestrators) to inject a
+    specific client. If None and mode != cheap, a default
+    `AnthropicLLMClient` is constructed (requires the `anthropic` package).
+    `cache_dir` wires a `LLMResponseCache` into the default client; ignored
+    if `llm_client` is passed.
+    """
 
     note_path = _find_note_for_entity(entity_name, vault)
     text = note_path.read_text(encoding="utf-8")
@@ -639,27 +773,73 @@ def propose_relations_for_entity(
                 text=f"`{p.object}` present in legacy `related:` list",
             ))
 
-    # Filter already-typed unless user asked to include.
+    # Build entity_index once — needed early if LLM runs, needed later
+    # regardless for object_status resolution.
+    entity_index = _build_entity_index(vault)
+
+    # Campaña 2.2B Paso 4 — LLM extraction + merge, source-tagged.
+    # Errors propagate (per plan risk R7 + user directive).
+    if mode != "cheap":
+        llm_accepted = _run_llm_extraction(
+            entity_name, body, mode,
+            frontmatter=frontmatter,
+            existing_typed=existing_typed,
+            entity_index=entity_index,
+            db_path=db_path,
+            client=llm_client,
+            cache_dir=cache_dir,
+        )
+        for llm_prop in llm_accepted:
+            key = (llm_prop.predicate, llm_prop.object)
+            existing = merged.get(key)
+            if existing is None:
+                # LLM-only proposal. source stays ["llm"].
+                merged[key] = llm_prop
+            else:
+                # Convergence: pattern + LLM agreed on this (predicate, object).
+                # Union source + excerpts; upgrade confidence if LLM says high.
+                for src in llm_prop.evidence_source:
+                    if src not in existing.evidence_source:
+                        existing.evidence_source.append(src)
+                existing.evidence_excerpts.extend(llm_prop.evidence_excerpts)
+                if llm_prop.confidence == "high" and existing.confidence != "high":
+                    existing.confidence = "high"
+                    existing.status = "approved"
+                # Preserve LLM rationale + flags (valuable reviewer signal).
+                if llm_prop.note:
+                    tag = "[LLM]"
+                    if existing.note:
+                        existing.note = f"{existing.note} | {tag} {llm_prop.note}"
+                    else:
+                        existing.note = f"{tag} {llm_prop.note}"
+
+    # Filter already-typed — applied AFTER LLM merge so the final set never
+    # contains triples already persisted in SQLite, even if the LLM bypassed
+    # its own dedup check for some reason (defense in depth).
     if not include_existing:
         merged = {k: v for k, v in merged.items() if k not in existing_typed}
 
     proposals = list(merged.values())
 
-    # Resolve object_status for each proposal.
-    entity_index = _build_entity_index(vault)
+    # Resolve object_status for each proposal (entity_index already built).
+    # Append the operational status note instead of overwriting — preserves
+    # the LLM's rationale + flags when present (Campaña 2.2B Paso 4).
     for p in proposals:
         p.object_status = _resolve_object_status(p.object, entity_index)
+        status_note: str | None = None
         if p.object_status == "MISSING_ENTITY":
-            p.note = (
+            status_note = (
                 "Objeto no existe como entidad canónica. El triple se emite "
                 "pero `brain apply-relations-batch` no lo aplicará salvo que "
                 "se pase `--allow-mentions`."
             )
         elif p.object_status == "DISAMBIGUATION_PAGE":
-            p.note = (
+            status_note = (
                 "Objeto apunta a una disambiguation_page. Refinar a la "
                 "variante específica antes de aplicar."
             )
+        if status_note:
+            p.note = f"{p.note} | {status_note}" if p.note else status_note
 
     # Enrich with cross-ref evidence (SQLite).
     if db_path is not None:
