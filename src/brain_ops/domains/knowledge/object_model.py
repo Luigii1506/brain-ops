@@ -39,6 +39,8 @@ SUBTYPES: dict[str, list[str]] = {
         "biological_process", "cell", "cell_type", "gene",
         "chemical_element", "compound", "molecule",
         "disease", "medical_theory",
+        # Campaña 0.6 — anatomía / fisiología (agrupación a nivel de sistema)
+        "biological_system",
         # Campaña 0 additions — mathematics
         "theorem", "mathematical_object", "constant", "mathematical_function",
         "proof_method", "mathematical_field",
@@ -211,6 +213,11 @@ CANONICAL_PREDICATES: dict[str, str] = {
     "depends_on": "causal or functional dependency",
     # Generic participation — complements fought_in
     "participated_in": "general participation in an event or process",
+    # Functional/physiological — Campaña 0.6 additions (anatomy/chemistry/ecology)
+    "produces": "generates or synthesizes an output (hormone, molecule, signal)",
+    "transports": "moves a substance or signal from one place to another",
+    "regulates": "modulates, controls, or maintains within a range",
+    "consumed_in": "used up as input of a process or reaction",
     # Classification
     "instance_of": "type membership",
     "subclass_of": "type hierarchy",
@@ -403,6 +410,27 @@ PREDICATE_NORMALIZATION: dict[str, str] = {
     "precede en el proceso": "precedes_in_process",
     "depends on": "depends_on",
     "depende de": "depends_on",
+    # Campaña 0.6 — functional/physiological aliases
+    "produce": "produces",
+    "synthesizes": "produces",
+    "secretes": "produces",
+    "sintetiza": "produces",
+    "secreta": "produces",
+    "transport": "transports",
+    "carries": "transports",
+    "delivers": "transports",
+    "transporta": "transports",
+    "lleva": "transports",
+    "regulate": "regulates",
+    "controls": "regulates",
+    "modulates": "regulates",
+    "regula": "regulates",
+    "controla": "regulates",
+    "modula": "regulates",
+    "consumed in": "consumed_in",
+    "used in": "consumed_in",
+    "consumido en": "consumed_in",
+    "se consume en": "consumed_in",
 }
 
 
@@ -519,6 +547,8 @@ DISAMBIGUATION_LABELS: dict[str, str] = {
     "gene": "gen",
     "chemical_element": "elemento químico",
     "compound": "compuesto",
+    # Campaña 0.6 — anatomy / physiology (system-level grouping)
+    "biological_system": "sistema biológico",
     "molecule": "molécula",
     "disease": "enfermedad",
     "medical_theory": "teoría médica",
@@ -637,6 +667,8 @@ SUBTYPE_SECTIONS: dict[str, tuple[str, ...]] = {
     "chemical_element": ("Definition", "Key Facts", "Atomic Properties", "Isotopes", "Occurrence", "Uses", "Discovery", "Relationships", "Related notes"),
     "compound": ("Definition", "Key Facts", "Structure", "Properties", "Reactions", "Uses", "Relationships", "Related notes"),
     "molecule": ("Definition", "Key Facts", "Structure", "Properties", "Biological Role", "Synthesis", "Relationships", "Related notes"),
+    # Campaña 0.6 — anatomy / physiology
+    "biological_system": ("Definition", "Key Facts", "Components", "Main Functions", "Key Processes", "Interactions with Other Systems", "Homeostatic Role", "Common Pathologies", "Relationships", "Related notes"),
     "disease": ("Definition", "Key Facts", "Causes", "Symptoms", "Diagnosis", "Treatment", "Epidemiology", "Relationships", "Related notes"),
     "medical_theory": ("Definition", "Key Facts", "Origins", "Core Principles", "Evidence", "Criticisms", "Impact", "Relationships", "Related notes"),
     # Campaña 0 — mathematics (concept)
@@ -924,6 +956,18 @@ SUBTYPE_WRITING_GUIDES: dict[str, str] = {
         "In Structure, describe the 3D shape and bonding pattern. "
         "In Biological Role, explain where and how it functions in living systems. "
         "In Synthesis, describe how it forms naturally or industrially."
+    ),
+    # Campaña 0.6 — anatomy / physiology
+    "biological_system": (
+        "A biological_system entity covers an organ system treated as a "
+        "coordinated functional unit (circulatory, respiratory, nervous, "
+        "etc.). In Components, list the main organs/structures with "
+        "[[wikilinks]]. In Main Functions, state what the system does for "
+        "the organism. In Key Processes, name the biological processes it "
+        "executes. In Interactions with Other Systems, describe the "
+        "functional dependencies (e.g. circulatory depends on respiratory "
+        "for O₂ intake). In Homeostatic Role, explain what equilibrium the "
+        "system maintains. In Common Pathologies, name typical failures."
     ),
     # Campaña 0 guides — medicine
     "disease": (

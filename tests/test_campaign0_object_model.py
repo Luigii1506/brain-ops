@@ -210,6 +210,59 @@ class ParticipatedInCoexistsWithFoughtInTestCase(TestCase):
         self.assertEqual(normalize_predicate("combatió en"), "fought_in")
 
 
+class Campaign06AnatomyTaxonomyTestCase(TestCase):
+    """Campaña 0.6 — biological_system subtype + functional predicates.
+
+    Opens the anatomy domain with minimal canonical scaffolding:
+    - One new subtype to type organ systems as a first-class kind.
+    - Four functional predicates that generalize across anatomy,
+      chemistry, and ecology.
+    """
+
+    NEW_06_PREDICATES = ("produces", "transports", "regulates", "consumed_in")
+
+    def test_biological_system_subtype_registered(self) -> None:
+        self.assertIn("biological_system", SUBTYPES["concept"])
+        # Resolves cleanly to the concept kind
+        kind, resolved = resolve_object_kind("biological_system")
+        self.assertEqual(kind, "concept")
+        self.assertEqual(resolved, "biological_system")
+
+    def test_functional_predicates_canonical(self) -> None:
+        for p in self.NEW_06_PREDICATES:
+            self.assertIn(p, CANONICAL_PREDICATES, f"{p} missing from CANONICAL_PREDICATES")
+
+    def test_functional_predicates_pass_through(self) -> None:
+        for p in self.NEW_06_PREDICATES:
+            self.assertEqual(normalize_predicate(p), p)
+
+    def test_produces_aliases_es_en(self) -> None:
+        self.assertEqual(normalize_predicate("produce"), "produces")
+        self.assertEqual(normalize_predicate("sintetiza"), "produces")
+        self.assertEqual(normalize_predicate("secreta"), "produces")
+        self.assertEqual(normalize_predicate("synthesizes"), "produces")
+        self.assertEqual(normalize_predicate("secretes"), "produces")
+
+    def test_transports_aliases_es_en(self) -> None:
+        self.assertEqual(normalize_predicate("transporta"), "transports")
+        self.assertEqual(normalize_predicate("lleva"), "transports")
+        self.assertEqual(normalize_predicate("carries"), "transports")
+        self.assertEqual(normalize_predicate("delivers"), "transports")
+
+    def test_regulates_aliases_es_en(self) -> None:
+        self.assertEqual(normalize_predicate("regula"), "regulates")
+        self.assertEqual(normalize_predicate("controla"), "regulates")
+        self.assertEqual(normalize_predicate("modula"), "regulates")
+        self.assertEqual(normalize_predicate("controls"), "regulates")
+        self.assertEqual(normalize_predicate("modulates"), "regulates")
+
+    def test_consumed_in_aliases_es_en(self) -> None:
+        self.assertEqual(normalize_predicate("consumed in"), "consumed_in")
+        self.assertEqual(normalize_predicate("used in"), "consumed_in")
+        self.assertEqual(normalize_predicate("consumido en"), "consumed_in")
+        self.assertEqual(normalize_predicate("se consume en"), "consumed_in")
+
+
 class RegressionCoreBehaviorTestCase(TestCase):
     """Make sure Campaña 0 did not break pre-existing normalizations."""
 
