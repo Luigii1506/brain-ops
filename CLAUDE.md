@@ -234,6 +234,108 @@ See `docs/operations/RELATIONS_FORMAT.md` for the full format spec
 and `docs/operations/CAMPAIGN_2_0_SUMMARY.md` for the delivery
 summary, pilot result, and Campaña 2.1 proposal.
 
+### Typed-relation extraction — LLM-assisted (Campaña 2.2B)
+
+**Two-layer mental model.** The entity lifecycle has two separate
+LLM-touching layers that complement each other:
+
+1. **Creation/enrichment of notes (body + frontmatter)** — done by
+   Claude Code directly as LLM (see "When Claude writes directly"
+   below). $0 API cost. Produces the `.md` note.
+2. **Extraction of typed relations from existing note bodies** — done
+   by the OpenAI pipeline Campaña 2.2B built. ~$0.002/note in `strict`.
+   Runs periodically, NOT per note. Produces YAML proposals in
+   `.brain-ops/relations-proposals/` that the user reviews before
+   applying to frontmatter `relationships:`.
+
+**The two layers do NOT compete. Layer 2 runs on top of Layer 1's
+output.** A note first exists (Layer 1), and then its relations are
+extracted (Layer 2).
+
+#### When to run Layer 2
+
+- After creating a cluster/batch of ~15–30 new entities.
+- At the end of a phase (e.g. Fase 1 Filosofía Grupo A, Rome Fase 2).
+- When adding a major note that mentions many existing entities.
+- NOT after every single note — amortize the review overhead.
+
+#### Commands
+
+```bash
+# Single entity, strict mode (recommended default for real use)
+brain propose-relations "Entity Name" --mode strict \
+    --cache-dir .brain-ops/llm-cache/ --config config/vault.yaml
+
+# Entire batch (preferred after a cluster)
+brain batch-propose-relations --mode strict \
+    --cache-dir .brain-ops/llm-cache/ --config config/vault.yaml
+
+# Cheap mode (default — pattern extractor only, no LLM, 2.2A behavior)
+brain propose-relations "Entity Name" --config config/vault.yaml
+
+# Deep mode (allows implicit-context inferences, costs ~5× strict)
+brain propose-relations "Entity Name" --mode deep \
+    --cache-dir .brain-ops/llm-cache/ --config config/vault.yaml
+
+# After reviewing the YAML, apply accepted proposals
+brain apply-relations-batch --config config/vault.yaml
+```
+
+**Requirements**: `openai` package installed in `.venv`,
+`OPENAI_API_KEY` exported in the shell running the command. The
+`--cache-dir` makes re-runs free by hashing (prompt, model,
+temperature).
+
+#### Review checklist (mandatory before `apply`)
+
+2.2B closed with three known residual patterns. The reviewer must
+catch them by hand. Proposals are YAML files; edit before apply.
+
+1. **Directionality `influenced` / `influenced_by`** (~12% residual).
+   If you see `X influenced → Y` where Y lived well before X
+   chronologically, it's almost certainly inverted. Change predicate
+   to `influenced_by` before apply.
+
+2. **`adopted_by` with `confidence: medium`**. Read the `note` field.
+   If it says "se infiere", "puede interpretarse", "relación de
+   adopción en contexto religioso" — it's a hallucination. Remove
+   the proposal. Check 9 kills most of these at extraction time, but
+   the lexical marker check is global-body, so an unrelated "adoptada"
+   elsewhere in the body can let one through.
+
+3. **Works without disambiguation suffix**. If you see `author_of
+   → "Ética"` or `→ "Metafísica"` or `→ "República"`, verify in the
+   vault whether a disambig version exists (`Ética (Spinoza)`,
+   `Metafísica (Aristóteles)`, `República (Platón)`). If yes, edit
+   the `object` field to the disambig form before apply. The LLM
+   does not emit disambig suffixes — this is a known gap for a
+   future campaign.
+
+#### Cost reference
+
+- `strict` mode: ~$0.001–0.002 per note (~1500–2500 input tokens,
+  ~200–500 output tokens with gpt-4o-mini).
+- Full vault at current size (~1048 entities) in strict: ~$1.34.
+- `deep` mode: ~5× strict (bigger body cap, higher temperature).
+- Cache hit: $0. Re-running a batch after reviewing YAML costs
+  nothing as long as the note body didn't change.
+
+#### What the source tagging means on proposals
+
+Every `ProposedRelation` in the YAML carries an `evidence.source`
+field. Read it as the reviewer's trust prior:
+
+- `source: [body]` → Pattern extractor caught it (Campaña 2.2A regex).
+  High-precision prior.
+- `source: [llm]` → Only the LLM proposed it. Read evidence_quote
+  and rationale carefully.
+- `source: [body, llm]` → Both layers converged. Highest confidence.
+
+See `docs/operations/CAMPAIGN_2_2B_SUMMARY.md` for the full closure
+rationale, the metrics (golden set composite 0.81, mnp_rate 1.00,
+directionality inversions ÷3, adopted_by halluc −75%), and the
+documented residual patterns.
+
 ### When Claude writes directly (as the LLM):
 
 This is allowed when the user says "enriquece X" or "crea entidad X" in conversation.
