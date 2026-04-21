@@ -99,6 +99,85 @@ class InjectBacklinksTestCase(TestCase):
         self.assertIn("[[Clístenes de Atenas]]", content)
 
 
+class DisambiguationSkipTestCase(TestCase):
+    """Campaña 0.7: disambiguated entities (with "(qualifier)" suffix)
+    MUST NOT auto-backlink their base name, because the disambiguation
+    itself signals that the base name has multiple referents. The writer
+    must link explicitly."""
+
+    def setUp(self) -> None:
+        self._tmpdir = TemporaryDirectory()
+        self.vault = Path(self._tmpdir.name)
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    def _write(self, name: str, content: str) -> Path:
+        p = self.vault / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return p
+
+    def test_disambiguated_entity_does_not_auto_wikify_base_name(self) -> None:
+        """Caso canónico del FP histórico: 'Política (Aristóteles)' NO debe
+        wikificar la palabra común 'política' en contextos no-aristotélicos."""
+        self._write(
+            "Sistema endocrino.md",
+            "---\nname: Sistema endocrino\n---\n\n"
+            "La política monetaria es rápida; la política fiscal es lenta.",
+        )
+        self._write(
+            "El Capital.md",
+            "---\nname: El Capital\n---\n\n"
+            "Marx combinó dialéctica hegeliana con economía política inglesa.",
+        )
+        result = inject_backlinks(self.vault, "Política (Aristóteles)")
+        self.assertEqual(result.notes_linked, 0)
+        # Plain text must remain plain.
+        endo = (self.vault / "Sistema endocrino.md").read_text(encoding="utf-8")
+        self.assertNotIn("[[Política", endo)
+        self.assertIn("política monetaria", endo)
+        capital = (self.vault / "El Capital.md").read_text(encoding="utf-8")
+        self.assertNotIn("[[Política", capital)
+        self.assertIn("economía política", capital)
+
+    def test_disambiguated_entity_with_matching_plain_text_does_not_link(self) -> None:
+        """Incluso si el texto literal coincide con la base name en mayúsculas
+        y con contexto aparentemente relevante, NO se auto-enlaza: el autor
+        debe linkear explícitamente."""
+        self._write(
+            "Nota.md",
+            "---\nname: Nota\n---\n\n"
+            "Política aristotélica se basa en la polis.",
+        )
+        result = inject_backlinks(self.vault, "Política (Aristóteles)")
+        self.assertEqual(result.notes_linked, 0)
+        content = (self.vault / "Nota.md").read_text(encoding="utf-8")
+        self.assertNotIn("[[Política", content)
+
+    def test_non_disambiguated_entity_still_auto_wikifies(self) -> None:
+        """Regresión: la política 0.7 NO afecta entidades no-disambiguadas.
+        Auto-wikify sigue funcionando para el caso común."""
+        self._write(
+            "Nota simple.md",
+            "---\nname: X\n---\n\nEl ostracismo fue una herramienta cívica.",
+        )
+        result = inject_backlinks(self.vault, "ostracismo")
+        self.assertEqual(result.notes_linked, 1)
+
+    def test_explicit_wikilink_to_disambiguated_entity_is_preserved(self) -> None:
+        """Si el autor ya puso el wikilink explícitamente, debe quedar intacto."""
+        self._write(
+            "Nota.md",
+            "---\nname: Nota\n---\n\n"
+            "La [[Política (Aristóteles)|Política]] de Aristóteles plantea la polis.",
+        )
+        result = inject_backlinks(self.vault, "Política (Aristóteles)")
+        self.assertEqual(result.notes_linked, 0)
+        content = (self.vault / "Nota.md").read_text(encoding="utf-8")
+        self.assertIn("[[Política (Aristóteles)|Política]]", content)
+
+
 if __name__ == "__main__":
     import unittest
 

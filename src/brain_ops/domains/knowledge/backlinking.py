@@ -36,8 +36,13 @@ def inject_backlinks(
     Skips the entity's own note.
     Updates the `related` frontmatter field in notes that get linked.
 
-    Disambiguation-aware: for entities like "Urano (deity)", searches for the
-    base name ("Urano") and replaces with ``[[Urano (deity)|Urano]]``.
+    Disambiguation policy (Campaña 0.7):
+    Entities with a disambiguation suffix (e.g. "Política (Aristóteles)")
+    are SKIPPED entirely — the suffix itself is explicit acknowledgement
+    that the base name has multiple referents, so auto-wikifying plain
+    mentions of the base name ("política") would be semantically wrong.
+    For disambiguated entities, the writer must link explicitly via
+    ``[[Política (Aristóteles)]]`` or ``[[Política (Aristóteles)|Política]]``.
     """
     if excluded_parts is None:
         excluded_parts = {".git", ".obsidian", ".brain-ops", "Templates"}
@@ -51,8 +56,27 @@ def inject_backlinks(
     # Determine search term and wikilink format for disambiguated entities
     base_name = extract_base_name(entity_name)
     is_disambiguated = base_name != entity_name
-    search_term = base_name if is_disambiguated else entity_name
-    wikilink = f"[[{entity_name}|{base_name}]]" if is_disambiguated else f"[[{entity_name}]]"
+
+    # Campaña 0.7: disambiguated entities (e.g. "Política (Aristóteles)")
+    # have ambiguous base names BY DESIGN — the disambiguation suffix is
+    # explicit testimony that the base name has multiple referents.
+    # Auto-injecting backlinks for the base name would wikify plain
+    # mentions (e.g. "política" as common noun, "economía política", etc.)
+    # to the specific disambig target — semantically wrong.
+    #
+    # For disambiguated entities, require EXPLICIT linking: the writer
+    # must type `[[Política (Aristóteles)]]` or `[[Política (Aristóteles)|Política]]`
+    # themselves. Returning early keeps the wikify pass conservative.
+    if is_disambiguated:
+        return BacklinkResult(
+            entity_name=entity_name,
+            notes_scanned=0,
+            notes_linked=0,
+            linked_files=(),
+        )
+
+    search_term = entity_name
+    wikilink = f"[[{entity_name}]]"
 
     # Build regex: match search term NOT already inside [[ ]]
     escaped = re.escape(search_term)
