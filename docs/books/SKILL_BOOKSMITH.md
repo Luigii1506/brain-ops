@@ -148,3 +148,77 @@ Caso típico de conflicto: el adaptador de matemáticas pide "ritmo deliberado",
 4. Identificar motor narrativo (dominio)
 5. Estimar entidades que necesitan existir primero
 6. Presentar el plan al usuario antes de escribir
+
+### Modo: Sembrar dominio nuevo (skeleton-first)
+
+Cuando el usuario abre un dominio donde aún no existen suficientes
+entidades para sostener un libro — anatomía, química, economía,
+cualquier campo que empieza de cero. El esqueleto del libro se vuelve
+la cola de creación de entidades, no al revés.
+
+**Por qué este modo existe.** El patrón entity-first (crear entidades
+primero, libro después) produce tres costos: entidades huérfanas sin
+función narrativa; tesis descubierta a posteriori que fuerza
+narrativa sobre un conjunto ya existente; sin tesis, no hay señal de
+qué falta. Skeleton-first invierte eso: cada entidad nace porque una
+tesis la necesita.
+
+**Pasos:**
+
+1. **Escribir skeleton persistente** en `08 - Books/<Nombre>.md` con
+   frontmatter `type: book`, `subtype: output`, `status: skeleton`:
+   - tesis (1 frase fuerte)
+   - 3-5 actos con nombre + función narrativa
+   - 💭 preguntas por acto (las que el acto tiene que responder)
+   - epílogo (la idea con la que el lector se queda)
+
+   NO se escribe prosa completa. El skeleton es un contrato con el
+   yo-futuro sobre qué debe sostener el libro.
+
+2. **Derivar creation queue desde el skeleton.** Para cada acto,
+   preguntar: ¿qué entidades deben existir canónicamente para que
+   este acto tenga material real? Agrupar por peso narrativo:
+   - Centrales: sin ellas el acto colapsa.
+   - Soporte: profundizan pero no son esenciales.
+   - Expansión: futuras, para libros siguientes o actos secundarios.
+
+3. **Crear MOC del dominio** en `03 - Maps/MOC - <Dominio>.md` con
+   las entidades de la queue como secciones navegables.
+
+4. **Abrir pre-fase de taxonomía si hace falta.** Antes de crear
+   entidades, verificar que los subtypes y predicates canónicos
+   cubren el dominio. Si faltan (ej. `biological_system` para
+   anatomía), añadirlos a `object_model.py` con tests. Esto es
+   infra mínima, no feature creep — el mismo patrón que Campaña 0
+   usó para historia.
+
+5. **Crear entidades en orden de peso narrativo.** Claude Code
+   como LLM directo + `brain post-process`. Las centrales primero,
+   luego las de soporte. No batches ciegos por orden alfabético.
+
+6. **Refinar el skeleton conforme crece el grafo.** Es normal que
+   el libro aprenda mientras las entidades se crean: una descubierta
+   se convierte en pivot de un acto; un acto planeado se disuelve
+   porque no hay tensión real. Actualizar el skeleton es parte del
+   trabajo, no desviación.
+
+7. **Transición a escritura.** Cuando cada 💭 del skeleton tiene
+   al menos 2-3 entidades canónicas que la responden, cambiar
+   `status: skeleton` → `status: in_progress` y pasar al "Modo:
+   Escribir capítulo nuevo".
+
+**Criterio de "listo para redactar":** no es "hay muchas entidades",
+es "cada pregunta 💭 del esqueleto tiene material para una respuesta
+sustantiva con wikilinks canónicos". Si las entidades existen pero no
+responden las preguntas, el skeleton está mal o falta cobertura.
+
+**Heurísticas del modo:**
+
+- El skeleton es corto. Un libro de 5 actos cabe en ~50 líneas de
+  markdown. Si te pasas, estás escribiendo prosa, no planeando.
+- La tesis debe caber en una frase. Si necesitas dos, todavía no es
+  una tesis — es un tema.
+- Cada acto necesita una pregunta real (no retórica). Si la pregunta
+  se puede responder sin leer el libro, no vale.
+- Entidades de expansión no se crean en esta ronda. Se anotan en el
+  MOC como "futuras" y se crean cuando su libro las demande.

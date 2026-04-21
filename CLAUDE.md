@@ -530,6 +530,13 @@ Key principles:
 - No data without narrative function; no narrative without data
 - Each book must teach, pull forward, and leave a big idea
 
+**Opening a new knowledge domain** (anatomy, economics, chemistry,
+etc.): use the `Modo: Sembrar dominio nuevo` section of
+`docs/books/SKILL_BOOKSMITH.md`. The book skeleton (thesis + actos +
+💭 questions) drives entity creation — not the other way around.
+This avoids orphan entities and ensures each new note has a clear
+narrative function.
+
 ### Commands
 
 ```bash
