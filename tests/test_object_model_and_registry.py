@@ -490,6 +490,59 @@ class FormatWikilinkTestCase(TestCase):
         result = format_wikilink("Desconocido", registry)
         self.assertEqual(result, "[[Desconocido]]")
 
+    def test_bare_name_collision_keeps_disambiguator_visible(self) -> None:
+        """Regression: when the bare name is ALSO a canonical entity, the
+        aliased form `[[X (Y)|X]]` is semantically misleading — a reader
+        sees `[[X]]` display and expects the bare-name entity. Keep the
+        disambiguator visible in this case.
+
+        Real-world bug: `[[Ética (Spinoza)|Ética]]` was auto-generated in
+        hundreds of notes where the prose actually meant the discipline
+        (canonical `Ética`), not Spinoza's book. Fix: when both exist, use
+        `[[Ética (Spinoza)]]` instead of `[[Ética (Spinoza)|Ética]]`.
+        """
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        # Bare-name canonical (e.g. the discipline "Ética")
+        bare = RegisteredEntity(canonical_name="Ética", entity_type="concept", subtype="discipline")
+        registry.register(bare)
+        # Disambiguated canonical (e.g. Spinoza's book)
+        book = RegisteredEntity(canonical_name="Ética (Spinoza)", entity_type="book", subtype="book")
+        registry.register(book)
+
+        # Formatting the disambiguated entity must NOT display as plain "Ética".
+        result = format_wikilink("Ética (Spinoza)", registry)
+        self.assertEqual(result, "[[Ética (Spinoza)]]")
+
+    def test_bare_name_no_collision_uses_display_alias(self) -> None:
+        """Baseline: when there is no bare-name collision, keep the friendly
+        `[[X (Y)|X]]` form (this is the Urano case that already worked)."""
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        e = RegisteredEntity(canonical_name="Urano (deity)", entity_type="deity", subtype="deity")
+        registry.register(e)
+        # "Urano" alone is NOT registered as a separate canonical entity.
+        result = format_wikilink("Urano (deity)", registry)
+        self.assertEqual(result, "[[Urano (deity)|Urano]]")
+
+    def test_bare_name_collision_via_alias_also_guarded(self) -> None:
+        """Same guard applies when the input is an alias that resolves to
+        a disambiguated entity, while a bare-name canonical also exists."""
+        from brain_ops.domains.knowledge.link_aliases import format_wikilink
+        registry = EntityRegistry()
+        bare = RegisteredEntity(canonical_name="Metafísica", entity_type="concept", subtype="discipline")
+        registry.register(bare)
+        book = RegisteredEntity(
+            canonical_name="Metafísica (Aristóteles)",
+            entity_type="book",
+            subtype="book",
+            aliases=["Metafísica de Aristóteles"],
+        )
+        registry.register(book)
+        # The alias resolves to the disambiguated entity, but bare-name collides.
+        result = format_wikilink("Metafísica de Aristóteles", registry)
+        self.assertEqual(result, "[[Metafísica (Aristóteles)]]")
+
 
 class ResolveEntityNameTestCase(TestCase):
     def test_resolves_alias_to_canonical(self) -> None:

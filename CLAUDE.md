@@ -100,6 +100,17 @@ introduce semantic errors (e.g. wikify linking `la Ética kantiana` to
 `[[Ética (Spinoza)|Ética]]` — the book, not the discipline). To prevent
 this, Campaña 1 uses these rules:
 
+**Bare-name collision fix (2026-04-21)**: `format_wikilink` in
+`link_aliases.py` now checks whether the bare name of a disambiguated
+entity is ALSO a registered canonical entity. When both exist (e.g.
+`Ética` the discipline AND `Ética (Spinoza)` the book), the aliased
+display form `[[Ética (Spinoza)|Ética]]` is misleading — a reader sees
+`Ética` and expects the discipline. Instead, the disambiguator is kept
+visible: `[[Ética (Spinoza)]]`. Historical artifacts from previous bulk
+wikify runs (~1,060 bad links across Ética/Metafísica) were cleaned up
+in a one-shot backup-guarded pass; see
+`.brain-ops/backups/02-knowledge-pre-wikify-fix-*`.
+
 - **Frontmatter-only subfases (domain aliases, fill-domain, epistemic_mode,
   subtype re-classification):** post-step is `brain compile-knowledge`.
   Never modifies `.md` bodies.

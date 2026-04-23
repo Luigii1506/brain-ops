@@ -439,7 +439,15 @@ def format_wikilink(name: str, registry: object | None = None) -> str:
     """Return the correct wikilink string for an entity name, with disambiguation if needed.
 
     If the entity has a disambiguated canonical name (e.g. "Urano (deity)"),
-    returns ``[[Urano (deity)|Urano]]`` so it displays cleanly in Obsidian.
+    returns ``[[Urano (deity)|Urano]]`` so it displays cleanly in Obsidian —
+    but ONLY if the bare name does not also exist as a canonical entity.
+
+    Bare-name collision guard: if the bare name (e.g. "Ética") is itself a
+    registered entity (the discipline/concept), displaying "Ética (Spinoza)"
+    as plain "Ética" is semantically misleading — a reader sees "[[Ética]]"
+    and expects the discipline, but follows the link to Spinoza's book.
+    In this case keep the disambiguator visible: ``[[Ética (Spinoza)]]``.
+
     If the name is already the canonical form or no registry is available,
     returns ``[[name]]``.
     """
@@ -448,20 +456,32 @@ def format_wikilink(name: str, registry: object | None = None) -> str:
 
     from .registry import extract_base_name
 
+    def _bare_is_own_entity(bare: str) -> bool:
+        """True if bare_name is itself a registered canonical entity."""
+        entities = getattr(registry, "entities", None)
+        if not isinstance(entities, dict):
+            return False
+        return bare in entities
+
     # Try to resolve via alias (e.g. "Urano" → "Urano (deity)")
     resolved = registry.resolve(name)
     if resolved != name:
         # The name was an alias; the canonical name differs
         base = extract_base_name(resolved)
         if base != resolved:
-            # Canonical has disambiguator → use display alias
+            # Canonical has disambiguator → normally use display alias,
+            # but guard against bare-name collisions.
+            if _bare_is_own_entity(base):
+                return f"[[{resolved}]]"
             return f"[[{resolved}|{name}]]"
         return f"[[{resolved}]]"
 
     # The name IS canonical — check if it has a disambiguator itself
     base = extract_base_name(name)
     if base != name:
-        # Name like "Urano (deity)" — display as "Urano"
+        # Name like "Urano (deity)" — display as "Urano" only if no bare-name collision.
+        if _bare_is_own_entity(base):
+            return f"[[{name}]]"
         return f"[[{name}|{base}]]"
 
     return f"[[{name}]]"
