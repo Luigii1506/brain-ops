@@ -119,6 +119,30 @@ El audit existe específicamente para cazar estas categorías. Sin él, la
 nota es navegable pero falta detalle de "named entities" que un lector
 experto notaría.
 
+### Beneficio adicional — detección de corrupción estructural acumulada
+
+Como descubrimiento secundario, el audit pass también caza **deuda
+estructural heredada** de campañas anteriores que un `check-coverage`
+automatizado no detecta. Casos observados:
+
+- **Wikilinks anidados malformados** producidos por scripts de wikify
+  automático que disambiguaron mal en pasadas masivas (ej:
+  `[[X ([[Y]])|X]]` en lugar de `[[X (Y)|X]]`).
+- **Targets equivocados** introducidos por disambiguación sin
+  clasificación contextual (ej: 22 referencias a "Meditaciones" de
+  Descartes apuntando al "Meditaciones (Marco Aurelio)" porque el
+  script eligió Marco Aurelio como default).
+- **Referencias a obras inexistentes** (notas referenciadas pero
+  nunca creadas) que sólo se descubren al leer el cuerpo con
+  atención.
+
+Estos hallazgos justifican un audit pass periódico aun sobre notas
+saturadas (~400 líneas), no para cazar errores fácticos sino para
+limpiar deuda acumulada por scripts. Dicho esto, **un linter dedicado
+de wikilinks tendría mejor ROI** para este tipo específico de bug; el
+audit Wikipedia es la mejor herramienta para gaps de contenido, no
+para corrupción estructural.
+
 ## Cuándo NO aplica light + audit (incluso para Tier-1)
 
 - **Cuando se va a usar la nota como base de citas externas** (libros
@@ -129,9 +153,9 @@ experto notaría.
   (debate de fechas del Éxodo, historicidad de Lao Tsé): deep para
   que el plan estructure las posiciones
 
-## Evidencia empírica — auditoría Campaña 3 sobre 9 notas
+## Evidencia empírica
 
-Sobre 9 notas religion-domain Tier-1 escritas en light mode:
+### Auditoría Campaña 3 — 9 notas religion-domain Tier-1 (light mode)
 
 - **0 errores fácticos duros**
 - **1 error de fecha menor** (1924 → 1922)
@@ -141,7 +165,30 @@ Sobre 9 notas religion-domain Tier-1 escritas en light mode:
 - **Tiempo estimado deep rewrite alternativo:** ~6h
 
 El audit + patch capturó ~95% del valor de un deep rewrite a ~5% del
-costo, validando empíricamente la política Tier-1.
+costo, validando empíricamente la política Tier-1 en light-mode-virgin
+notes.
+
+### Auditoría Campaña 4 — 9 notas filosofía Tier-1 (already deeply enriched)
+
+Validación adicional sobre notas que **ya estaban densamente
+enriquecidas** (188–420 líneas, varias campañas previas):
+
+- **0 errores fácticos duros**
+- **24 omisiones load-bearing** detectadas en 5 de 9 notas (3 saturated,
+  1 needs rework por bug estructural)
+- **48 wikilinks corruptos** descubiertos como deuda estructural
+  acumulada de un wikify automático previo (`Meditaciones` mal
+  disambiguada en 22 archivos)
+- **3 notas faltantes** descubiertas como referencias huérfanas
+  (Meditaciones del Quijote, cartesianas, Sacras)
+- **Tiempo total fix completo:** ~1h (incluye fix sistemático del bug
+  estructural + 6 patches + 3 notas nuevas)
+
+Hallazgo: el audit pass tiene **diminishing returns para errores
+fácticos** sobre notas >250 líneas (los 3 saturated eran los más
+largos), pero **mantiene valor alto para omisiones de named-secondary-
+entities** y para **detectar corrupción estructural** que escapó al
+quality control de campañas previas.
 
 ## Ver también
 
