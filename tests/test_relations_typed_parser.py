@@ -124,6 +124,79 @@ class InvalidPredicateTestCase(TestCase):
                          ["studied_under", "mentor_of"])
 
 
+class ReligionPredicatesCampana2TestCase(TestCase):
+    """Campaña 2 religion-domain predicate governance.
+
+    These 12 predicates were added so the religion-domain frontmatter
+    migration (founded_by, has_branch, uses_text, celebrated_by,
+    branch_of, related_concept, contrasts_with, emerged_in,
+    practiced_in, plus the inverses founder_of, text_of, celebrates)
+    is fully ingestable by the typed-graph compiler.
+    """
+
+    def test_all_religion_predicates_accepted(self) -> None:
+        religion_predicates = [
+            "founded_by", "founder_of",
+            "uses_text", "text_of",
+            "has_branch", "branch_of",
+            "celebrates", "celebrated_by",
+            "practiced_in",
+            "related_concept", "contrasts_with",
+            "emerged_in",
+        ]
+        fm = {"relationships": [
+            {"predicate": p, "object": f"Target{i}"}
+            for i, p in enumerate(religion_predicates)
+        ]}
+        result = parse_relationships("Cristianismo", fm)
+        self.assertEqual(
+            len(result.typed),
+            len(religion_predicates),
+            f"Expected all {len(religion_predicates)} religion predicates accepted; "
+            f"errors: {[(e.kind, e.message) for e in result.errors]}",
+        )
+        self.assertEqual(result.errors, [])
+        self.assertEqual(
+            [r.predicate for r in result.typed],
+            religion_predicates,
+        )
+
+    def test_religion_predicates_in_canonical_dict(self) -> None:
+        from brain_ops.domains.knowledge.object_model import CANONICAL_PREDICATES
+        for p in (
+            "founded_by", "founder_of", "uses_text", "text_of",
+            "has_branch", "branch_of", "celebrates", "celebrated_by",
+            "practiced_in", "related_concept", "contrasts_with", "emerged_in",
+        ):
+            self.assertIn(p, CANONICAL_PREDICATES, f"{p} missing from CANONICAL_PREDICATES")
+
+    def test_religion_predicate_with_confidence_and_reason(self) -> None:
+        fm = {"relationships": [
+            {
+                "predicate": "founded_by",
+                "object": "Jesucristo",
+                "confidence": "high",
+                "reason": "Tradición fundacional cristiana",
+            },
+            {
+                "predicate": "has_branch",
+                "object": "Catolicismo",
+                "confidence": "high",
+            },
+            {
+                "predicate": "contrasts_with",
+                "object": "Politeísmo",
+                "confidence": "medium",
+            },
+        ]}
+        result = parse_relationships("Cristianismo", fm)
+        self.assertEqual(len(result.typed), 3)
+        self.assertEqual(result.typed[0].predicate, "founded_by")
+        self.assertEqual(result.typed[0].confidence, "high")
+        self.assertEqual(result.typed[0].reason, "Tradición fundacional cristiana")
+        self.assertEqual(result.typed[2].confidence, "medium")
+
+
 class MissingFieldTestCase(TestCase):
     def test_missing_predicate_flagged(self) -> None:
         fm = {"relationships": [{"object": "Platón"}]}

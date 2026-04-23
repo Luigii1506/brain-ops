@@ -16,6 +16,12 @@ ENTITY_TYPES: dict[str, str] = {
     "era": "Historical period or age",
     "organization": "Institution, company, empire, political body",
     "topic": "Broad subject area or field of study",
+    # Religion-domain types — Campaña 2 governance
+    "religion": "Religious tradition (e.g. Cristianismo, Budismo)",
+    "text": "Sacred or canonical text (e.g. Biblia, Corán, Vedas)",
+    "institution": "Religious institution or sacred place (e.g. Iglesia, Mezquita)",
+    "practice": "Ritual or religious practice (e.g. Bautismo, Ayuno)",
+    "festival": "Religious festival or observance (e.g. Pascua, Ramadán)",
 }
 
 
@@ -89,6 +95,37 @@ ENTITY_SCHEMAS: dict[str, EntitySchema] = {
         entity_type="topic",
         required_fields=("name",),
         optional_fields=("field", "related", "tags"),
+        sections=_STANDARD_SECTIONS,
+    ),
+    # Religion-domain schemas — Campaña 2 governance
+    "religion": EntitySchema(
+        entity_type="religion",
+        required_fields=("name",),
+        optional_fields=("founder", "origin", "region", "founded", "related", "tags"),
+        sections=_STANDARD_SECTIONS,
+    ),
+    "text": EntitySchema(
+        entity_type="text",
+        required_fields=("name",),
+        optional_fields=("language", "tradition", "composed", "author", "related", "tags"),
+        sections=_STANDARD_SECTIONS,
+    ),
+    "institution": EntitySchema(
+        entity_type="institution",
+        required_fields=("name",),
+        optional_fields=("founded", "tradition", "location", "related", "tags"),
+        sections=_STANDARD_SECTIONS,
+    ),
+    "practice": EntitySchema(
+        entity_type="practice",
+        required_fields=("name",),
+        optional_fields=("tradition", "frequency", "related", "tags"),
+        sections=_STANDARD_SECTIONS,
+    ),
+    "festival": EntitySchema(
+        entity_type="festival",
+        required_fields=("name",),
+        optional_fields=("tradition", "date", "calendar", "related", "tags"),
         sections=_STANDARD_SECTIONS,
     ),
 }

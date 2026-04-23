@@ -245,6 +245,21 @@ See `docs/operations/RELATIONS_FORMAT.md` for the full format spec
 and `docs/operations/CAMPAIGN_2_0_SUMMARY.md` for the delivery
 summary, pilot result, and Campaña 2.1 proposal.
 
+For schema additions (new predicates, new entity types) the lockstep
+checklist is in
+[`docs/operations/SCHEMA_GOVERNANCE.md`](docs/operations/SCHEMA_GOVERNANCE.md):
+`CANONICAL_PREDICATES` + `ENTITY_TYPES` + `ENTITY_SCHEMAS` + tests must
+move together, and `PREDICATE_NORMALIZATION` aliases should follow so
+the LLM extractor recognizes the new vocabulary.
+
+For entities that legitimately belong to more than one domain
+(filosofía + religión, ciencia + filosofía, historia + filosofía), use
+the bridge pattern documented in
+[`docs/operations/BRIDGE_ENTITIES.md`](docs/operations/BRIDGE_ENTITIES.md):
+`domain:` as a YAML list + typed `relationships:` to link into the
+secondary domain's graph. Never rename, never change `type`, never
+fuse with perspective notes.
+
 ### Typed-relation extraction — LLM-assisted (Campaña 2.2B)
 
 **Two-layer mental model.** The entity lifecycle has two separate
@@ -354,14 +369,38 @@ Claude acts as the LLM directly (no API cost). But MUST follow these rules:
 
 **BEFORE writing — determine mode:**
 
-DEEP MODE (person, empire, civilization, battle, war, country, book, discipline):
+The mode depends on the **Tier** of the entity (how dense the LLM's general
+knowledge of it is), not just on the type. See
+[`docs/operations/ENRICHMENT_TIER_POLICY.md`](docs/operations/ENRICHMENT_TIER_POLICY.md)
+for criteria and empirical evidence.
+
+TIER-1 — universally canonical figures and works (Jesucristo, Mahoma, Buda,
+Aristóteles, Platón, César, Newton, Biblia, Corán, Vedas, etc.). LLM
+knowledge is dense; deep mode rarely catches errors, only secondary
+omissions.
+1. Write **light** from general knowledge with full structure
+   (Identity, Historical Context, Key Facts, Core Significance, Timeline, Legacy)
+2. **Audit pass**: WebFetch Wikipedia ES (or EN if ES is poor), compare
+   dates / numbers / named secondary entities / specific events
+3. **Patch pass**: targeted `Edit` operations to close omissions; reconcile
+   body-safe with `--skip-wikify --skip-cross-enrich`
+4. ~15 min/note total. No `plan-direct-enrich`, no `post-process` required.
+
+TIER-2 — important but less massive figures (Nagarjuna, Bodhidharma,
+Dogen, Rumi, Ibn Arabi, Sankara, Plotino, Avicena, Mahavira, Guru Nanak):
+DEEP MODE from the start.
 1. Run `brain plan-direct-enrich "Entity Name" --url "https://..." --config config/vault.yaml`
 2. Use the generated raw source and pass plan from `.brain-ops/direct-enrich/<slug>.json`
 3. Write pass by pass covering ALL high-priority sections and valuable medium ones
 4. After writing, run `brain post-process ...` and `brain check-coverage ...`
 5. If coverage still shows important gaps, do another direct pass focused on those sections and post-process again
 
-LIGHT MODE (cities, simple concepts, animals, minor entities):
+TIER-3 — regional / specialized / obscure entities. DEEP MODE
+**obligatory** + cross-check with a second source. `status: in_progress`,
+not `canonical`, until verified.
+
+LIGHT MODE *without* audit (cities, simple concepts, animals, very minor
+entities where structural completeness is not load-bearing):
 1. WebFetch or use general knowledge
 2. Write a solid note covering the essentials
 3. No formal coverage check needed
