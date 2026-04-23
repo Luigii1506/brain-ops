@@ -37,6 +37,7 @@ from .knowledge import (
     present_fix_capitalization_command,
     present_ingest_source_command,
     present_lint_schemas_command,
+    present_lint_wikilinks_command,
     present_migrate_knowledge_db_command,
     present_normalize_domain_command,
     present_normalize_frontmatter_command,
@@ -1601,6 +1602,29 @@ entity: false
                 naming=naming,
                 strict=strict,
                 as_json=as_json,
+            )
+            if exit_code:
+                raise typer.Exit(code=exit_code)
+        except BrainOpsError as error:
+            handle_error(error)
+
+    @app.command("lint-wikilinks")
+    def lint_wikilinks_command(
+        config_path: Path | None = typer.Option(None, "--config", help="Path to vault config YAML."),
+        only_rule: str | None = typer.Option(None, "--rule", help="Filter by rule: nested, broken, ambiguous_bare."),
+        fix_nested: bool = typer.Option(False, "--fix-nested", help="Apply the safe mechanical fix for nested-bracket corruption."),
+        strict: bool = typer.Option(False, "--strict", help="Exit code 1 if any issues remain."),
+        as_json: bool = typer.Option(False, "--json", help="Print structured JSON output."),
+    ) -> None:
+        """Report (and optionally fix) wikilink integrity issues across Knowledge notes."""
+        try:
+            exit_code = present_lint_wikilinks_command(
+                console,
+                config_path=config_path,
+                only_rule=only_rule,
+                fix_nested=fix_nested,
+                as_json=as_json,
+                strict=strict,
             )
             if exit_code:
                 raise typer.Exit(code=exit_code)

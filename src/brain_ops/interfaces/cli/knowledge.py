@@ -504,6 +504,79 @@ def present_lint_schemas_command(
     return 0
 
 
+def present_lint_wikilinks_command(
+    console: Console,
+    *,
+    config_path: Path | None,
+    only_rule: str | None,
+    fix_nested: bool,
+    as_json: bool,
+    strict: bool,
+) -> int:
+    """Report (and optionally fix) wikilink integrity issues."""
+    from brain_ops.domains.knowledge.lint_wikilinks import (
+        fix_nested_wikilinks,
+        lint_vault,
+    )
+
+    vault = load_validated_vault(config_path, dry_run=not fix_nested)
+    vault_path = Path(vault.config.vault_path)
+
+    if fix_nested:
+        files_changed, links_fixed = fix_nested_wikilinks(vault_path)
+        # Re-scan after the fix for an accurate post-state report.
+        report = lint_vault(vault_path, only_rule=only_rule)
+        if as_json:
+            payload = {
+                "fix_applied": "nested",
+                "files_changed": files_changed,
+                "links_fixed": links_fixed,
+                "post_fix_report": report.to_dict(),
+            }
+            console.print_json(data=payload)
+        else:
+            console.print(
+                f"[bold green]Fix-nested applied[/bold green]: "
+                f"{links_fixed} link(s) collapsed across {files_changed} file(s)"
+            )
+            console.print(
+                f"\n[bold]Post-fix scan[/bold] — "
+                f"{report.files_scanned} files, {report.links_scanned} links"
+            )
+            for rule, n in sorted(report.by_rule().items()):
+                console.print(f"  {rule}: {n}")
+        return 0 if not strict else (1 if report.issues else 0)
+
+    report = lint_vault(vault_path, only_rule=only_rule)
+
+    if as_json:
+        console.print_json(data=report.to_dict())
+    else:
+        console.print(
+            f"[bold]Wikilink lint[/bold] — {report.files_scanned} files, "
+            f"{report.links_scanned} links scanned"
+        )
+        by_rule = report.by_rule()
+        if not by_rule:
+            console.print("[green]✓ no issues found[/green]")
+        else:
+            for rule, n in sorted(by_rule.items()):
+                console.print(f"  [yellow]{rule}[/yellow]: {n}")
+            console.print("\n[bold]First 30 issues[/bold]")
+            for i in report.issues[:30]:
+                location = f"{i.file}:{i.line}:{i.column}"
+                console.print(
+                    f"  [{i.rule}] {location} — {i.snippet}"
+                    + (f" → {i.suggestion}" if i.suggestion else "")
+                )
+            if len(report.issues) > 30:
+                console.print(f"  ... ({len(report.issues) - 30} more)")
+
+    if strict and report.issues:
+        return 1
+    return 0
+
+
 def present_normalize_domain_command(
     console: Console,
     *,
@@ -1334,6 +1407,7 @@ __all__ = [
     "present_fill_domain_command",
     "present_fix_capitalization_command",
     "present_lint_schemas_command",
+    "present_lint_wikilinks_command",
     "present_migrate_knowledge_db_command",
     "present_normalize_domain_command",
     "present_apply_relations_batch_command",

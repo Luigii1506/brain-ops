@@ -161,6 +161,7 @@ class CliCommandRegistrationTestCase(TestCase):
                 "semantic-relations",
                 "wikify",
                 "lint-schemas",
+                "lint-wikilinks",
                 "migrate-knowledge-db",
                 "normalize-domain",
                 "disambiguate-bare",

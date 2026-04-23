@@ -139,9 +139,33 @@ automatizado no detecta. Casos observados:
 Estos hallazgos justifican un audit pass periódico aun sobre notas
 saturadas (~400 líneas), no para cazar errores fácticos sino para
 limpiar deuda acumulada por scripts. Dicho esto, **un linter dedicado
-de wikilinks tendría mejor ROI** para este tipo específico de bug; el
+de wikilinks tiene mejor ROI** para este tipo específico de bug; el
 audit Wikipedia es la mejor herramienta para gaps de contenido, no
 para corrupción estructural.
+
+El linter dedicado existe a partir de Campaña 4:
+
+```bash
+brain lint-wikilinks --config config/vault.yaml          # report all
+brain lint-wikilinks --rule nested --config ...          # filter
+brain lint-wikilinks --json --config ...                 # machine-readable
+brain lint-wikilinks --fix-nested --config ...           # safe auto-fix
+brain lint-wikilinks --strict --config ...               # exit 1 if any
+```
+
+Tres reglas:
+- **`nested`** — sintaxis corrupta `[[X ([[Y]])|alias]]`. Auto-fixable
+  con `--fix-nested` (transformación mecánica, sin cambiar targets).
+- **`broken`** — wikilink cuyo target no existe como nota en el vault.
+  No auto-fixable (la nota faltante puede ser una entidad por crear).
+  Útil como cola natural de "missing entity candidates".
+- **`ambiguous_bare`** — `[[X]]` cuando `X.md` no existe pero
+  `X (Y).md` y `X (Z).md` sí. El reader no sabe qué disambiguación
+  estaba intentada.
+
+Conviene correr `brain lint-wikilinks --rule nested` después de
+campañas masivas que toquen wikify; si arroja > 0, hubo regresión y
+`--fix-nested` la cierra inmediatamente.
 
 ## Cuándo NO aplica light + audit (incluso para Tier-1)
 
